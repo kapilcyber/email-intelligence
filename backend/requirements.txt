@@ -1,0 +1,24 @@
+# Phase 1 — Email Intelligence Backend
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+pydantic==2.5.3
+pydantic-settings==2.1.0
+
+# DB
+sqlalchemy==2.0.25
+psycopg2-binary==2.9.9
+alembic==1.13.1
+
+# Redis + Celery (msgpack<2 for kombu compatibility)
+redis==5.0.1
+celery[redis]==5.3.6
+msgpack<2.0
+
+# HTTP (Graph API)
+httpx==0.26.0
+
+# Phase 2 — OpenAI
+openai>=1.0.0
+
+# Env
+python-dotenv==1.0.0
