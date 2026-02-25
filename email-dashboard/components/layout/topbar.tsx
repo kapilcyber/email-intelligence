@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useTheme } from "next-themes";
-import { Moon, Sun } from "lucide-react";
+import { signOut } from "next-auth/react";
+import { Moon, Sun, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -69,15 +70,26 @@ export function Topbar({
           {environment}
         </Badge>
       </div>
-      <Button
-        variant="ghost"
-        size="icon"
-        onClick={toggleTheme}
-        aria-label="Toggle dark mode"
-      >
-        <Sun className="h-5 w-5 dark:hidden" />
-        <Moon className="hidden h-5 w-5 dark:block" />
-      </Button>
+      <div className="flex items-center gap-1">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => signOut({ callbackUrl: "/signin" })}
+          aria-label="Sign out"
+          title="Sign out"
+        >
+          <LogOut className="h-5 w-5" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={toggleTheme}
+          aria-label="Toggle dark mode"
+        >
+          <Sun className="h-5 w-5 dark:hidden" />
+          <Moon className="hidden h-5 w-5 dark:block" />
+        </Button>
+      </div>
     </header>
   );
 }

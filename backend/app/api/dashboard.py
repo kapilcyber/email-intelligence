@@ -6,15 +6,20 @@ from sqlalchemy.exc import OperationalError
 from app.db.session import get_db
 from app.db.models import Email
 from app.workers.tasks import get_queue_stats
+from app.api.deps import get_current_user_email
 
 router = APIRouter()
 
 
 @router.get("/metrics")
-def dashboard_metrics(db: Session = Depends(get_db)):
+def dashboard_metrics(
+    current_user_email: str = Depends(get_current_user_email),
+    db: Session = Depends(get_db),
+):
     try:
         today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-        emails_today = db.query(func.count(Email.id)).filter(Email.received_at >= today_start).scalar() or 0
+        base = db.query(Email).filter(Email.mailbox_owner_email == current_user_email)
+        emails_today = base.filter(Email.received_at >= today_start).count()
     except (OperationalError, Exception):
         emails_today = 0
     queue_stats = get_queue_stats()
@@ -25,22 +30,23 @@ def dashboard_metrics(db: Session = Depends(get_db)):
     priority_counts: dict[str, int] = {}
 
     try:
-        total_emails = db.query(func.count(Email.id)).scalar() or 0
-        total_classified = (
-            db.query(func.count(Email.id)).filter(Email.ai_processed_at.isnot(None)).scalar() or 0
-        )
+        base = db.query(Email).filter(Email.mailbox_owner_email == current_user_email)
+        total_emails = base.count()
+        total_classified = base.filter(Email.ai_processed_at.isnot(None)).count()
         ai_failure_count = 0
         if hasattr(Email, "ai_status"):
-            ai_failure_count = (
-                db.query(func.count(Email.id)).filter(Email.ai_status == "failed").scalar() or 0
-            )
-        for row in db.query(Email.ai_category, func.count(Email.id)).filter(
-            Email.ai_category.isnot(None)
-        ).group_by(Email.ai_category):
+            ai_failure_count = base.filter(Email.ai_status == "failed").count()
+        for row in (
+            base.filter(Email.ai_category.isnot(None))
+            .with_entities(Email.ai_category, func.count(Email.id))
+            .group_by(Email.ai_category)
+        ):
             category_counts[str(row[0])] = row[1]
-        for row in db.query(Email.ai_priority_label, func.count(Email.id)).filter(
-            Email.ai_priority_label.isnot(None)
-        ).group_by(Email.ai_priority_label):
+        for row in (
+            base.filter(Email.ai_priority_label.isnot(None))
+            .with_entities(Email.ai_priority_label, func.count(Email.id))
+            .group_by(Email.ai_priority_label)
+        ):
             priority_counts[str(row[0])] = row[1]
     except (OperationalError, Exception):
         pass

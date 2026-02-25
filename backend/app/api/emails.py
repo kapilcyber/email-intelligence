@@ -11,6 +11,7 @@ from app.db.models import Email, Attachment
 from app.workers.tasks import backfill_emails_task, backfill_classify_emails_task
 from app.config import get_settings
 from app.graph.auth import get_auth_headers
+from app.api.deps import get_current_user_email
 
 router = APIRouter()
 
@@ -93,6 +94,7 @@ class EmailDetailOut(BaseModel):
 
 @router.get("/emails", response_model=EmailsResponse, response_model_by_alias=True)
 def list_emails(
+    current_user_email: str = Depends(get_current_user_email),
     db: Session = Depends(get_db),
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=500),
@@ -103,7 +105,7 @@ def list_emails(
     priority_label: str | None = Query(None, alias="priorityLabel", description="Filter by priority label"),
 ):
     try:
-        q = db.query(Email)
+        q = db.query(Email).filter(Email.mailbox_owner_email == current_user_email)
         if search and search.strip():
             s = f"%{search.strip()}%"
             q = q.filter(
@@ -155,12 +157,15 @@ def list_emails(
 @router.get("/emails/{email_id}", response_model=EmailDetailOut, response_model_by_alias=True)
 def get_email(
     email_id: str = Path(..., description="Email UUID"),
+    current_user_email: str = Depends(get_current_user_email),
     db: Session = Depends(get_db),
 ):
     """Get full email details including body and attachments (from stored data; uses Graph credentials during ingest)."""
     try:
         email = db.query(Email).filter(Email.id == email_id).first()
         if not email:
+            raise HTTPException(status_code=404, detail="Email not found")
+        if email.mailbox_owner_email != current_user_email:
             raise HTTPException(status_code=404, detail="Email not found")
         atts = db.query(Attachment).filter(Attachment.email_id == email_id).all()
         return EmailDetailOut(
@@ -200,6 +205,7 @@ def get_attachment(
     email_id: str = Path(..., description="Email UUID"),
     attachment_id: str = Path(..., description="Attachment UUID"),
     download: bool = Query(False, description="If true, force download instead of inline display"),
+    current_user_email: str = Depends(get_current_user_email),
     db: Session = Depends(get_db),
 ):
     """
@@ -209,19 +215,18 @@ def get_attachment(
     email = db.query(Email).filter(Email.id == email_id).first()
     if not email:
         raise HTTPException(status_code=404, detail="Email not found")
+    if email.mailbox_owner_email != current_user_email:
+        raise HTTPException(status_code=404, detail="Email not found")
     att = db.query(Attachment).filter(Attachment.id == attachment_id, Attachment.email_id == email_id).first()
     if not att:
         raise HTTPException(status_code=404, detail="Attachment not found")
     if not att.graph_attachment_id or not email.graph_id:
         raise HTTPException(status_code=400, detail="Attachment content not available (missing Graph reference)")
-    user_id = get_settings().mailbox_email
-    if not user_id or not user_id.strip():
-        raise HTTPException(
-            status_code=400,
-            detail="Mailbox not configured. Set MAILBOX_EMAIL in backend .env to view attachments.",
-        )
+    mailbox = email.mailbox_owner_email
+    if not mailbox or not mailbox.strip():
+        raise HTTPException(status_code=400, detail="Attachment not available for this email.")
     url = (
-        f"https://graph.microsoft.com/v1.0/users/{user_id.strip()}/messages/{email.graph_id}"
+        f"https://graph.microsoft.com/v1.0/users/{mailbox.strip()}/messages/{email.graph_id}"
         f"/attachments/{att.graph_attachment_id}"
     )
     with httpx.Client(timeout=60.0) as client:
@@ -253,19 +258,25 @@ def get_attachment(
 
 
 @router.post("/emails/backfill")
-def trigger_backfill(body: BackfillBody = Body(...)):
+def trigger_backfill(
+    body: BackfillBody = Body(...),
+    current_user_email: str = Depends(get_current_user_email),
+):
     """
     Enqueue a job to sync existing emails from Microsoft Graph into the database.
-    user_id: mailbox to sync (email or Azure AD object ID). If omitted, uses MAILBOX_EMAIL from .env.
-    PostgreSQL and Celery worker must be running for emails to appear.
+    user_id: mailbox to sync. If omitted, uses the logged-in user's email (X-User-Email).
+    Users can only sync their own mailbox unless body.user_id equals current user.
     """
-    user_id = body.user_id or get_settings().mailbox_email
+    user_id = body.user_id or current_user_email
     if not user_id or not user_id.strip():
         from fastapi.responses import JSONResponse
         return JSONResponse(
             status_code=400,
-            content={"error": "user_id is required. Set it in the request body or set MAILBOX_EMAIL in .env."},
+            content={"error": "user_id is required. Set it in the request body or send X-User-Email header."},
         )
+    if body.user_id is not None and body.user_id.strip() != current_user_email:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=403, content={"error": "You can only sync your own mailbox."})
     try:
         days = 0 if body.all else body.days
         task = backfill_emails_task.delay(user_id.strip(), body.folder_id, days)
@@ -279,11 +290,14 @@ def trigger_backfill(body: BackfillBody = Body(...)):
 @router.post("/emails/{email_id}/retry-ai")
 def retry_ai_classification(
     email_id: str = Path(..., description="Email UUID"),
+    current_user_email: str = Depends(get_current_user_email),
     db: Session = Depends(get_db),
 ):
     """Re-enqueue AI classification for a single email (e.g. after failure)."""
     email = db.query(Email).filter(Email.id == email_id).first()
     if not email:
+        raise HTTPException(status_code=404, detail="Email not found")
+    if email.mailbox_owner_email != current_user_email:
         raise HTTPException(status_code=404, detail="Email not found")
     from app.workers.tasks import classify_email_task
     classify_email_task.delay(email_id)
@@ -291,10 +305,12 @@ def retry_ai_classification(
 
 
 @router.post("/emails/classify-backfill")
-def trigger_classify_backfill(body: dict | None = Body(None)):
+def trigger_classify_backfill(
+    body: dict | None = Body(None),
+    current_user_email: str = Depends(get_current_user_email),
+):
     """
-    Enqueue AI classification for all emails that don't have it yet (e.g. ingested before Phase 2).
-    Run this once to fill category/priority/summary for existing emails. Requires OPENAI_API_KEY and Celery worker.
+    Enqueue AI classification for emails that don't have it yet (scoped to current user's mailbox).
     Optional body: {"limit": 500} to cap how many to enqueue (default 500).
     """
     settings = get_settings()
@@ -313,7 +329,7 @@ def trigger_classify_backfill(body: dict | None = Body(None)):
     except (TypeError, ValueError):
         limit = 500
     try:
-        task = backfill_classify_emails_task.delay(limit=limit)
+        task = backfill_classify_emails_task.delay(limit=limit, mailbox_owner_email=current_user_email)
         return {
             "ok": True,
             "taskId": task.id,

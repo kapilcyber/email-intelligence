@@ -136,6 +136,7 @@ def ingest_email_task(
             is_read=data.get("isRead", False),
             folder_id=folder,
             folder_name=folder_name or "Inbox",
+            mailbox_owner_email=user_id,
             status="stored",
             raw_payload={k: v for k, v in data.items() if k not in ("body",)},
         )
@@ -270,22 +271,20 @@ def classify_email_task(self, email_id: str):
 
 
 @celery_app.task(name="app.workers.tasks.backfill_classify_emails_task")
-def backfill_classify_emails_task(limit: int = 500):
+def backfill_classify_emails_task(limit: int = 500, mailbox_owner_email: str | None = None):
     """
     Enqueue classify_email_task for all emails that don't have AI classification yet.
     Use this to classify existing emails (ingested before Phase 2 or before OPENAI_API_KEY was set).
     limit: max number of emails to enqueue (default 500).
+    mailbox_owner_email: if set, only classify emails belonging to this mailbox (per-user).
     """
     _ensure_tables()
     db = SessionLocal()
     try:
-        rows = (
-            db.query(Email.id)
-            .filter(Email.ai_processed_at.is_(None))
-            .order_by(Email.received_at.desc())
-            .limit(limit)
-            .all()
-        )
+        q = db.query(Email.id).filter(Email.ai_processed_at.is_(None))
+        if mailbox_owner_email and mailbox_owner_email.strip():
+            q = q.filter(Email.mailbox_owner_email == mailbox_owner_email.strip())
+        rows = q.order_by(Email.received_at.desc()).limit(limit).all()
         ids = [r[0] for r in rows]
         for email_id in ids:
             classify_email_task.delay(email_id)

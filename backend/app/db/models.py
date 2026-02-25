@@ -48,6 +48,9 @@ class Email(Base):
     folder_id = Column(String(512), nullable=True, index=True)
     folder_name = Column(String(256), nullable=True)
 
+    # Per-user dashboard: mailbox this email belongs to (user's Outlook email or Azure AD UPN)
+    mailbox_owner_email = Column(String(512), nullable=True, index=True)
+
     status = Column(String(32), default="stored")  # stored | failed
     raw_payload = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)

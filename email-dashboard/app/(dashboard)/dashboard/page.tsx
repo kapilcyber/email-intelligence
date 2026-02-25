@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { useSession } from "next-auth/react";
 import { MetricCard } from "@/components/cards/metric-card";
 import { EmailsTable } from "@/components/tables/emails-table";
 import { Button } from "@/components/ui/button";
-import { api } from "@/lib/api/client";
+import { getApi } from "@/lib/api/client";
 import type { DashboardMetrics, EmailRecord } from "@/lib/types";
 import { Mail, ListTodo, Cpu, RefreshCw, Sparkles } from "lucide-react";
 import {
@@ -18,7 +19,12 @@ import {
   Cell,
 } from "recharts";
 
-function loadMetrics(setMetrics: (m: DashboardMetrics | null) => void, setMetricsError: (e: string | null) => void, setLoading: (b: boolean) => void) {
+function loadMetrics(
+  api: ReturnType<typeof getApi>,
+  setMetrics: (m: DashboardMetrics | null) => void,
+  setMetricsError: (e: string | null) => void,
+  setLoading: (b: boolean) => void
+) {
   setLoading(true);
   api
     .getDashboardMetrics()
@@ -27,7 +33,12 @@ function loadMetrics(setMetrics: (m: DashboardMetrics | null) => void, setMetric
     .finally(() => setLoading(false));
 }
 
-function loadEmails(setEmails: (e: EmailRecord[]) => void, setEmailsError: (e: string | null) => void, setLoading: (b: boolean) => void) {
+function loadEmails(
+  api: ReturnType<typeof getApi>,
+  setEmails: (e: EmailRecord[]) => void,
+  setEmailsError: (e: string | null) => void,
+  setLoading: (b: boolean) => void
+) {
   setLoading(true);
   api
     .getEmails({ page: 1, pageSize: 10 })
@@ -40,7 +51,13 @@ const CATEGORY_ORDER = ["Sales", "HR", "Accounts", "Tech", "General", "Spam"];
 const PRIORITY_ORDER = ["Critical", "High", "Medium", "Low", "Spam"];
 const BAR_COLORS = ["#0ea5e9", "#8b5cf6", "#10b981", "#f59e0b", "#6366f1", "#94a3b8"];
 
-function DashboardAiChartsEmpty({ onClassifyAll }: { onClassifyAll?: () => void }) {
+function DashboardAiChartsEmpty({
+  api,
+  onClassifyAll,
+}: {
+  api: ReturnType<typeof getApi>;
+  onClassifyAll?: () => void;
+}) {
   const [classifyLoading, setClassifyLoading] = useState(false);
   const [classifyMessage, setClassifyMessage] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -121,10 +138,12 @@ function DashboardAiChartsEmpty({ onClassifyAll }: { onClassifyAll?: () => void 
 }
 
 function DashboardAiCharts({
+  api,
   metrics,
   loading,
   onClassifyAll,
 }: {
+  api: ReturnType<typeof getApi>;
   metrics: DashboardMetrics | null;
   loading: boolean;
   onClassifyAll?: () => void;
@@ -168,7 +187,7 @@ function DashboardAiCharts({
   }
 
   if (!hasAny) {
-    return <DashboardAiChartsEmpty onClassifyAll={onClassifyAll} />;
+    return <DashboardAiChartsEmpty api={api} onClassifyAll={onClassifyAll} />;
   }
 
   return (
@@ -242,6 +261,8 @@ function DashboardAiCharts({
 }
 
 export default function DashboardPage() {
+  const { data: session, status } = useSession();
+  const api = useMemo(() => getApi(session?.user?.email ?? null), [session?.user?.email]);
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [emails, setEmails] = useState<EmailRecord[]>([]);
   const [loadingMetrics, setLoadingMetrics] = useState(true);
@@ -253,17 +274,19 @@ export default function DashboardPage() {
   const syncStopRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const refresh = useCallback(() => {
-    loadMetrics(setMetrics, setMetricsError, setLoadingMetrics);
-    loadEmails(setEmails, setEmailsError, setLoadingEmails);
-  }, []);
+    loadMetrics(api, setMetrics, setMetricsError, setLoadingMetrics);
+    loadEmails(api, setEmails, setEmailsError, setLoadingEmails);
+  }, [api]);
 
   useEffect(() => {
-    loadMetrics(setMetrics, setMetricsError, setLoadingMetrics);
-  }, []);
+    if (status !== "authenticated") return;
+    loadMetrics(api, setMetrics, setMetricsError, setLoadingMetrics);
+  }, [status, api]);
 
   useEffect(() => {
-    loadEmails(setEmails, setEmailsError, setLoadingEmails);
-  }, []);
+    if (status !== "authenticated") return;
+    loadEmails(api, setEmails, setEmailsError, setLoadingEmails);
+  }, [status, api]);
 
   useEffect(() => {
     return () => {
@@ -329,7 +352,7 @@ export default function DashboardPage() {
               <ol className="mt-2 list-inside list-decimal space-y-1 text-xs">
                 <li>Ensure <strong>PostgreSQL</strong> and <strong>Redis</strong> are running (health above should be healthy).</li>
                 <li>Start the <strong>Celery worker</strong> in a separate terminal: <code className="rounded bg-neutral-200 px-1 dark:bg-neutral-700">celery -A app.workers.celery_app worker --loglevel=info</code> (from the <code className="rounded bg-neutral-200 px-1 dark:bg-neutral-700">backend</code> folder).</li>
-                <li>Click <strong>Sync inbox</strong> above. The worker will fetch mail from the mailbox in your .env (<code className="rounded bg-neutral-200 px-1 dark:bg-neutral-700">MAILBOX_EMAIL</code>).</li>
+                <li>Click <strong>Sync inbox</strong> above. The worker will fetch mail from your signed-in Outlook mailbox.</li>
                 <li>Wait a few seconds, then refresh or click Sync again. If Azure app lacks <strong>Mail.Read</strong> or credentials are wrong, the worker log will show the error.</li>
               </ol>
             </div>
@@ -391,6 +414,7 @@ export default function DashboardPage() {
       </section>
 
       <DashboardAiCharts
+        api={api}
         metrics={metrics}
         loading={loadingMetrics}
         onClassifyAll={refresh}

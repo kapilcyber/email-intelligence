@@ -1,19 +1,23 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
+import { useSession } from "next-auth/react";
 import Link from "next/link";
-import { api } from "@/lib/api/client";
+import { getApi } from "@/lib/api/client";
 import { FolderOpen, Mail, ChevronRight } from "lucide-react";
 
 const DEPARTMENT_OPTIONS = ["Sales", "HR", "Accounts", "Tech", "General", "Spam"] as const;
 
 export default function DepartmentsPage() {
+  const { data: session, status } = useSession();
+  const api = useMemo(() => getApi(session?.user?.email ?? null), [session?.user?.email]);
   const [categoryCounts, setCategoryCounts] = useState<Record<string, number>>({});
   const [totalEmails, setTotalEmails] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (status !== "authenticated") return;
     setLoading(true);
     setError(null);
     api
@@ -24,7 +28,7 @@ export default function DepartmentsPage() {
       })
       .catch(() => setError("Failed to load departments"))
       .finally(() => setLoading(false));
-  }, []);
+  }, [status, api]);
 
   if (loading) {
     return (

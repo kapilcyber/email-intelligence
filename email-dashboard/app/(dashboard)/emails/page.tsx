@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { EmailsTable } from "@/components/tables/emails-table";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectItem } from "@/components/ui/select";
-import { api } from "@/lib/api/client";
+import { getApi } from "@/lib/api/client";
 import type { EmailRecord } from "@/lib/types";
 import { Search } from "lucide-react";
 
@@ -16,6 +17,8 @@ const PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 200, 500];
 const CATEGORY_OPTIONS = ["Sales", "HR", "Accounts", "Tech", "General", "Spam"] as const;
 
 export default function EmailsPage() {
+  const { data: session, status } = useSession();
+  const api = useMemo(() => getApi(session?.user?.email ?? null), [session?.user?.email]);
   const searchParams = useSearchParams();
   const categoryFromUrl = searchParams.get("category") ?? "";
   const category = categoryFromUrl && CATEGORY_OPTIONS.includes(categoryFromUrl as (typeof CATEGORY_OPTIONS)[number])
@@ -38,6 +41,7 @@ export default function EmailsPage() {
   };
 
   const load = useCallback(() => {
+    if (status !== "authenticated") return;
     setLoading(true);
     setError(null);
     api
@@ -55,7 +59,7 @@ export default function EmailsPage() {
       })
       .catch(() => setError("Failed to load emails"))
       .finally(() => setLoading(false));
-  }, [page, pageSize, search, from, to, category]);
+  }, [status, api, page, pageSize, search, from, to, category]);
 
   // Reset to page 1 when category (from URL) changes
   useEffect(() => {

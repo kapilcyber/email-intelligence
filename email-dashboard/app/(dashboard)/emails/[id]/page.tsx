@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
-import { api } from "@/lib/api/client";
+import { getApi } from "@/lib/api/client";
 import type { EmailDetail } from "@/lib/types";
 import { ArrowLeft, Paperclip, Mail, Calendar, Users, Folder, ExternalLink, Download, Sparkles, MessageSquare, AlertTriangle, RefreshCw } from "lucide-react";
 import { PriorityBadge } from "@/components/status/priority-badge";
@@ -30,6 +31,8 @@ function folderLabel(folder: string | null | undefined) {
 }
 
 export default function EmailDetailPage() {
+  const { data: session, status } = useSession();
+  const api = useMemo(() => getApi(session?.user?.email ?? null), [session?.user?.email]);
   const params = useParams();
   const router = useRouter();
   const id = typeof params.id === "string" ? params.id : "";
@@ -39,9 +42,9 @@ export default function EmailDetailPage() {
   const [retrying, setRetrying] = useState(false);
 
   useEffect(() => {
-    if (!id) {
+    if (!id || status !== "authenticated") {
+      if (!id) setError("Invalid email id");
       setLoading(false);
-      setError("Invalid email id");
       return;
     }
     setLoading(true);
@@ -51,7 +54,7 @@ export default function EmailDetailPage() {
       .then(setEmail)
       .catch(() => setError("Failed to load email"))
       .finally(() => setLoading(false));
-  }, [id]);
+  }, [id, status, api]);
 
   if (loading) {
     return (
@@ -102,13 +105,10 @@ export default function EmailDetailPage() {
   const aiFailed = email.aiStatus === "failed";
   const handleRetryAi = () => {
     setRetrying(true);
-    api
-      .retryAi(email.id)
-      .then(() => {
-        setRetrying(false);
-        api.getEmail(email.id).then(setEmail);
-      })
-      .catch(() => setRetrying(false));
+    api.retryAi(email.id).then(() => {
+      setRetrying(false);
+      api.getEmail(email.id).then(setEmail);
+    }).catch(() => setRetrying(false));
   };
 
   return (

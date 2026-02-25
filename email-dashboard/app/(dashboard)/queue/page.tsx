@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
+import { useSession } from "next-auth/react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { api } from "@/lib/api/client";
+import { getApi } from "@/lib/api/client";
 import type { QueueStatusResponse } from "@/lib/types";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip } from "recharts";
@@ -15,17 +16,20 @@ function formatUptime(seconds: number) {
 }
 
 export default function QueueMonitorPage() {
+  const { data: session, status } = useSession();
+  const api = useMemo(() => getApi(session?.user?.email ?? null), [session?.user?.email]);
   const [data, setData] = useState<QueueStatusResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (status !== "authenticated") return;
     api
       .getQueueStatus()
       .then(setData)
       .catch(() => setError("Failed to load queue status"))
       .finally(() => setLoading(false));
-  }, []);
+  }, [status, api]);
 
   if (error) {
     return (
