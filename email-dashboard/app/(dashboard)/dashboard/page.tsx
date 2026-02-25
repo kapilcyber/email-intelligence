@@ -302,7 +302,7 @@ export default function DashboardPage() {
             syncPollRef.current = null;
           }
           syncStopRef.current = null;
-        }, 35000);
+        }, 60000);
       })
       .catch((e) => setBackfillStatus(e instanceof Error ? e.message : "Sync failed."));
   };
@@ -358,7 +358,7 @@ export default function DashboardPage() {
         <MetricCard
           title="Emails Ingested Today"
           value={loadingMetrics ? "—" : metrics?.emailsIngestedToday ?? 0}
-          subtitle="Received today (UTC). Use Sync for today to pull new mail."
+          subtitle="Last 24 hours. Use Sync for today to pull new mail."
           badge={loadingMetrics ? null : <Mail className="h-4 w-4 text-neutral-400" />}
         />
         <MetricCard

@@ -1,6 +1,11 @@
-import { mockData } from "@/lib/api/mock";
 import { NextResponse } from "next/server";
 
 export async function GET() {
-  return NextResponse.json(mockData.settings());
+  return NextResponse.json({
+    tenantId: "",
+    graphClientId: "",
+    redisHost: "",
+    databaseHost: "",
+    environment: "development",
+  });
 }

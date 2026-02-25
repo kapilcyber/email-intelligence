@@ -23,7 +23,7 @@ cd email-dashboard && npm install && npm run dev
 
 Open [http://localhost:3000](http://localhost:3000). The dashboard uses the Phase 1 backend API.
 
-**Mock only:** Remove or rename `.env.local`, or set `NEXT_PUBLIC_API_URL=` in `.env.local`. Then `npm run dev` uses the built-in mock API routes.
+**Without backend:** Remove or rename `.env.local`, or set `NEXT_PUBLIC_API_URL=` in `.env.local`. Then `npm run dev` uses the built-in API routes (they return empty data until a backend is configured).
 
 ## Routes
 
@@ -46,7 +46,7 @@ Typed client: `lib/api/client.ts`. When `NEXT_PUBLIC_API_URL` is set (e.g. in `.
 - `GET /api/queue/status`
 - `GET /api/settings`
 
-With no `NEXT_PUBLIC_API_URL`, the app uses Next.js mock API routes under `app/api/`.
+With no `NEXT_PUBLIC_API_URL`, the app uses Next.js API routes under `app/api/` (empty responses).
 
 ## Structure
 
@@ -66,6 +66,6 @@ components/
   status/               # StatusBadge
   ui/                   # Button, Card, Badge, Input, Skeleton, Dropdown, Select
 lib/
-  api/                  # client.ts, mock.ts
+  api/                  # client.ts
   types/                # Shared TypeScript interfaces
 ```

@@ -1,6 +1,10 @@
-import { mockData } from "@/lib/api/mock";
 import { NextResponse } from "next/server";
 
 export async function GET() {
-  return NextResponse.json(mockData.health());
+  return NextResponse.json({
+    status: "healthy",
+    timestamp: new Date().toISOString(),
+    version: "1.0.0",
+    services: { database: "healthy", redis: "healthy", graph: "healthy" },
+  });
 }

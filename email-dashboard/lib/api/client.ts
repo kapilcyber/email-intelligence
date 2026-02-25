@@ -8,7 +8,11 @@ import type {
   SystemHealthResponse,
 } from "@/lib/types";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
+// Backend URL: from NEXT_PUBLIC_API_URL or default for local dev so frontend always fetches from FastAPI
+const API_BASE =
+  (typeof process !== "undefined" && process.env.NEXT_PUBLIC_API_URL?.trim())
+    ? process.env.NEXT_PUBLIC_API_URL.trim().replace(/\/$/, "")
+    : "http://localhost:8000";
 
 async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {

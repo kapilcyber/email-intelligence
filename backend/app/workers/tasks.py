@@ -376,8 +376,8 @@ def backfill_emails_task(user_id: str, folder_id: str = "inbox", days: int = 7):
     if days <= 0:
         since = "2000-01-01T00:00:00Z"
     elif days == 1:
-        # Sync for today: from midnight today (UTC) to now — all of today's emails
-        since = now_utc.replace(hour=0, minute=0, second=0, microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
+        # Sync for today: last 24 hours so new mail is included regardless of timezone
+        since = (now_utc - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
     else:
         since = (now_utc - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
     # Newest first so recent emails are ingested first and show up quickly in the UI
