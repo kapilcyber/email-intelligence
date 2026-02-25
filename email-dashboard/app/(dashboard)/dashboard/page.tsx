@@ -249,6 +249,8 @@ export default function DashboardPage() {
   const [metricsError, setMetricsError] = useState<string | null>(null);
   const [emailsError, setEmailsError] = useState<string | null>(null);
   const [backfillStatus, setBackfillStatus] = useState<string | null>(null);
+  const syncPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const syncStopRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const refresh = useCallback(() => {
     loadMetrics(setMetrics, setMetricsError, setLoadingMetrics);
@@ -263,19 +265,44 @@ export default function DashboardPage() {
     loadEmails(setEmails, setEmailsError, setLoadingEmails);
   }, []);
 
-  const onSyncInbox = (syncAll = false) => {
+  useEffect(() => {
+    return () => {
+      if (syncPollRef.current) clearInterval(syncPollRef.current);
+      if (syncStopRef.current) clearTimeout(syncStopRef.current);
+    };
+  }, []);
+
+  const onSyncInbox = (syncAll = false, days?: number) => {
     setBackfillStatus(null);
+    if (syncPollRef.current) {
+      clearInterval(syncPollRef.current);
+      syncPollRef.current = null;
+    }
+    if (syncStopRef.current) {
+      clearTimeout(syncStopRef.current);
+      syncStopRef.current = null;
+    }
+    const body = syncAll ? { all: true } : days !== undefined ? { days } : {};
     api
-      .triggerBackfill(syncAll ? { all: true } : {})
+      .triggerBackfill(body)
       .then((r) => {
-        const msg = r.message ?? "Sync started. Refresh in a few seconds.";
+        const msg = r.message ?? "Sync started. Refreshing automatically.";
         const noWorkers = (metrics?.activeWorkers ?? 0) === 0;
         setBackfillStatus(
           noWorkers
             ? `${msg} If emails don’t appear, start a Celery worker: celery -A app.workers.celery_app worker --loglevel=info (from the backend folder).`
             : msg
         );
-        setTimeout(refresh, 3000);
+        refresh();
+        setTimeout(() => refresh(), 1000);
+        syncPollRef.current = setInterval(() => refresh(), 2500);
+        syncStopRef.current = setTimeout(() => {
+          if (syncPollRef.current) {
+            clearInterval(syncPollRef.current);
+            syncPollRef.current = null;
+          }
+          syncStopRef.current = null;
+        }, 35000);
       })
       .catch((e) => setBackfillStatus(e instanceof Error ? e.message : "Sync failed."));
   };
@@ -309,6 +336,10 @@ export default function DashboardPage() {
           )}
         </div>
         <div className="flex shrink-0 gap-2">
+          <Button variant="outline" size="sm" onClick={() => onSyncInbox(false, 1)}>
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Sync for today
+          </Button>
           <Button variant="outline" size="sm" onClick={() => onSyncInbox(false)}>
             <RefreshCw className="mr-2 h-4 w-4" />
             Sync inbox (7 days)
@@ -327,6 +358,7 @@ export default function DashboardPage() {
         <MetricCard
           title="Emails Ingested Today"
           value={loadingMetrics ? "—" : metrics?.emailsIngestedToday ?? 0}
+          subtitle="Received today (UTC). Use Sync for today to pull new mail."
           badge={loadingMetrics ? null : <Mail className="h-4 w-4 text-neutral-400" />}
         />
         <MetricCard

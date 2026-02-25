@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -13,7 +13,7 @@ router = APIRouter()
 @router.get("/metrics")
 def dashboard_metrics(db: Session = Depends(get_db)):
     try:
-        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
         emails_today = db.query(func.count(Email.id)).filter(Email.received_at >= today_start).scalar() or 0
     except (OperationalError, Exception):
         emails_today = 0

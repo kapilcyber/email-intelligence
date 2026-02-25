@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, Response
 
-from app.api import health, webhook, emails, dashboard, queue, settings as settings_api, system as system_api
+from app.api import health, webhook, emails, dashboard, queue, settings as settings_api, system as system_api, phase3 as phase3_api
 from app.config import get_settings
 
 settings = get_settings()
@@ -27,6 +27,7 @@ app.include_router(dashboard.router, prefix="/api/dashboard", tags=["dashboard"]
 app.include_router(queue.router, prefix="/api/queue", tags=["queue"])
 app.include_router(settings_api.router, prefix="/api", tags=["settings"])
 app.include_router(system_api.router, prefix="/api", tags=["system"])
+app.include_router(phase3_api.router, prefix="/api", tags=["phase3"])
 
 
 @app.get("/")
