@@ -52,7 +52,22 @@ FastAPI backend for email ingestion (Phase 1) and AI classification (Phase 2): M
    - **Without PostgreSQL:** The API runs without a database: health reports database as "error", dashboard metrics and emails return zeros/empty. Start the API and dashboard as usual; the UI will load and show "Database or backend may be unavailable" if the backend is unreachable.
    - **Redis** is used for Celery and queue stats. If Redis is not running, health reports redis as "error" and queue stats return zeros; the API still responds.
 
-4. **Environment**
+4. **Database migrations (Alembic)**  
+   From the `backend` folder, apply migrations to create or update the schema:
+   ```bash
+   alembic upgrade head
+   ```
+   If the database already has tables (e.g. created earlier with `create_all` or scripts), mark it as current without running the initial migration:
+   ```bash
+   alembic stamp head
+   ```
+   To create a new migration after changing `app/db/models.py`:
+   ```bash
+   alembic revision --autogenerate -m "description of change"
+   alembic upgrade head
+   ```
+
+5. **Environment**
    ```bash
    cp .env.example .env
    # Edit .env: AZURE_*, MAILBOX_EMAIL, DB/Redis URLs. For Phase 2 AI classification add OPENAI_API_KEY (and optionally OPENAI_MODEL, default gpt-4o-mini).

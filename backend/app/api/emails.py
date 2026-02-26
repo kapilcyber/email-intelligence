@@ -2,7 +2,7 @@ import base64
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, Query, Body, Path, HTTPException
 from fastapi.responses import Response
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.exc import OperationalError
 from pydantic import BaseModel, Field
 import httpx
@@ -159,10 +159,14 @@ def get_email(
 ):
     """Get full email details including body and attachments (from stored data; uses Graph credentials during ingest)."""
     try:
-        email = db.query(Email).filter(Email.id == email_id).first()
+        email = (
+            db.query(Email)
+            .options(joinedload(Email.attachments))
+            .filter(Email.id == email_id)
+            .first()
+        )
         if not email:
             raise HTTPException(status_code=404, detail="Email not found")
-        atts = db.query(Attachment).filter(Attachment.email_id == email_id).all()
         return EmailDetailOut(
             id=email.id,
             messageId=email.message_id,
@@ -177,7 +181,7 @@ def get_email(
             bodyPreview=email.body_preview,
             bodyContent=email.body_content,
             bodyContentType=email.body_content_type,
-            attachments=[AttachmentOut(id=a.id, name=a.name, content_type=a.content_type, size=a.size, is_inline=a.is_inline) for a in atts],
+            attachments=[AttachmentOut(id=a.id, name=a.name, content_type=a.content_type, size=a.size, is_inline=a.is_inline) for a in email.attachments],
             status=email.status,
             summary=getattr(email, "ai_summary", None) or None,
             category=getattr(email, "ai_category", None),

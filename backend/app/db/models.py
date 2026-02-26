@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import Column, String, Text, DateTime, Boolean, ForeignKey, Integer, Index, Float
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
@@ -11,14 +11,18 @@ def uuid_gen():
     return str(uuid.uuid4())
 
 
+def utc_now():
+    return datetime.now(timezone.utc)
+
+
 class Sender(Base):
     __tablename__ = "senders"
 
     id = Column(String(36), primary_key=True, default=uuid_gen)
     email = Column(String(512), unique=True, nullable=False, index=True)
     display_name = Column(String(512), nullable=True)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utc_now)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
     emails = relationship("Email", back_populates="sender_rel", foreign_keys="Email.sender_id")
 
@@ -50,8 +54,8 @@ class Email(Base):
 
     status = Column(String(32), default="stored")  # stored | failed
     raw_payload = Column(JSONB, nullable=True)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utc_now)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
     # Processing state: received -> ingested -> classified | failed
     processing_status = Column(String(32), default="ingested", index=True)  # received | ingested | classified | failed
@@ -66,6 +70,11 @@ class Email(Base):
     ai_status = Column(String(32), default="pending", index=True)  # pending | completed | failed
     ai_error_message = Column(Text, nullable=True)
     ai_confidence_score = Column(Float, nullable=True)  # optional 0-1
+
+    # Phase 3 — escalations, leads, routing
+    is_escalation = Column(Boolean, default=False, index=True)
+    lead_label = Column(String(32), nullable=True, index=True)  # e.g. Hot, Warm, Cold
+    assigned_team = Column(String(64), nullable=True, index=True)
 
     sender_rel = relationship("Sender", back_populates="emails", foreign_keys=[sender_id])
     attachments = relationship("Attachment", back_populates="email", cascade="all, delete-orphan")
@@ -82,7 +91,7 @@ class Attachment(Base):
     content_type = Column(String(256), nullable=True)
     size = Column(Integer, nullable=True)
     is_inline = Column(Boolean, default=False)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utc_now)
 
     email = relationship("Email", back_populates="attachments")
 
