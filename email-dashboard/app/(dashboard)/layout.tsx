@@ -12,7 +12,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <Sidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} />
       <div className="flex flex-1 flex-col overflow-hidden">
         <Topbar environment={env} />
-        <main className="flex-1 overflow-auto p-4 md:p-6">{children}</main>
+        <main className="flex-1 overflow-auto bg-[#F8F9FA] p-4 md:p-6 dark:bg-neutral-950">{children}</main>
       </div>
     </div>
   );

@@ -1,93 +1,68 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
 import { signOut } from "next-auth/react";
-import { Moon, Sun, LogOut } from "lucide-react";
+import { Calendar, Search, Moon, Sun, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
-import { api } from "@/lib/api/client";
-import type { SystemStatus, HealthResponse } from "@/lib/types";
+import type { SystemStatus } from "@/lib/types";
 
-const statusConfig: Record<SystemStatus, { label: string; dotClass: string }> = {
-  healthy: { label: "Operational", dotClass: "bg-emerald-500" },
-  degraded: { label: "Degraded", dotClass: "bg-amber-500" },
-  error: { label: "Error", dotClass: "bg-red-500" },
+const pathToLabel: Record<string, string> = {
+  "/dashboard": "Dashboard",
+  "/emails": "History",
+  "/departments": "Departments",
+  "/queue": "Queue",
+  "/settings": "Settings",
+  "/profile": "Profile",
+  "/webhook": "Webhook",
 };
 
-function statusDetail(services: HealthResponse["services"] | null): string {
-  if (!services) return "";
-  const parts: string[] = [];
-  if (services.database !== "healthy") parts.push(`DB: ${services.database}`);
-  if (services.redis !== "healthy") parts.push(`Redis: ${services.redis}`);
-  if (services.graph !== "healthy") parts.push(`Graph: ${services.graph}`);
-  return parts.length ? parts.join(", ") : "";
+function getPageLabel(pathname: string): string {
+  for (const [path, label] of Object.entries(pathToLabel)) {
+    if (pathname === path || (path !== "/dashboard" && pathname.startsWith(path))) return label;
+  }
+  return "Dashboard";
 }
 
-export function Topbar({
-  systemStatus: initialStatus,
-  environment = "Dev",
-}: {
-  systemStatus?: SystemStatus;
-  environment?: string;
-}) {
+export function Topbar({ environment = "Dev" }: { systemStatus?: SystemStatus; environment?: string }) {
+  const pathname = usePathname();
   const { theme, setTheme } = useTheme();
-  const [status, setStatus] = useState<SystemStatus>(initialStatus ?? "healthy");
-  const [healthDetail, setHealthDetail] = useState<HealthResponse["services"] | null>(null);
+  const pageLabel = getPageLabel(pathname);
 
-  useEffect(() => {
-    const fetchHealth = () => {
-      api
-        .getHealth()
-        .then((r) => {
-          setStatus(r.status);
-          setHealthDetail(r.services);
-        })
-        .catch(() => {
-          setStatus("error");
-          setHealthDetail(null);
-        });
-    };
-    fetchHealth();
-    const interval = setInterval(fetchHealth, 20000);
-    return () => clearInterval(interval);
-  }, []);
-  const { label, dotClass } = statusConfig[status];
-  const detail = statusDetail(healthDetail);
-  const statusText = detail ? `${label} (${detail})` : label;
-  const toggleTheme = () => setTheme(theme === "dark" ? "light" : "dark");
   return (
-    <header className="flex h-14 items-center justify-between border-b border-neutral-200 bg-white px-4 dark:border-neutral-800 dark:bg-neutral-950">
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className={cn("h-2 w-2 shrink-0 rounded-full", dotClass)} aria-hidden />
-          <span className="text-sm text-neutral-600 dark:text-neutral-400 truncate" title={statusText}>
-            {statusText}
-          </span>
-        </div>
-        <Badge variant="secondary" className="font-normal shrink-0">
-          {environment}
-        </Badge>
+    <header className="flex h-14 items-center justify-between gap-4 border-b border-neutral-200 bg-white px-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
+      {/* Breadcrumbs */}
+      <div className="flex min-w-0 items-center gap-2">
+        <Calendar className="h-4 w-4 shrink-0 text-neutral-500 dark:text-neutral-400" />
+        <nav className="flex items-center gap-1.5 text-sm">
+          <span className="text-neutral-500 dark:text-neutral-400">Email Intelligence</span>
+          <span className="text-neutral-400 dark:text-neutral-500">&gt;</span>
+          <span className="font-medium text-neutral-900 dark:text-neutral-100">{pageLabel}</span>
+        </nav>
       </div>
-      <div className="flex items-center gap-1">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => signOut({ callbackUrl: "/signin" })}
-          aria-label="Sign out"
-          title="Sign out"
-        >
-          <LogOut className="h-5 w-5" />
+
+      {/* Search */}
+      <div className="hidden flex-1 max-w-md md:flex">
+        <div className="flex w-full items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50/80 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-800/50">
+          <Search className="h-4 w-4 shrink-0 text-neutral-400" />
+          <input
+            type="search"
+            placeholder="Search projects..."
+            className="min-w-0 flex-1 bg-transparent text-neutral-900 placeholder-neutral-500 outline-none dark:text-neutral-100 dark:placeholder-neutral-400"
+            readOnly
+            aria-label="Search"
+          />
+        </div>
+      </div>
+
+      {/* Right actions */}
+      <div className="flex shrink-0 items-center gap-1">
+        <Button variant="ghost" size="icon" onClick={() => setTheme(theme === "dark" ? "light" : "dark")} className="rounded-lg" aria-label="Toggle theme">
+          <Sun className="h-4 w-4 dark:hidden" />
+          <Moon className="hidden h-4 w-4 dark:block" />
         </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={toggleTheme}
-          aria-label="Toggle dark mode"
-        >
-          <Sun className="h-5 w-5 dark:hidden" />
-          <Moon className="hidden h-5 w-5 dark:block" />
+        <Button variant="ghost" size="icon" onClick={() => signOut({ callbackUrl: "/signin" })} className="rounded-lg" aria-label="Sign out">
+          <LogOut className="h-4 w-4" />
         </Button>
       </div>
     </header>

@@ -2,12 +2,12 @@
 
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useSession } from "next-auth/react";
-import { MetricCard } from "@/components/cards/metric-card";
-import { EmailsTable } from "@/components/tables/emails-table";
 import { Button } from "@/components/ui/button";
 import { getApi } from "@/lib/api/client";
+import { cn } from "@/lib/utils";
 import type { DashboardMetrics, EmailRecord } from "@/lib/types";
-import { Mail, ListTodo, Cpu, RefreshCw, Sparkles } from "lucide-react";
+import Link from "next/link";
+import { RefreshCw, Sparkles, FileText, FileEdit, FileStack, ClipboardList, MoreHorizontal, Plus } from "lucide-react";
 import {
   BarChart,
   Bar,
@@ -330,109 +330,191 @@ export default function DashboardPage() {
       .catch((e) => setBackfillStatus(e instanceof Error ? e.message : "Sync failed."));
   };
 
+  const [classifyLoading, setClassifyLoading] = useState(false);
+  const onClassifyAll = () => {
+    setClassifyLoading(true);
+    api
+      .triggerClassifyBackfill()
+      .then(() => refresh())
+      .finally(() => setClassifyLoading(false));
+  };
+
+  const actionCards = [
+    { label: "Sync for today", icon: FileText, onClick: () => onSyncInbox(false, 1) },
+    { label: "Sync inbox (7 days)", icon: FileEdit, onClick: () => onSyncInbox(false) },
+    { label: "Sync all emails", icon: FileStack, onClick: () => onSyncInbox(true) },
+    { label: "Classify all", icon: ClipboardList, onClick: onClassifyAll },
+  ];
+
+  const kpiCards = [
+    { title: "Emails Today", value: loadingMetrics ? "—" : (metrics?.emailsIngestedToday ?? 0), subtitle: "Received today" },
+    { title: "Queue Size", value: loadingMetrics ? "—" : (metrics?.queueSize ?? 0), subtitle: "Tasks pending" },
+    { title: "Workers", value: loadingMetrics ? "—" : `${metrics?.activeWorkers ?? 0} active`, subtitle: "Active workers" },
+    { title: "Classified", value: loadingMetrics ? "—" : `${metrics?.totalClassified ?? 0} / ${metrics?.totalEmails ?? 0}`, subtitle: "Total emails" },
+  ];
+
+  const teamPlaceholders = [
+    { name: "Jerome Bell", role: "Creative Director" },
+    { name: "Brooklyn Simmons", role: "UI Designer" },
+    { name: "Cameroon Williamson", role: "Project Manager" },
+  ];
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-50">Dashboard</h1>
-          <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-            Email ingestion, queue, and AI classification stats
-          </p>
-          {(metricsError || emailsError) && (
-            <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
-              {[metricsError, emailsError].filter(Boolean).join(" • ")} — Database or backend may be unavailable.
-            </p>
-          )}
-          {!metricsError && !emailsError && emails.length === 0 && (metrics?.emailsIngestedToday ?? 0) === 0 && (
-            <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
-              <p className="font-medium">Why no emails?</p>
-              <p className="mt-1 text-xs">
-                Emails are synced from Microsoft Graph, not shown by default. Do this in order:
-              </p>
-              <ol className="mt-2 list-inside list-decimal space-y-1 text-xs">
-                <li>Ensure <strong>PostgreSQL</strong> and <strong>Redis</strong> are running (health above should be healthy).</li>
-                <li>Start the <strong>Celery worker</strong> in a separate terminal: <code className="rounded bg-neutral-200 px-1 dark:bg-neutral-700">celery -A app.workers.celery_app worker --loglevel=info</code> (from the <code className="rounded bg-neutral-200 px-1 dark:bg-neutral-700">backend</code> folder).</li>
-                <li>Click <strong>Sync inbox</strong> above. The worker will fetch mail from your signed-in Outlook mailbox.</li>
-                <li>Wait a few seconds, then refresh or click Sync again. If Azure app lacks <strong>Mail.Read</strong> or credentials are wrong, the worker log will show the error.</li>
-              </ol>
-            </div>
-          )}
-        </div>
-        <div className="flex shrink-0 gap-2">
-          <Button variant="outline" size="sm" onClick={() => onSyncInbox(false, 1)}>
-            <RefreshCw className="mr-2 h-4 w-4" />
-            Sync for today
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => onSyncInbox(false)}>
-            <RefreshCw className="mr-2 h-4 w-4" />
-            Sync inbox (7 days)
-          </Button>
-          <Button variant="default" size="sm" onClick={() => onSyncInbox(true)}>
-            <RefreshCw className="mr-2 h-4 w-4" />
-            Sync all emails
-          </Button>
-        </div>
-      </div>
+      {(metricsError || emailsError) && (
+        <p className="text-xs text-amber-600 dark:text-amber-400">
+          {[metricsError, emailsError].filter(Boolean).join(" • ")} — Database or backend may be unavailable.
+        </p>
+      )}
       {backfillStatus && (
         <p className="text-sm text-neutral-600 dark:text-neutral-400">{backfillStatus}</p>
       )}
+      {!metricsError && !emailsError && emails.length === 0 && (metrics?.emailsIngestedToday ?? 0) === 0 && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+          <p className="font-medium">Why no emails?</p>
+          <p className="mt-1 text-xs">Ensure PostgreSQL, Redis, and Celery worker are running, then use <strong>Sync for today</strong> or <strong>Sync inbox</strong> below.</p>
+        </div>
+      )}
 
-      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        <MetricCard
-          title="Emails Ingested Today"
-          value={loadingMetrics ? "—" : metrics?.emailsIngestedToday ?? 0}
-          subtitle="Received today (UTC). Use Sync for today to pull new mail."
-          badge={loadingMetrics ? null : <Mail className="h-4 w-4 text-neutral-400" />}
-        />
-        <MetricCard
-          title="Queue Size"
-          value={loadingMetrics ? "—" : metrics?.queueSize ?? 0}
-          subtitle="Tasks pending"
-          badge={loadingMetrics ? null : <ListTodo className="h-4 w-4 text-neutral-400" />}
-        />
-        <MetricCard
-          title="Worker Status"
-          value={loadingMetrics ? "—" : `${metrics?.activeWorkers ?? 0} active`}
-          badge={loadingMetrics ? null : <Cpu className="h-4 w-4 text-neutral-400" />}
-        />
-        <MetricCard
-          title="Classified / Unclassified"
-          value={
-            loadingMetrics
-              ? "—"
-              : `${metrics?.totalClassified ?? 0} / ${(metrics?.totalEmails ?? 0) - (metrics?.totalClassified ?? 0)}`
-          }
-          subtitle={`${metrics?.totalClassified ?? 0} of ${metrics?.totalEmails ?? 0} total`}
-          badge={loadingMetrics ? null : <Sparkles className="h-4 w-4 text-neutral-400" />}
-        />
-        <MetricCard
-          title="AI Failures"
-          value={loadingMetrics ? "—" : metrics?.aiFailureCount ?? 0}
-          subtitle="Classification failed"
-          badge={loadingMetrics ? null : <Sparkles className="h-4 w-4 text-neutral-400" />}
-        />
+      {/* Action cards row */}
+      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {actionCards.map(({ label, icon: Icon, onClick }) => (
+          <button
+            key={label}
+            type="button"
+            onClick={onClick}
+            disabled={(label === "Classify all" && classifyLoading) || (label.startsWith("Sync") && loadingMetrics)}
+            className="flex flex-col items-center gap-3 rounded-xl border border-neutral-200 bg-white p-6 text-left shadow-sm transition hover:border-neutral-300 hover:shadow dark:border-neutral-700 dark:bg-neutral-900/50 dark:hover:border-neutral-600"
+          >
+            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400">
+              <Icon className="h-6 w-6" />
+            </div>
+            <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">{label}</span>
+          </button>
+        ))}
       </section>
 
-      <DashboardAiCharts
-        api={api}
-        metrics={metrics}
-        loading={loadingMetrics}
-        onClassifyAll={refresh}
-      />
+      {/* KPI cards */}
+      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {kpiCards.map(({ title, value, subtitle }) => (
+          <div
+            key={title}
+            className="relative rounded-xl border border-neutral-200 bg-white p-5 shadow-sm dark:border-neutral-700 dark:bg-neutral-900/50"
+          >
+            <button type="button" className="absolute right-2 top-2 rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600 dark:hover:bg-neutral-700 dark:hover:text-neutral-300" aria-label="More">
+              <MoreHorizontal className="h-4 w-4" />
+            </button>
+            <p className="text-sm font-medium text-neutral-500 dark:text-neutral-400">{title}</p>
+            <p className="mt-1 text-2xl font-semibold text-neutral-900 dark:text-neutral-100">{value}</p>
+            <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">{subtitle}</p>
+          </div>
+        ))}
+      </section>
 
+      {/* Time-Based Activity Map + right column */}
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm dark:border-neutral-700 dark:bg-neutral-900/50">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">Time-Based Activity Map</h2>
+              <div className="flex rounded-lg border border-neutral-200 dark:border-neutral-600">
+                <button type="button" className="rounded-l-md bg-[#1E1E1E] px-3 py-1.5 text-xs font-medium text-white dark:bg-neutral-700">Daily</button>
+                <button type="button" className="px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-700">Weekly</button>
+                <button type="button" className="px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-700">Monthly</button>
+                <button type="button" className="rounded-r-md px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-700">Yearly</button>
+              </div>
+            </div>
+            <DashboardAiCharts api={api} metrics={metrics} loading={loadingMetrics} onClassifyAll={refresh} />
+          </section>
+        </div>
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm dark:border-neutral-700 dark:bg-neutral-900/50">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">Team</h2>
+              <button type="button" className="rounded p-1 text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-700" aria-label="More">
+                <MoreHorizontal className="h-4 w-4" />
+              </button>
+            </div>
+            <ul className="space-y-3">
+              {teamPlaceholders.map((p, i) => (
+                <li key={i} className="flex items-center gap-3">
+                  <div className="h-9 w-9 rounded-full bg-neutral-200 dark:bg-neutral-600 flex items-center justify-center text-xs font-medium text-neutral-600 dark:text-neutral-300">
+                    {p.name.split(" ").map((n) => n[0]).join("")}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-neutral-900 dark:text-neutral-100">{p.name}</p>
+                    <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">{p.role}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm dark:border-neutral-700 dark:bg-neutral-900/50">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">Upcoming Meeting</h2>
+              <button type="button" className="rounded p-1 text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-700" aria-label="More">
+                <MoreHorizontal className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="rounded-lg border border-neutral-200 bg-neutral-50/50 p-3 dark:border-neutral-700 dark:bg-neutral-800/50">
+              <p className="font-medium text-neutral-900 dark:text-neutral-100">Dev Sync Meeting</p>
+              <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">Monday, Feb 8 — 10:00 AM</p>
+              <div className="mt-2 flex items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400">
+                <span>61 comments</span>
+                <span>1 attachment</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Today Projects — recent emails as cards */}
       <section>
-        <h2 className="mb-3 text-sm font-semibold text-neutral-700 dark:text-neutral-300">
-          Recent emails
-        </h2>
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">Today Projects</h2>
+          <Link href="/emails">
+            <Button size="sm" className="gap-1.5 rounded-lg">
+              <Plus className="h-4 w-4" />
+              New Project
+            </Button>
+          </Link>
+        </div>
         {emailsError && (
           <p className="mb-2 text-xs text-amber-600 dark:text-amber-400">{emailsError}</p>
         )}
-        <EmailsTable
-          emails={emails}
-          isLoading={loadingEmails}
-          emptyMessage={emailsError ? "Could not load emails." : "No recent emails."}
-          getEmailLink={(e) => `/emails/${e.id}`}
-        />
+        {loadingEmails ? (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-32 animate-pulse rounded-xl border border-neutral-200 bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800" />
+            ))}
+          </div>
+        ) : emails.length === 0 ? (
+          <div className="flex flex-col items-center justify-center rounded-xl border border-neutral-200 bg-neutral-50/50 py-12 dark:border-neutral-700 dark:bg-neutral-900/30">
+            <p className="text-sm text-neutral-500 dark:text-neutral-400">{emailsError ? "Could not load emails." : "No recent emails."}</p>
+          </div>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {emails.slice(0, 6).map((e) => (
+              <Link key={e.id} href={`/emails/${e.id}`} className="group block rounded-xl border border-neutral-200 bg-white p-4 text-left shadow-sm transition hover:border-neutral-300 hover:shadow dark:border-neutral-700 dark:bg-neutral-900/50 dark:hover:border-neutral-600">
+                <div className="flex items-start justify-between gap-2">
+                  <span className="text-sm font-medium text-neutral-900 dark:text-neutral-100 line-clamp-1">{e.subject || "No subject"}</span>
+                  <button type="button" className="shrink-0 rounded p-1 text-neutral-400 opacity-0 group-hover:opacity-100 hover:bg-neutral-100 dark:hover:bg-neutral-700" aria-label="More" onClick={(ev) => ev.preventDefault()}>
+                    <MoreHorizontal className="h-4 w-4" />
+                  </button>
+                </div>
+                <span
+                  className={cn(
+                    "mt-2 inline-block rounded px-2 py-0.5 text-xs font-medium",
+                    (e.ai_priority_label === "Critical" || e.ai_priority_label === "High") ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300" : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                  )}
+                >
+                  {e.ai_priority_label || "Medium"}
+                </span>
+                <p className="mt-2 line-clamp-2 text-xs text-neutral-500 dark:text-neutral-400">{e.body_preview || "No preview"}</p>
+              </Link>
+            ))}
+          </div>
+        )}
       </section>
     </div>
   );
