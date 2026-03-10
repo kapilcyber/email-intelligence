@@ -1,4 +1,4 @@
-"""Add Phase 3 columns (routing, escalation, leads, trust) if missing. Run from backend: python scripts/add_phase3_columns.py"""
+"""Add Phase 3 columns (escalation, leads, assigned_team) to emails table. Run from backend: python scripts/add_phase3_columns.py"""
 import sys
 from pathlib import Path
 
@@ -24,29 +24,18 @@ def main():
     get_settings()
     added = []
     with engine.connect() as conn:
-        # emails
-        if not column_exists(conn, "emails", "assigned_team"):
-            conn.execute(text("ALTER TABLE emails ADD COLUMN assigned_team VARCHAR(64)"))
-            added.append("emails.assigned_team")
         if not column_exists(conn, "emails", "is_escalation"):
             conn.execute(text("ALTER TABLE emails ADD COLUMN is_escalation BOOLEAN DEFAULT FALSE"))
-            added.append("emails.is_escalation")
-        if not column_exists(conn, "emails", "escalation_metadata"):
-            conn.execute(text("ALTER TABLE emails ADD COLUMN escalation_metadata JSONB"))
-            added.append("emails.escalation_metadata")
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_emails_is_escalation ON emails (is_escalation)"))
+            added.append("is_escalation")
+        if not column_exists(conn, "emails", "assigned_team"):
+            conn.execute(text("ALTER TABLE emails ADD COLUMN assigned_team VARCHAR(64)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_emails_assigned_team ON emails (assigned_team)"))
+            added.append("assigned_team")
         if not column_exists(conn, "emails", "lead_label"):
-            conn.execute(text("ALTER TABLE emails ADD COLUMN lead_label VARCHAR(16)"))
-            added.append("emails.lead_label")
-        if not column_exists(conn, "emails", "is_spam"):
-            conn.execute(text("ALTER TABLE emails ADD COLUMN is_spam BOOLEAN DEFAULT FALSE"))
-            added.append("emails.is_spam")
-        # senders
-        if not column_exists(conn, "senders", "trust_score"):
-            conn.execute(text("ALTER TABLE senders ADD COLUMN trust_score FLOAT"))
-            added.append("senders.trust_score")
-        if not column_exists(conn, "senders", "importance_weight"):
-            conn.execute(text("ALTER TABLE senders ADD COLUMN importance_weight FLOAT"))
-            added.append("senders.importance_weight")
+            conn.execute(text("ALTER TABLE emails ADD COLUMN lead_label VARCHAR(32)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_emails_lead_label ON emails (lead_label)"))
+            added.append("lead_label")
         conn.commit()
     if added:
         print("Added columns:", ", ".join(added))

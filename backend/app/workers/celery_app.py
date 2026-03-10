@@ -1,6 +1,11 @@
+# Must run before Celery/billiard: time.clock() was removed in Python 3.13; billiard still references it.
+import time
+time.clock = getattr(time, "perf_counter", time.time)
+
 import logging
 import sys
 from celery import Celery
+from celery.schedules import crontab
 from celery.signals import worker_init
 from app.config import get_settings
 
@@ -28,6 +33,17 @@ celery_app.conf.update(
     task_max_retries=5,
     broker_connection_retry_on_startup=True,
 )
+# End-of-day summary: run daily at configured hour (default 23:00 UTC)
+celery_app.conf.beat_schedule = {
+    "daily-summary": {
+        "task": "app.workers.tasks.generate_daily_summary_task",
+        "schedule": crontab(
+            hour=settings.daily_summary_hour_utc,
+            minute=settings.daily_summary_minute_utc,
+        ),
+        "options": {"queue": "celery"},
+    },
+}
 # On Windows, default prefork pool can raise "ValueError: not enough values to unpack" in Celery trace
 if sys.platform == "win32":
     celery_app.conf.worker_pool = "solo"

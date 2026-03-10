@@ -1,9 +1,18 @@
+# Compatibility: time.clock() removed in Python 3.13; SQLAlchemy and others still reference it.
+import time
+time.clock = getattr(time, "perf_counter", time.time)
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, Response
 
-from app.api import health, webhook, emails, dashboard, queue, settings as settings_api, system as system_api, phase3 as phase3_api
+from fastapi import Depends, Header
+
+from app.api import health, webhook, emails, dashboard, queue, settings as settings_api, system as system_api, phase3 as phase3_api, admin as admin_api
+from app.api.deps import get_current_user_email
 from app.config import get_settings
+from app.db.session import get_db
+from app.db.models import User
 
 settings = get_settings()
 app = FastAPI(
@@ -28,6 +37,7 @@ app.include_router(queue.router, prefix="/api/queue", tags=["queue"])
 app.include_router(settings_api.router, prefix="/api", tags=["settings"])
 app.include_router(system_api.router, prefix="/api", tags=["system"])
 app.include_router(phase3_api.router, prefix="/api", tags=["phase3"])
+app.include_router(admin_api.router, prefix="/api/admin", tags=["admin"])
 
 
 @app.get("/")
@@ -41,6 +51,38 @@ def root():
 def api_root():
     """Avoid 404 when requesting GET /api or GET /api/."""
     return {"name": "Email Intelligence API", "docs": "/docs", "health": "/api/health"}
+
+
+@app.get("/api/me")
+def api_me(
+    email: str = Depends(get_current_user_email),
+    db=Depends(get_db),
+    x_user_name: str | None = Header(None, alias="X-User-Name"),
+):
+    """Return current user role and isAdmin. Ensures user exists in DB (create/update from session)."""
+    settings = get_settings()
+    admin_list = [e.strip().lower() for e in (settings.admin_emails or "").split(",") if e.strip()]
+    is_admin = email.lower() in admin_list
+    role = "Member"
+    display_name = (x_user_name or "").strip() or None
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        user = User(
+            email=email,
+            display_name=display_name or email.split("@")[0],
+            role="Member",
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    else:
+        if display_name and getattr(user, "display_name", None) != display_name:
+            user.display_name = display_name
+            db.commit()
+    role = getattr(user, "role", "Member") or "Member"
+    if role == "Admin":
+        is_admin = True
+    return {"email": email, "role": role, "isAdmin": is_admin}
 
 
 @app.get("/health")

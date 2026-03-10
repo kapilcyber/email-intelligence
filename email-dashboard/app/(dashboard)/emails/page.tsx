@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { Suspense, useEffect, useState, useCallback, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { EmailsTable } from "@/components/tables/emails-table";
@@ -16,9 +16,12 @@ const PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 200, 500];
 /** Valid department/category values (must match Departments page) */
 const CATEGORY_OPTIONS = ["Sales", "HR", "Accounts", "Tech", "General", "Spam"] as const;
 
-export default function EmailsPage() {
+function EmailsPageContent() {
   const { data: session, status } = useSession();
-  const api = useMemo(() => getApi(session?.user?.email ?? null), [session?.user?.email]);
+  const api = useMemo(
+    () => getApi(session?.user?.email ?? null, session?.user?.name ?? null),
+    [session?.user?.email, session?.user?.name]
+  );
   const searchParams = useSearchParams();
   const categoryFromUrl = searchParams.get("category") ?? "";
   const category = categoryFromUrl && CATEGORY_OPTIONS.includes(categoryFromUrl as (typeof CATEGORY_OPTIONS)[number])
@@ -175,5 +178,13 @@ export default function EmailsPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function EmailsPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-sm text-neutral-500">Loading…</div>}>
+      <EmailsPageContent />
+    </Suspense>
   );
 }

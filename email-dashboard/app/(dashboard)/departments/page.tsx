@@ -10,7 +10,10 @@ const DEPARTMENT_OPTIONS = ["Sales", "HR", "Accounts", "Tech", "General", "Spam"
 
 export default function DepartmentsPage() {
   const { data: session, status } = useSession();
-  const api = useMemo(() => getApi(session?.user?.email ?? null), [session?.user?.email]);
+  const api = useMemo(
+    () => getApi(session?.user?.email ?? null, session?.user?.name ?? null),
+    [session?.user?.email, session?.user?.name]
+  );
   const [categoryCounts, setCategoryCounts] = useState<Record<string, number>>({});
   const [totalEmails, setTotalEmails] = useState(0);
   const [loading, setLoading] = useState(true);

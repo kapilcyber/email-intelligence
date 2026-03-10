@@ -17,7 +17,10 @@ function formatUptime(seconds: number) {
 
 export default function QueueMonitorPage() {
   const { data: session, status } = useSession();
-  const api = useMemo(() => getApi(session?.user?.email ?? null), [session?.user?.email]);
+  const api = useMemo(
+    () => getApi(session?.user?.email ?? null, session?.user?.name ?? null),
+    [session?.user?.email, session?.user?.name]
+  );
   const [data, setData] = useState<QueueStatusResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

@@ -144,3 +144,82 @@ export interface SettingsConfig {
   databaseHost: string;
   environment: "development" | "staging" | "production";
 }
+
+// Phase 3 — Escalations & Leads
+export interface EscalationLeadItem {
+  id: string;
+  messageId: string;
+  subject: string | null;
+  sender: string;
+  receivedAt: string;
+  assignedTeam: string | null;
+  priorityLabel: string | null;
+  summary: string | null;
+  leadLabel?: string | null;
+  /** Reasons this was flagged as escalation: priority_high, keywords, negative_tone, re_chain, cc_senior, thread_length */
+  escalationReasons?: string[] | null;
+}
+
+export interface EscalationsResponse {
+  escalations: EscalationLeadItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface LeadsResponse {
+  leads: EscalationLeadItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+// Phase 4 — Admin (teams, users, workflow)
+export interface TeamOut {
+  id: string;
+  name: string;
+  slug: string | null;
+  memberCount: number;
+}
+
+export interface UserOut {
+  id: string;
+  email: string;
+  displayName: string | null;
+  role: string;
+  teamId: string | null;
+  teamName: string | null;
+  managerId: string | null;
+  isTeamLead: boolean;
+  reportCount: number;
+}
+
+export interface WorkflowNode {
+  id: string;
+  email: string;
+  displayName: string | null;
+  role: string;
+  teamName: string | null;
+  isTeamLead: boolean;
+  managerId: string | null;
+  reportIds: string[];
+}
+
+/** Tree node for hierarchy chart (WorkflowNode with nested children). */
+export interface WorkflowTreeNode extends WorkflowNode {
+  children: WorkflowTreeNode[];
+}
+
+export interface TeamStatusOut {
+  teamId: string;
+  teamName: string;
+  emailsAssigned: number;
+  escalationsCount: number;
+  leadsCount: number;
+}
+
+export interface MeResponse {
+  email: string;
+  role: string;
+  isAdmin: boolean;
+}

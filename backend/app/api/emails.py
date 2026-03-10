@@ -314,12 +314,14 @@ def trigger_classify_backfill(
     Optional body: {"limit": 500} to cap how many to enqueue (default 500).
     """
     settings = get_settings()
-    if not (settings.openai_api_key and settings.openai_api_key.strip()):
+    use_ollama = bool(settings.ollama_base_url and settings.ollama_base_url.strip())
+    use_openai = bool(settings.openai_api_key and settings.openai_api_key.strip())
+    if not use_ollama and not use_openai:
         from fastapi.responses import JSONResponse
         return JSONResponse(
             status_code=400,
             content={
-                "error": "OPENAI_API_KEY is not set. Add it to backend .env to run AI classification.",
+                "error": "No AI provider configured. Set OLLAMA_BASE_URL and/or OPENAI_API_KEY in backend .env to run AI classification.",
             },
         )
     raw_limit = (body or {}).get("limit", 500)

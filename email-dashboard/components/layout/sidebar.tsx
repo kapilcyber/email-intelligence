@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -7,37 +8,54 @@ import {
   LayoutDashboard,
   Mail,
   FolderOpen,
-  ListTodo,
-  Settings,
+  List,
   PanelLeftClose,
   PanelLeft,
   CreditCard,
-  ChevronUp,
-  List,
-  MoreHorizontal,
   Plus,
-  HelpCircle,
+  Users,
+  Network,
+  AlertCircle,
+  UserCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { getApi } from "@/lib/api/client";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/emails", label: "History", icon: Mail },
   { href: "/departments", label: "Inbox", icon: FolderOpen },
-  { href: "/queue", label: "Queue", icon: ListTodo },
-  { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/escalations", label: "Escalations", icon: AlertCircle },
 ];
 
-const favouritePlaceholders = [
-  "Dashboard — Overview",
-  "Emails — Inbox",
-  "Queue — Monitor",
+const adminNavItems = [
+  { href: "/admin/teams", label: "Teams", icon: Users },
+  { href: "/admin/team-leaders", label: "Team leaders", icon: UserCircle },
+  { href: "/admin/workflow", label: "Workflow", icon: Network },
+  { href: "/admin/escalations", label: "Escalations", icon: AlertCircle },
+  { href: "/admin/leads", label: "Leads", icon: List },
 ];
 
 export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const pathname = usePathname();
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
+  const api = useMemo(
+    () => getApi(session?.user?.email ?? null, session?.user?.name ?? null),
+    [session?.user?.email, session?.user?.name]
+  );
+  const [isAdmin, setIsAdmin] = useState(false);
+  const adminEmailsEnv = typeof window !== "undefined" ? (process.env.NEXT_PUBLIC_ADMIN_EMAILS ?? "") : (process.env.NEXT_PUBLIC_ADMIN_EMAILS ?? "");
+  const adminEmailsList = useMemo(() => adminEmailsEnv.split(",").map((e) => e.trim().toLowerCase()).filter(Boolean), [adminEmailsEnv]);
+  useEffect(() => {
+    if (status !== "authenticated" || !session?.user?.email) {
+      setIsAdmin(false);
+      return;
+    }
+    const userEmail = (session.user.email ?? "").trim().toLowerCase();
+    const isInEnvList = adminEmailsList.length > 0 && adminEmailsList.includes(userEmail);
+    api.getMe().then((r) => setIsAdmin(r.isAdmin || isInEnvList)).catch(() => setIsAdmin(isInEnvList));
+  }, [status, session?.user?.email, api, adminEmailsList]);
   const name = session?.user?.name ?? session?.user?.email ?? "User";
   const email = session?.user?.email ?? "";
   const initial = name.charAt(0).toUpperCase();
@@ -91,7 +109,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
       )}
 
       {/* Main nav */}
-      <nav className="flex-1 space-y-0.5 px-3 py-2">
+      <nav className="flex-1 space-y-0.5 px-3 py-2 overflow-auto">
         {navItems.map(({ href, label, icon: Icon }) => {
           const isActive = pathname === href || (href !== "/dashboard" && pathname.startsWith(href));
           return (
@@ -110,44 +128,37 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
             </Link>
           );
         })}
+        {isAdmin && (
+          <>
+            {!collapsed && (
+              <p className="mt-3 mb-1 px-3 text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
+                Admin
+              </p>
+            )}
+            {adminNavItems.map(({ href, label, icon: Icon }) => {
+              const isActive = pathname === href || pathname.startsWith(href + "/");
+              return (
+                <Link
+                  key={href}
+                  href={href}
+                  className={cn(
+                    "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                    isActive
+                      ? "bg-[#1E1E1E] text-white dark:bg-neutral-700 dark:text-white"
+                      : "text-neutral-600 hover:bg-neutral-200 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-700 dark:hover:text-neutral-100"
+                  )}
+                >
+                  <Icon className="h-5 w-5 shrink-0" />
+                  {!collapsed && <span>{label}</span>}
+                </Link>
+              );
+            })}
+          </>
+        )}
       </nav>
 
-      {/* Favourite */}
-      {!collapsed && (
-        <div className="border-t border-neutral-200 px-3 py-3 dark:border-neutral-700">
-          <div className="mb-2 flex items-center justify-between">
-            <button type="button" className="flex items-center gap-1.5 text-xs font-medium text-neutral-600 dark:text-neutral-400">
-              Favourite <ChevronUp className="h-3.5 w-3.5" />
-            </button>
-            <button type="button" className="rounded p-1 text-neutral-400 hover:bg-neutral-200 hover:text-neutral-600 dark:hover:bg-neutral-700" aria-label="Add">
-              <Plus className="h-4 w-4" />
-            </button>
-          </div>
-          <ul className="space-y-1">
-            {favouritePlaceholders.slice(0, 2).map((item, i) => (
-              <li key={i} className="flex items-center gap-2 rounded-md py-1.5 pl-1 pr-2 text-xs text-neutral-600 hover:bg-neutral-200 dark:text-neutral-400 dark:hover:bg-neutral-700">
-                <List className="h-3.5 w-3.5 shrink-0 text-neutral-400" />
-                <span className="min-w-0 flex-1 truncate">{item}</span>
-                <button type="button" className="shrink-0 rounded p-0.5 hover:bg-neutral-200 dark:hover:bg-neutral-600" aria-label="More">
-                  <MoreHorizontal className="h-3.5 w-3.5" />
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* Help Center & collapse */}
+      {/* Collapse */}
       <div className="border-t border-neutral-200 p-3 dark:border-neutral-700">
-        {!collapsed && (
-          <Link
-            href="/settings"
-            className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-neutral-600 hover:bg-neutral-200 dark:text-neutral-400 dark:hover:bg-neutral-700"
-          >
-            <HelpCircle className="h-4 w-4" />
-            Help Center
-          </Link>
-        )}
         <button
           type="button"
           onClick={onToggle}

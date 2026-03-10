@@ -17,6 +17,7 @@ class Sender(Base):
     id = Column(String(36), primary_key=True, default=uuid_gen)
     email = Column(String(512), unique=True, nullable=False, index=True)
     display_name = Column(String(512), nullable=True)
+    trust_score = Column(Float, nullable=True)  # 0.0–1.0; lower = more likely spam/phishing from this sender
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -70,6 +71,13 @@ class Email(Base):
     ai_error_message = Column(Text, nullable=True)
     ai_confidence_score = Column(Float, nullable=True)  # optional 0-1
 
+    # Phase 3 — escalation, leads, routing
+    is_escalation = Column(Boolean, default=False, index=True)
+    escalation_metadata = Column(JSONB, nullable=True)  # {"reasons": ["priority_high", "keywords", ...]} for audit
+    assigned_team = Column(String(64), nullable=True, index=True)  # Tech, Networking, Cybersecurity, Sales, Accounts, Data & AI, General
+    lead_label = Column(String(32), nullable=True, index=True)  # Hot, Warm, Cold
+    lead_metadata = Column(JSONB, nullable=True)  # {"buying_signals": ["demo_request", "budget_discussion", ...]}
+
     sender_rel = relationship("Sender", back_populates="emails", foreign_keys=[sender_id])
     attachments = relationship("Attachment", back_populates="email", cascade="all, delete-orphan")
     # Indexes are created via index=True on columns above; no duplicate __table_args__ indexes
@@ -90,3 +98,59 @@ class Attachment(Base):
     email = relationship("Email", back_populates="attachments")
 
     __table_args__ = (Index("ix_attachments_email_id", "email_id"),)
+
+
+class Team(Base):
+    """Phase 4: Teams (Tech, Networking, Cybersecurity, Sales, Accounts, Data & AI)."""
+    __tablename__ = "teams"
+
+    id = Column(String(36), primary_key=True, default=uuid_gen)
+    name = Column(String(128), unique=True, nullable=False, index=True)
+    slug = Column(String(64), nullable=True, index=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+    members = relationship("User", back_populates="team", foreign_keys="User.team_id")
+
+
+class User(Base):
+    """Phase 4: Users/employees with role, team, and reporting (manager)."""
+    __tablename__ = "users"
+
+    id = Column(String(36), primary_key=True, default=uuid_gen)
+    email = Column(String(512), unique=True, nullable=False, index=True)
+    display_name = Column(String(256), nullable=True)
+    role = Column(String(32), nullable=False, default="Member", index=True)  # Admin | Manager | Member
+    team_id = Column(String(36), ForeignKey("teams.id", ondelete="SET NULL"), nullable=True, index=True)
+    manager_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    is_team_lead = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    team = relationship("Team", back_populates="members", foreign_keys=[team_id])
+    manager = relationship("User", remote_side=[id], foreign_keys=[manager_id])
+    reports = relationship("User", back_populates="manager", foreign_keys=[manager_id])
+
+
+class DailySummary(Base):
+    """End-of-day summary: total emails, critical, escalations, leads, pending, unopened important."""
+    __tablename__ = "daily_summaries"
+
+    id = Column(String(36), primary_key=True, default=uuid_gen)
+    summary_date = Column(DateTime(timezone=True), nullable=False, index=True)  # date at midnight UTC
+    mailbox_owner_email = Column(String(512), nullable=True, index=True)  # null = global/aggregate
+    summary = Column(JSONB, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+    __table_args__ = (Index("ix_daily_summaries_date_mailbox", "summary_date", "mailbox_owner_email", unique=True),)
+
+
+class EscalationThread(Base):
+    """Tracks conversations that have at least one escalation (continuous escalation threads)."""
+    __tablename__ = "escalation_threads"
+
+    id = Column(String(36), primary_key=True, default=uuid_gen)
+    conversation_id = Column(String(512), unique=True, nullable=False, index=True)
+    first_escalated_at = Column(DateTime(timezone=True), nullable=False)
+    last_escalation_at = Column(DateTime(timezone=True), nullable=False)
+    escalation_count = Column(Integer, default=1)
+    last_email_id = Column(String(36), ForeignKey("emails.id", ondelete="SET NULL"), nullable=True)

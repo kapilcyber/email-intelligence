@@ -32,7 +32,10 @@ function folderLabel(folder: string | null | undefined) {
 
 export default function EmailDetailPage() {
   const { data: session, status } = useSession();
-  const api = useMemo(() => getApi(session?.user?.email ?? null), [session?.user?.email]);
+  const api = useMemo(
+    () => getApi(session?.user?.email ?? null, session?.user?.name ?? null),
+    [session?.user?.email, session?.user?.name]
+  );
   const params = useParams();
   const router = useRouter();
   const id = typeof params.id === "string" ? params.id : "";

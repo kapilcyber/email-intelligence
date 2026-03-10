@@ -11,8 +11,6 @@ const pathToLabel: Record<string, string> = {
   "/dashboard": "Dashboard",
   "/emails": "History",
   "/departments": "Departments",
-  "/queue": "Queue",
-  "/settings": "Settings",
   "/profile": "Profile",
   "/webhook": "Webhook",
 };

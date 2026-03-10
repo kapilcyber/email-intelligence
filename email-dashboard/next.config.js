@@ -1,6 +1,9 @@
+const path = require('path');
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Avoid webpack PackFileCacheStrategy ENOENT rename errors on Windows/OneDrive
+  turbopack: {},
+  outputFileTracingRoot: path.join(__dirname),
   webpack: (config, { dev }) => {
     if (dev) config.cache = false;
     return config;
