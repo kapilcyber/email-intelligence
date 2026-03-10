@@ -10,6 +10,8 @@ import type {
   LeadsResponse,
   TeamOut,
   UserOut,
+  UserEscalationCountOut,
+  UserLeadCountOut,
   WorkflowNode,
   TeamStatusOut,
   MeResponse,
@@ -109,13 +111,55 @@ function createApi(userEmail: string | null, userDisplayName?: string | null) {
       const q = searchParams.toString();
       return withUser<EscalationsResponse>(`/api/escalations${q ? `?${q}` : ""}`);
     },
-    getLeads: (params?: { page?: number; pageSize?: number; label?: string }) => {
+    /** Admin: list users with escalation count (for escalations-by-user view). */
+    getEscalationCountsByUser: () =>
+      withUser<UserEscalationCountOut[]>("/api/admin/escalation-counts"),
+    /** Admin: list escalations for a specific user's mailbox. */
+    getAdminEscalationsForUser: (params: {
+      mailbox: string;
+      page?: number;
+      pageSize?: number;
+      from?: string;
+      team?: string;
+    }) => {
+      const searchParams = new URLSearchParams();
+      searchParams.set("mailbox", params.mailbox);
+      if (params?.page != null) searchParams.set("page", String(params.page));
+      if (params?.pageSize != null) searchParams.set("pageSize", String(params.pageSize));
+      if (params?.from) searchParams.set("from", params.from);
+      if (params?.team) searchParams.set("team", params.team);
+      return withUser<EscalationsResponse>(`/api/admin/escalations?${searchParams.toString()}`);
+    },
+    getLeads: (params?: { page?: number; pageSize?: number; label?: string; team?: string; from?: string }) => {
       const searchParams = new URLSearchParams();
       if (params?.page != null) searchParams.set("page", String(params.page));
       if (params?.pageSize != null) searchParams.set("pageSize", String(params.pageSize));
       if (params?.label) searchParams.set("label", params.label);
+      if (params?.team) searchParams.set("team", params.team);
+      if (params?.from) searchParams.set("from", params.from);
       const q = searchParams.toString();
       return withUser<LeadsResponse>(`/api/leads${q ? `?${q}` : ""}`);
+    },
+    /** Admin: list users with lead count (for leads-by-user view). */
+    getLeadCountsByUser: () =>
+      withUser<UserLeadCountOut[]>("/api/admin/lead-counts"),
+    /** Admin: list leads for a specific user's mailbox. */
+    getAdminLeadsForUser: (params: {
+      mailbox: string;
+      page?: number;
+      pageSize?: number;
+      label?: string;
+      from?: string;
+      team?: string;
+    }) => {
+      const searchParams = new URLSearchParams();
+      searchParams.set("mailbox", params.mailbox);
+      if (params?.page != null) searchParams.set("page", String(params.page));
+      if (params?.pageSize != null) searchParams.set("pageSize", String(params.pageSize));
+      if (params?.label) searchParams.set("label", params.label);
+      if (params?.from) searchParams.set("from", params.from);
+      if (params?.team) searchParams.set("team", params.team);
+      return withUser<LeadsResponse>(`/api/admin/leads?${searchParams.toString()}`);
     },
     assignEmailToTeam: (emailId: string, team: string) =>
       withUser<{ ok: boolean; emailId: string; assignedTeam: string | null }>(
@@ -139,7 +183,8 @@ function createApi(userEmail: string | null, userDisplayName?: string | null) {
       const searchParams = new URLSearchParams();
       if (data.role != null) searchParams.set("role", data.role);
       if (data.teamId != null) searchParams.set("teamId", data.teamId);
-      if (data.managerId != null) searchParams.set("managerId", data.managerId);
+      // Include managerId when present (use "" for "No manager" so backend clears it)
+      if (data.managerId !== undefined) searchParams.set("managerId", data.managerId);
       if (data.isTeamLead != null) searchParams.set("isTeamLead", String(data.isTeamLead));
       const q = searchParams.toString();
       return withUser<{ ok: boolean; userId: string }>(`/api/admin/users/${userId}?${q}`, { method: "PATCH" });

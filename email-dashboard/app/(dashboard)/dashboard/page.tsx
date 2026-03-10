@@ -5,7 +5,7 @@ import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { getApi } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
-import type { DashboardMetrics, EmailRecord, MeResponse } from "@/lib/types";
+import type { DashboardMetrics, EmailRecord, UserOut } from "@/lib/types";
 import Link from "next/link";
 import { RefreshCw, Sparkles, FileText, FileEdit, FileStack, ClipboardList, MoreHorizontal, Plus } from "lucide-react";
 import {
@@ -273,10 +273,9 @@ export default function DashboardPage() {
   const [metricsError, setMetricsError] = useState<string | null>(null);
   const [emailsError, setEmailsError] = useState<string | null>(null);
   const [backfillStatus, setBackfillStatus] = useState<string | null>(null);
-  const [me, setMe] = useState<MeResponse | null>(null);
+  const [teamMembers, setTeamMembers] = useState<UserOut[] | null>(null);
   const syncPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const syncStopRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isMember = me?.role === "Member" && !me?.isAdmin;
 
   const refresh = useCallback(() => {
     loadMetrics(api, setMetrics, setMetricsError, setLoadingMetrics);
@@ -290,13 +289,29 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (status !== "authenticated") return;
-    api.getMe().then(setMe).catch(() => setMe(null));
+    loadEmails(api, setEmails, setEmailsError, setLoadingEmails);
+  }, [status, api]);
+
+  const loadTeamMembers = useCallback(() => {
+    if (status !== "authenticated") return;
+    api
+      .getUsers()
+      .then((users) => setTeamMembers(users ?? []))
+      .catch(() => setTeamMembers([]));
   }, [status, api]);
 
   useEffect(() => {
     if (status !== "authenticated") return;
-    loadEmails(api, setEmails, setEmailsError, setLoadingEmails);
+    setTeamMembers(null);
+    loadTeamMembers();
   }, [status, api]);
+
+  useEffect(() => {
+    if (status !== "authenticated") return;
+    const onFocus = () => loadTeamMembers();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [status, loadTeamMembers]);
 
   useEffect(() => {
     return () => {
@@ -361,12 +376,6 @@ export default function DashboardPage() {
     { title: "Queue Size", value: loadingMetrics ? "—" : (metrics?.queueSize ?? 0), subtitle: "Tasks pending" },
     { title: "Workers", value: loadingMetrics ? "—" : `${metrics?.activeWorkers ?? 0} active`, subtitle: "Active workers" },
     { title: "Classified", value: loadingMetrics ? "—" : `${metrics?.totalClassified ?? 0} / ${metrics?.totalEmails ?? 0}`, subtitle: "Total emails" },
-  ];
-
-  const teamPlaceholders = [
-    { name: "Jerome Bell", role: "Creative Director" },
-    { name: "Brooklyn Simmons", role: "UI Designer" },
-    { name: "Cameroon Williamson", role: "Project Manager" },
   ];
 
   return (
@@ -438,87 +447,64 @@ export default function DashboardPage() {
           </section>
         </div>
         <div className="space-y-4">
-          {isMember ? (
-            <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm dark:border-neutral-700 dark:bg-neutral-900/50">
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="flex items-center gap-2 text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-                  <Sparkles className="h-4 w-4 text-amber-500" />
-                  AI Summaries
-                </h2>
-                <Link href="/emails" className="rounded p-1 text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-700" aria-label="View all emails">
-                  <MoreHorizontal className="h-4 w-4" />
-                </Link>
-              </div>
-              {loadingEmails ? (
-                <div className="space-y-3">
-                  {[1, 2, 3].map((i) => (
-                    <div key={i} className="h-16 animate-pulse rounded-lg bg-neutral-100 dark:bg-neutral-800" />
-                  ))}
-                </div>
-              ) : (() => {
-                const withSummary = emails.filter((e) => e.summary && e.summary.trim()).slice(0, 5);
-                return withSummary.length === 0 ? (
-                  <p className="py-4 text-center text-xs text-neutral-500 dark:text-neutral-400">No AI summaries yet. Emails will show here once classified.</p>
-                ) : (
-                  <ul className="space-y-3">
-                    {withSummary.map((e) => (
-                      <li key={e.id}>
-                        <Link href={`/emails/${e.id}`} className="block rounded-lg border border-neutral-200 bg-neutral-50/50 p-3 text-left transition hover:border-neutral-300 hover:bg-neutral-100/80 dark:border-neutral-700 dark:bg-neutral-800/50 dark:hover:border-neutral-600 dark:hover:bg-neutral-800">
-                          <p className="truncate text-sm font-medium text-neutral-900 dark:text-neutral-100">{e.subject || "No subject"}</p>
-                          <p className="mt-1 line-clamp-2 text-xs text-neutral-500 dark:text-neutral-400">{e.summary}</p>
-                          {e.priorityLabel && (
-                            <span className="mt-2 inline-block rounded px-1.5 py-0.5 text-[10px] font-medium text-neutral-600 dark:text-neutral-400">
-                              {e.priorityLabel}
-                            </span>
-                          )}
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                );
-              })()}
+          <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm dark:border-neutral-700 dark:bg-neutral-900/50">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">Team</h2>
+              <button type="button" className="rounded p-1 text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-700" aria-label="More">
+                <MoreHorizontal className="h-4 w-4" />
+              </button>
             </div>
-          ) : (
-            <>
-              <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm dark:border-neutral-700 dark:bg-neutral-900/50">
-                <div className="mb-4 flex items-center justify-between">
-                  <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">Team</h2>
-                  <button type="button" className="rounded p-1 text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-700" aria-label="More">
-                    <MoreHorizontal className="h-4 w-4" />
-                  </button>
-                </div>
-                <ul className="space-y-3">
-                  {teamPlaceholders.map((p, i) => (
-                    <li key={i} className="flex items-center gap-3">
-                      <div className="h-9 w-9 rounded-full bg-neutral-200 dark:bg-neutral-600 flex items-center justify-center text-xs font-medium text-neutral-600 dark:text-neutral-300">
-                        {p.name.split(" ").map((n) => n[0]).join("")}
+            {teamMembers === null ? (
+              <ul className="space-y-3">
+                {[1, 2, 3].map((i) => (
+                  <li key={i} className="flex items-center gap-3">
+                    <div className="h-9 w-9 shrink-0 animate-pulse rounded-full bg-neutral-200 dark:bg-neutral-600" />
+                    <div className="min-w-0 flex-1">
+                      <div className="h-4 w-24 animate-pulse rounded bg-neutral-200 dark:bg-neutral-600" />
+                      <div className="mt-1 h-3 w-16 animate-pulse rounded bg-neutral-100 dark:bg-neutral-700" />
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : teamMembers.length === 0 ? (
+              <p className="py-4 text-center text-xs text-neutral-500 dark:text-neutral-400">No team members loaded</p>
+            ) : (
+              <ul className="space-y-3">
+                {teamMembers.map((u) => {
+                  const name = u.displayName ?? u.email.split("@")[0] ?? u.email;
+                  const initials = name.split(/[\s@]/).filter(Boolean).map((n) => n[0]).slice(0, 2).join("").toUpperCase() || "?";
+                  const roleLabel = u.teamName ? `${u.role} · ${u.teamName}` : u.role;
+                  return (
+                    <li key={u.id} className="flex items-center gap-3">
+                      <div className="h-9 w-9 shrink-0 rounded-full bg-neutral-200 dark:bg-neutral-600 flex items-center justify-center text-xs font-medium text-neutral-600 dark:text-neutral-300">
+                        {initials}
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium text-neutral-900 dark:text-neutral-100">{p.name}</p>
-                        <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">{p.role}</p>
+                        <p className="truncate text-sm font-medium text-neutral-900 dark:text-neutral-100">{name}</p>
+                        <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">{roleLabel}</p>
                       </div>
                     </li>
-                  ))}
-                </ul>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+          <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm dark:border-neutral-700 dark:bg-neutral-900/50">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">Upcoming Meeting</h2>
+              <button type="button" className="rounded p-1 text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-700" aria-label="More">
+                <MoreHorizontal className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="rounded-lg border border-neutral-200 bg-neutral-50/50 p-3 dark:border-neutral-700 dark:bg-neutral-800/50">
+              <p className="font-medium text-neutral-900 dark:text-neutral-100">Dev Sync Meeting</p>
+              <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">Monday, Feb 8 — 10:00 AM</p>
+              <div className="mt-2 flex items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400">
+                <span>61 comments</span>
+                <span>1 attachment</span>
               </div>
-              <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm dark:border-neutral-700 dark:bg-neutral-900/50">
-                <div className="mb-4 flex items-center justify-between">
-                  <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">Upcoming Meeting</h2>
-                  <button type="button" className="rounded p-1 text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-700" aria-label="More">
-                    <MoreHorizontal className="h-4 w-4" />
-                  </button>
-                </div>
-                <div className="rounded-lg border border-neutral-200 bg-neutral-50/50 p-3 dark:border-neutral-700 dark:bg-neutral-800/50">
-                  <p className="font-medium text-neutral-900 dark:text-neutral-100">Dev Sync Meeting</p>
-                  <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">Monday, Feb 8 — 10:00 AM</p>
-                  <div className="mt-2 flex items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400">
-                    <span>61 comments</span>
-                    <span>1 attachment</span>
-                  </div>
-                </div>
-              </div>
-            </>
-          )}
+            </div>
+          </div>
         </div>
       </div>
 

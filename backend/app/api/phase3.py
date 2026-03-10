@@ -8,13 +8,10 @@ from sqlalchemy.exc import OperationalError
 from pydantic import BaseModel, Field
 
 from app.db.session import get_db
-from app.db.models import Email, EscalationThread
+from app.db.models import Email, EscalationThread, Team
 from app.api.deps import get_current_user_email_optional
 
 router = APIRouter()
-
-# Allowed teams (align with Phase 4); General for unassigned
-ALLOWED_TEAMS = frozenset({"Tech", "Networking", "Cybersecurity", "Sales", "Accounts", "Data & AI", "General"})
 
 
 class EmailListItem(BaseModel):
@@ -38,8 +35,11 @@ def _email_to_item(r: Email, include_lead_label: bool = False, include_escalatio
         "sender": r.sender_email,
         "receivedAt": r.received_at,
         "assignedTeam": getattr(r, "assigned_team", None),
+        "mailType": getattr(r, "ai_category", None),
         "priorityLabel": getattr(r, "ai_priority_label", None),
         "summary": getattr(r, "ai_summary", None),
+        "mailboxOwner": getattr(r, "mailbox_owner_email", None),
+        "isRead": getattr(r, "is_read", False),
     }
     if include_lead_label:
         item["leadLabel"] = getattr(r, "lead_label", None)
@@ -125,14 +125,24 @@ def list_leads(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     label: str | None = Query(None, description="Filter by lead label: Hot, Warm, Cold"),
+    team: str | None = Query(None, description="Filter by assigned team (team name from DB)"),
+    from_date: str | None = Query(None, alias="from"),
 ):
-    """List emails with a lead label (Hot/Warm/Cold)."""
+    """List emails with a lead label (Hot/Warm/Cold). Optionally filter by team and from_date."""
     try:
         if not hasattr(Email, "lead_label"):
             return {"leads": [], "total": 0, "page": page, "pageSize": page_size}
         q = db.query(Email).filter(Email.lead_label.isnot(None))
         if label and label.strip():
             q = q.filter(Email.lead_label == label.strip())
+        if team and team.strip() and hasattr(Email, "assigned_team"):
+            q = q.filter(Email.assigned_team == team.strip())
+        if from_date:
+            try:
+                dt = datetime.fromisoformat(from_date.replace("Z", "+00:00"))
+                q = q.filter(Email.received_at >= dt)
+            except ValueError:
+                pass
         total = q.count()
         rows = q.order_by(Email.received_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
         return {
@@ -145,24 +155,31 @@ def list_leads(
         return {"leads": [], "total": 0, "page": page, "pageSize": page_size}
 
 
+def _allowed_team_names(db: Session) -> set[str]:
+    """Team names from DB so Escalations, Leads, Workflow and assign stay in sync."""
+    return {t.name for t in db.query(Team).all()}
+
+
 @router.patch("/emails/{email_id}/assign")
 def assign_team(
     email_id: str,
-    team: str = Query(..., description="Team: Tech, Networking, Cybersecurity, Sales, Accounts, Data & AI, General"),
+    team: str = Query(..., description="Team name (must exist in teams table)"),
     db: Session = Depends(get_db),
 ):
-    """Manually assign an email to a team (overrides routing)."""
+    """Manually assign an email to a team (overrides routing). Uses teams from DB."""
     email = db.query(Email).filter(Email.id == email_id).first()
     if not email:
         raise HTTPException(status_code=404, detail="Email not found")
     if not hasattr(Email, "assigned_team"):
         raise HTTPException(status_code=501, detail="assigned_team not available")
     team_val = team.strip() if team else None
-    if team_val and team_val not in ALLOWED_TEAMS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid team. Allowed: {', '.join(sorted(ALLOWED_TEAMS))}",
-        )
+    if team_val:
+        allowed = _allowed_team_names(db)
+        if team_val not in allowed:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid team. Allowed: {', '.join(sorted(allowed))}",
+            )
     email.assigned_team = team_val
     db.commit()
     return {"ok": True, "emailId": email_id, "assignedTeam": email.assigned_team}

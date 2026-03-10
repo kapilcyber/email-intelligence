@@ -153,11 +153,17 @@ export interface EscalationLeadItem {
   sender: string;
   receivedAt: string;
   assignedTeam: string | null;
+  /** AI category / mail type (e.g. from ai_category) */
+  mailType?: string | null;
   priorityLabel: string | null;
   summary: string | null;
+  /** Mailbox owner (member) for "Created by" column */
+  mailboxOwner?: string | null;
   leadLabel?: string | null;
   /** Reasons this was flagged as escalation: priority_high, keywords, negative_tone, re_chain, cc_senior, thread_length */
   escalationReasons?: string[] | null;
+  /** Whether the email has been read (from Outlook/is_read) */
+  isRead?: boolean;
 }
 
 export interface EscalationsResponse {
@@ -180,6 +186,20 @@ export interface TeamOut {
   name: string;
   slug: string | null;
   memberCount: number;
+}
+
+/** User with escalation count (admin escalations: list users first, then click to see table). */
+export interface UserEscalationCountOut {
+  email: string;
+  displayName: string | null;
+  escalationCount: number;
+}
+
+/** User with lead count (admin leads: list users first, then click to see table). */
+export interface UserLeadCountOut {
+  email: string;
+  displayName: string | null;
+  leadCount: number;
 }
 
 export interface UserOut {

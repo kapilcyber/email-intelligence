@@ -129,8 +129,9 @@ export default function AdminWorkflowPage() {
 
   const assignManager = (userId: string, managerId: string) => {
     setUpdatingId(userId);
+    // Pass empty string for "No manager" so the API receives it and clears manager_id
     api
-      .updateUser(userId, { managerId: managerId || undefined })
+      .updateUser(userId, { managerId: managerId })
       .then(() => load())
       .catch(() => setError("Failed to update"))
       .finally(() => setUpdatingId(null));

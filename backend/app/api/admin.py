@@ -1,15 +1,29 @@
 """
 Phase 4: Admin APIs — teams, users, workflow (who leads whom), team status.
 """
+from datetime import datetime
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import OperationalError
 from pydantic import BaseModel, Field
 
 from app.db.session import get_db
 from app.db.models import Team, User, Email
 from app.api.deps import get_admin_user
+from app.api.phase3 import _email_to_item
+from app.config import get_settings
 
 router = APIRouter(dependencies=[Depends(get_admin_user)])
+
+# Mailboxes to exclude from "Users — escalation count" / "Users — lead count" (e.g. default backfill mailbox already on admin dashboard)
+def _excluded_mailboxes_for_user_lists() -> set[str]:
+    s = get_settings()
+    excluded = set()
+    if getattr(s, "mailbox_email", None) and str(s.mailbox_email).strip():
+        excluded.add(str(s.mailbox_email).strip().lower())
+    # Always exclude techbank (default backfill mailbox) so it does not appear in per-user list
+    excluded.add("techbank@cachedigitech.com")
+    return excluded
 
 
 # --- Schemas ---
@@ -53,6 +67,24 @@ class TeamStatusOut(BaseModel):
     emailsAssigned: int
     escalationsCount: int
     leadsCount: int
+
+
+class UserEscalationCountOut(BaseModel):
+    """User with count of escalation emails in their mailbox (for admin escalations-by-user list)."""
+    email: str
+    displayName: str | None = Field(None, alias="displayName")
+    escalationCount: int = Field(0, alias="escalationCount")
+
+    model_config = {"populate_by_name": True}
+
+
+class UserLeadCountOut(BaseModel):
+    """User with count of lead emails in their mailbox (for admin leads-by-user list)."""
+    email: str
+    displayName: str | None = Field(None, alias="displayName")
+    leadCount: int = Field(0, alias="leadCount")
+
+    model_config = {"populate_by_name": True}
 
 
 # --- Teams ---
@@ -196,6 +228,121 @@ def create_user(
     db.commit()
     db.refresh(user)
     return {"ok": True, "userId": user.id, "email": user.email}
+
+
+# --- Escalations by user (admin: list users with counts, then view one user's escalations) ---
+@router.get("/escalation-counts", response_model=list[UserEscalationCountOut])
+def list_escalation_counts_by_user(db: Session = Depends(get_db)):
+    """List all users with their escalation email count. Excludes default/system mailbox (e.g. techbank) already on admin dashboard."""
+    excluded = _excluded_mailboxes_for_user_lists()
+    users = db.query(User).order_by(User.email).all()
+    users = [u for u in users if (u.email or "").strip().lower() not in excluded]
+    if not hasattr(Email, "is_escalation") or not hasattr(Email, "mailbox_owner_email"):
+        return [UserEscalationCountOut(email=u.email, displayName=u.display_name, escalationCount=0) for u in users]
+    result = []
+    for u in users:
+        count = db.query(Email).filter(
+            Email.is_escalation == True,
+            Email.mailbox_owner_email == u.email,
+        ).count()
+        result.append(UserEscalationCountOut(email=u.email, displayName=u.display_name, escalationCount=count))
+    return result
+
+
+@router.get("/escalations")
+def list_escalations_for_user(
+    mailbox: str = Query(..., description="User email (mailbox) to show escalations for"),
+    db: Session = Depends(get_db),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    from_date: str | None = Query(None, alias="from"),
+    team: str | None = Query(None, description="Filter by assigned team"),
+):
+    """List escalation emails for a specific user's mailbox. Admin only."""
+    mailbox = (mailbox or "").strip().lower()
+    if not mailbox or "@" not in mailbox:
+        raise HTTPException(status_code=400, detail="Valid mailbox (user email) required")
+    try:
+        if not hasattr(Email, "is_escalation"):
+            return {"escalations": [], "total": 0, "page": page, "pageSize": page_size}
+        q = db.query(Email).filter(Email.is_escalation == True, Email.mailbox_owner_email == mailbox)
+        if from_date:
+            try:
+                dt = datetime.fromisoformat(from_date.replace("Z", "+00:00"))
+                q = q.filter(Email.received_at >= dt)
+            except ValueError:
+                pass
+        if team and team.strip() and hasattr(Email, "assigned_team"):
+            q = q.filter(Email.assigned_team == team.strip())
+        total = q.count()
+        rows = q.order_by(Email.received_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+        return {
+            "escalations": [_email_to_item(r, include_escalation_reasons=True) for r in rows],
+            "total": total,
+            "page": page,
+            "pageSize": page_size,
+        }
+    except (OperationalError, Exception):
+        return {"escalations": [], "total": 0, "page": page, "pageSize": page_size}
+
+
+# --- Leads by user (admin: list users with counts, then view one user's leads) ---
+@router.get("/lead-counts", response_model=list[UserLeadCountOut])
+def list_lead_counts_by_user(db: Session = Depends(get_db)):
+    """List all users with their lead email count. Excludes default/system mailbox (e.g. techbank) already on admin dashboard."""
+    excluded = _excluded_mailboxes_for_user_lists()
+    users = db.query(User).order_by(User.email).all()
+    users = [u for u in users if (u.email or "").strip().lower() not in excluded]
+    if not hasattr(Email, "lead_label") or not hasattr(Email, "mailbox_owner_email"):
+        return [UserLeadCountOut(email=u.email, displayName=u.display_name, leadCount=0) for u in users]
+    result = []
+    for u in users:
+        count = db.query(Email).filter(
+            Email.lead_label.isnot(None),
+            Email.mailbox_owner_email == u.email,
+        ).count()
+        result.append(UserLeadCountOut(email=u.email, displayName=u.display_name, leadCount=count))
+    return result
+
+
+@router.get("/leads")
+def list_leads_for_user(
+    mailbox: str = Query(..., description="User email (mailbox) to show leads for"),
+    db: Session = Depends(get_db),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    label: str | None = Query(None, description="Filter by lead label: Hot, Warm, Cold"),
+    from_date: str | None = Query(None, alias="from"),
+    team: str | None = Query(None, description="Filter by assigned team"),
+):
+    """List lead emails for a specific user's mailbox. Admin only."""
+    mailbox = (mailbox or "").strip().lower()
+    if not mailbox or "@" not in mailbox:
+        raise HTTPException(status_code=400, detail="Valid mailbox (user email) required")
+    try:
+        if not hasattr(Email, "lead_label"):
+            return {"leads": [], "total": 0, "page": page, "pageSize": page_size}
+        q = db.query(Email).filter(Email.lead_label.isnot(None), Email.mailbox_owner_email == mailbox)
+        if label and label.strip():
+            q = q.filter(Email.lead_label == label.strip())
+        if from_date:
+            try:
+                dt = datetime.fromisoformat(from_date.replace("Z", "+00:00"))
+                q = q.filter(Email.received_at >= dt)
+            except ValueError:
+                pass
+        if team and team.strip() and hasattr(Email, "assigned_team"):
+            q = q.filter(Email.assigned_team == team.strip())
+        total = q.count()
+        rows = q.order_by(Email.received_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+        return {
+            "leads": [_email_to_item(r, include_lead_label=True) for r in rows],
+            "total": total,
+            "page": page,
+            "pageSize": page_size,
+        }
+    except (OperationalError, Exception):
+        return {"leads": [], "total": 0, "page": page, "pageSize": page_size}
 
 
 # --- Workflow (who leads whom) ---
