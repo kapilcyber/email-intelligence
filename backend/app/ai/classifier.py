@@ -363,7 +363,7 @@ def classify_email_content(
     correlation_id: str | None = None,
 ) -> dict[str, Any]:
     """
-    Call OpenAI (primary) or Ollama (fallback) for summary, category, priority_score, suggested_replies.
+    Call Ollama (primary) or OpenAI (fallback) for summary, category, priority_score, suggested_replies.
     Returns dict with keys: summary, category, priority_score, priority_label, suggested_replies, confidence_score (optional).
     On missing key or API error returns safe defaults and does not raise (caller should check summary is None for failure).
     """
@@ -377,45 +377,7 @@ def classify_email_content(
         logger.info("AI_RESPONSE: skipped_no_provider correlation_id=%s", correlation_id)
         return _failure_dict()
 
-    # Try OpenAI first if configured
-    if use_openai:
-        last_openai_error: Exception | None = None
-        for attempt in range(MAX_RETRIES):
-            try:
-                client = _get_openai_client()
-                start = time.perf_counter()
-                content = _call_llm(client, settings.openai_model, prompt)
-                latency_ms = (time.perf_counter() - start) * 1000
-                if not content:
-                    raise ValueError("OpenAI returned empty content")
-                result = _content_to_result(content, correlation_id)
-                logger.info(
-                    "AI_RESPONSE: provider=openai correlation_id=%s latency_ms=%.0f attempt=%d content_length=%d",
-                    correlation_id,
-                    latency_ms,
-                    attempt + 1,
-                    len(content),
-                )
-                return result
-            except Exception as e:
-                last_openai_error = e
-                logger.warning(
-                    "AI_RESPONSE: openai_error correlation_id=%s attempt=%d error=%s",
-                    correlation_id,
-                    attempt + 1,
-                    str(e),
-                )
-                if attempt < MAX_RETRIES - 1:
-                    delay = RETRY_BASE_DELAY * (2**attempt)
-                    logger.info("AI_RESPONSE: openai_retry correlation_id=%s delay=%.1fs", correlation_id, delay)
-                    time.sleep(delay)
-        logger.info(
-            "AI_RESPONSE: openai_failed_fallback correlation_id=%s error=%s",
-            correlation_id,
-            str(last_openai_error),
-        )
-
-    # Fallback to Ollama if configured
+    # Try Ollama first if configured
     if use_ollama:
         last_ollama_error: Exception | None = None
         for attempt in range(OLLAMA_MAX_RETRIES):
@@ -428,7 +390,7 @@ def classify_email_content(
                     raise ValueError("Ollama returned empty content")
                 result = _content_to_result(content, correlation_id)
                 logger.info(
-                    "AI_RESPONSE: provider=ollama fallback=True correlation_id=%s latency_ms=%.0f attempt=%d content_length=%d",
+                    "AI_RESPONSE: provider=ollama correlation_id=%s latency_ms=%.0f attempt=%d content_length=%d",
                     correlation_id,
                     latency_ms,
                     attempt + 1,
@@ -447,10 +409,48 @@ def classify_email_content(
                     delay = RETRY_BASE_DELAY * (2**attempt)
                     logger.info("AI_RESPONSE: ollama_retry correlation_id=%s delay=%.1fs", correlation_id, delay)
                     time.sleep(delay)
-        logger.warning(
-            "AI_RESPONSE: ollama_failed_after_retries correlation_id=%s error=%s",
+        logger.info(
+            "AI_RESPONSE: ollama_failed_fallback correlation_id=%s error=%s",
             correlation_id,
             str(last_ollama_error),
+        )
+
+    # Fallback to OpenAI if configured
+    if use_openai:
+        last_openai_error: Exception | None = None
+        for attempt in range(MAX_RETRIES):
+            try:
+                client = _get_openai_client()
+                start = time.perf_counter()
+                content = _call_llm(client, settings.openai_model, prompt)
+                latency_ms = (time.perf_counter() - start) * 1000
+                if not content:
+                    raise ValueError("OpenAI returned empty content")
+                result = _content_to_result(content, correlation_id)
+                logger.info(
+                    "AI_RESPONSE: provider=openai fallback=True correlation_id=%s latency_ms=%.0f attempt=%d content_length=%d",
+                    correlation_id,
+                    latency_ms,
+                    attempt + 1,
+                    len(content),
+                )
+                return result
+            except Exception as e:
+                last_openai_error = e
+                logger.warning(
+                    "AI_RESPONSE: openai_error correlation_id=%s attempt=%d error=%s",
+                    correlation_id,
+                    attempt + 1,
+                    str(e),
+                )
+                if attempt < MAX_RETRIES - 1:
+                    delay = RETRY_BASE_DELAY * (2**attempt)
+                    logger.info("AI_RESPONSE: openai_retry correlation_id=%s delay=%.1fs", correlation_id, delay)
+                    time.sleep(delay)
+        logger.warning(
+            "AI_RESPONSE: openai_failed_after_retries correlation_id=%s error=%s",
+            correlation_id,
+            str(last_openai_error),
         )
 
     return _failure_dict()

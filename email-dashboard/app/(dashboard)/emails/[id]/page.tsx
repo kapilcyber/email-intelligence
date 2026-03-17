@@ -43,6 +43,7 @@ export default function EmailDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
+  const [retryMessage, setRetryMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   useEffect(() => {
     if (!id || status !== "authenticated") {
@@ -101,17 +102,31 @@ export default function EmailDetailPage() {
   const displayFolder = folderLabel(email.folder);
 
   const hasSummary = email.summary != null && String(email.summary).trim() !== "";
+  const hasReplies = email.suggestedReplies != null && email.suggestedReplies.length > 0;
   if (email.summary === undefined || email.summary === null) {
     if (typeof window !== "undefined") console.log("[Email detail] summary is undefined for email", email.id);
   }
 
-  const aiFailed = email.aiStatus === "failed";
+  // Show Retry when status is failed/pending, or when classification is incomplete (no summary or no suggested replies)
+  const canRetryAi =
+    email.aiStatus === "failed" ||
+    email.aiStatus === "pending" ||
+    !hasSummary ||
+    !hasReplies;
   const handleRetryAi = () => {
+    setRetryMessage(null);
     setRetrying(true);
-    api.retryAi(email.id).then(() => {
-      setRetrying(false);
-      api.getEmail(email.id).then(setEmail);
-    }).catch(() => setRetrying(false));
+    api
+      .retryAi(email.id)
+      .then(() => {
+        setRetrying(false);
+        setRetryMessage({ type: "success", text: "Re-queued. Classification will run in the background; refresh in a few seconds to see updates." });
+        api.getEmail(email.id).then(setEmail);
+      })
+      .catch((err) => {
+        setRetrying(false);
+        setRetryMessage({ type: "error", text: err?.message ?? "Failed to re-queue classification." });
+      });
   };
 
   return (
@@ -211,18 +226,36 @@ export default function EmailDetailPage() {
               )}
             </div>
           </div>
-          {aiFailed && (
-            <div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-800 dark:bg-amber-950/40">
-              <div className="flex items-center gap-2 text-amber-800 dark:text-amber-200">
-                <AlertTriangle className="h-4 w-4 shrink-0" />
-                <span className="text-sm">
-                  AI processing failed. {email.aiErrorMessage ? ` ${email.aiErrorMessage.slice(0, 120)}…` : ""}
-                </span>
-              </div>
-              <Button variant="outline" size="sm" onClick={handleRetryAi} disabled={retrying} className="shrink-0">
-                <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${retrying ? "animate-spin" : ""}`} />
-                {retrying ? "Re-queuing…" : "Retry"}
-              </Button>
+          {(canRetryAi || retryMessage) && (
+            <div className="mt-3 space-y-2">
+              {email.aiStatus === "failed" && (
+                <div className="flex items-center gap-2 text-amber-800 dark:text-amber-200 text-sm">
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  <span>
+                    AI processing failed. {email.aiErrorMessage ? ` ${email.aiErrorMessage.slice(0, 120)}…` : ""}
+                  </span>
+                </div>
+              )}
+              {retryMessage && (
+                <p
+                  className={`text-sm ${retryMessage.type === "success" ? "text-emerald-700 dark:text-emerald-300" : "text-red-700 dark:text-red-300"}`}
+                >
+                  {retryMessage.text}
+                </p>
+              )}
+              {canRetryAi && (
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm" onClick={handleRetryAi} disabled={retrying} className="shrink-0">
+                    <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${retrying ? "animate-spin" : ""}`} />
+                    {retrying ? "Re-queuing…" : "Retry"}
+                  </Button>
+                  <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                    {!hasSummary || !hasReplies
+                      ? "Summary and suggested replies will appear after classification completes."
+                      : "Click again to re-run classification for this email."}
+                  </span>
+                </div>
+              )}
             </div>
           )}
           <div className="mt-3 space-y-3">
