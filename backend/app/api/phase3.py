@@ -14,6 +14,12 @@ from app.api.deps import get_current_user_email_optional
 router = APIRouter()
 
 
+def _get_current_user_email_required():
+    """Dependency that requires authenticated user (for mine=true)."""
+    from app.api.deps import get_current_user_email
+    return get_current_user_email
+
+
 class EmailListItem(BaseModel):
     id: str
     messageId: str = Field(alias="messageId")
@@ -127,12 +133,18 @@ def list_leads(
     label: str | None = Query(None, description="Filter by lead label: Hot, Warm, Cold"),
     team: str | None = Query(None, description="Filter by assigned team (team name from DB)"),
     from_date: str | None = Query(None, alias="from"),
+    mine: bool = Query(False, description="If true, return only leads in the current user's mailbox"),
+    current_user_email: str | None = Depends(get_current_user_email_optional),
 ):
-    """List emails with a lead label (Hot/Warm/Cold). Optionally filter by team and from_date."""
+    """List emails with a lead label (Hot/Warm/Cold). Use mine=true for the current user's leads."""
+    if mine and not current_user_email:
+        raise HTTPException(status_code=401, detail="X-User-Email header is required to view your leads")
     try:
         if not hasattr(Email, "lead_label"):
             return {"leads": [], "total": 0, "page": page, "pageSize": page_size}
         q = db.query(Email).filter(Email.lead_label.isnot(None))
+        if mine and current_user_email and hasattr(Email, "mailbox_owner_email"):
+            q = q.filter(Email.mailbox_owner_email == current_user_email)
         if label and label.strip():
             q = q.filter(Email.lead_label == label.strip())
         if team and team.strip() and hasattr(Email, "assigned_team"):

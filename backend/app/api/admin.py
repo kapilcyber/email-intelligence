@@ -3,12 +3,13 @@ Phase 4: Admin APIs — teams, users, workflow (who leads whom), team status.
 """
 from datetime import datetime
 from fastapi import APIRouter, Depends, Query, HTTPException
-from sqlalchemy.orm import Session
-from sqlalchemy.exc import OperationalError
+from sqlalchemy import exists, func, or_
+from sqlalchemy.orm import Session, aliased
+from sqlalchemy.exc import OperationalError, ProgrammingError
 from pydantic import BaseModel, Field
 
 from app.db.session import get_db
-from app.db.models import Team, User, Email
+from app.db.models import Team, User, Email, TeamProject, ProjectAssignment
 from app.api.deps import get_admin_user
 from app.api.phase3 import _email_to_item
 from app.config import get_settings
@@ -61,6 +62,33 @@ class WorkflowNode(BaseModel):
     reportIds: list[str] = []
 
 
+class ProjectAssignmentOut(BaseModel):
+    userId: str
+    email: str
+    displayName: str | None = None
+    role: str | None = None
+
+
+class TeamProjectOut(BaseModel):
+    id: str
+    name: str
+    teamId: str | None = None
+    teamName: str | None = None
+    status: str
+    structure: dict | None = None
+    assignedUsers: list[ProjectAssignmentOut] = []
+    createdAt: datetime
+    updatedAt: datetime
+
+
+class TeamProjectUpsertIn(BaseModel):
+    name: str
+    teamId: str | None = None
+    status: str = "running"
+    structure: dict | None = None
+    assignedUserIds: list[str] = []
+
+
 class TeamStatusOut(BaseModel):
     teamId: str
     teamName: str
@@ -74,6 +102,9 @@ class UserEscalationCountOut(BaseModel):
     email: str
     displayName: str | None = Field(None, alias="displayName")
     escalationCount: int = Field(0, alias="escalationCount")
+    readCount: int = Field(0, alias="readCount")
+    unreadCount: int = Field(0, alias="unreadCount")
+    repliedCount: int = Field(0, alias="repliedCount")
 
     model_config = {"populate_by_name": True}
 
@@ -83,8 +114,42 @@ class UserLeadCountOut(BaseModel):
     email: str
     displayName: str | None = Field(None, alias="displayName")
     leadCount: int = Field(0, alias="leadCount")
+    readCount: int = Field(0, alias="readCount")
+    unreadCount: int = Field(0, alias="unreadCount")
+    repliedCount: int = Field(0, alias="repliedCount")
 
     model_config = {"populate_by_name": True}
+
+
+def _serialize_project(db: Session, project: TeamProject) -> TeamProjectOut:
+    team_name = project.team.name if getattr(project, "team", None) else None
+    assignments = (
+        db.query(ProjectAssignment, User)
+        .join(User, User.id == ProjectAssignment.user_id)
+        .filter(ProjectAssignment.project_id == project.id)
+        .order_by(User.email)
+        .all()
+    )
+    users = [
+        ProjectAssignmentOut(
+            userId=u.id,
+            email=u.email,
+            displayName=u.display_name,
+            role=a.role,
+        )
+        for a, u in assignments
+    ]
+    return TeamProjectOut(
+        id=project.id,
+        name=project.name,
+        teamId=project.team_id,
+        teamName=team_name,
+        status=project.status,
+        structure=project.structure if isinstance(project.structure, dict) else None,
+        assignedUsers=users,
+        createdAt=project.created_at,
+        updatedAt=project.updated_at,
+    )
 
 
 # --- Teams ---
@@ -230,22 +295,202 @@ def create_user(
     return {"ok": True, "userId": user.id, "email": user.email}
 
 
+# --- Projects workflow (admin only) ---
+@router.get("/projects-workflow", response_model=list[TeamProjectOut])
+def list_projects_workflow(
+    db: Session = Depends(get_db),
+    team_id: str | None = Query(None, alias="teamId"),
+    status: str | None = Query(None),
+):
+    try:
+        q = db.query(TeamProject).order_by(TeamProject.updated_at.desc())
+        if team_id and team_id.strip():
+            q = q.filter(TeamProject.team_id == team_id.strip())
+        if status and status.strip():
+            q = q.filter(TeamProject.status == status.strip().lower())
+        projects = q.all()
+        return [_serialize_project(db, p) for p in projects]
+    except (OperationalError, ProgrammingError) as e:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Projects tables are not in the database yet. From the backend folder run: "
+                "alembic upgrade head"
+            ),
+        ) from e
+
+
+@router.get("/projects-workflow/{project_id}", response_model=TeamProjectOut)
+def get_project_workflow(project_id: str, db: Session = Depends(get_db)):
+    """Single project for admin workflow detail view."""
+    try:
+        project = db.query(TeamProject).filter(TeamProject.id == project_id).first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        return _serialize_project(db, project)
+    except HTTPException:
+        raise
+    except (OperationalError, ProgrammingError) as e:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Projects tables are not in the database yet. From the backend folder run: "
+                "alembic upgrade head"
+            ),
+        ) from e
+
+
+@router.post("/projects-workflow", response_model=TeamProjectOut)
+def create_project_workflow(payload: TeamProjectUpsertIn, db: Session = Depends(get_db)):
+    try:
+        name = (payload.name or "").strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Project name is required")
+        status = (payload.status or "running").strip().lower()
+        if status not in ("running", "new", "planned", "completed"):
+            status = "running"
+        team_id = (payload.teamId or "").strip() or None
+        if team_id:
+            team = db.query(Team).filter(Team.id == team_id).first()
+            if not team:
+                raise HTTPException(status_code=400, detail="Team not found")
+
+        project = TeamProject(
+            name=name,
+            team_id=team_id,
+            status=status,
+            structure=payload.structure if isinstance(payload.structure, dict) else None,
+        )
+        db.add(project)
+        db.commit()
+        db.refresh(project)
+
+        ids = list({x.strip() for x in (payload.assignedUserIds or []) if isinstance(x, str) and x.strip()})
+        if ids:
+            users = db.query(User).filter(User.id.in_(ids)).all()
+            valid = {u.id for u in users}
+            for uid in ids:
+                if uid in valid:
+                    db.add(ProjectAssignment(project_id=project.id, user_id=uid))
+            db.commit()
+
+        return _serialize_project(db, project)
+    except HTTPException:
+        raise
+    except (OperationalError, ProgrammingError) as e:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Projects tables are not in the database yet. From the backend folder run: "
+                "alembic upgrade head"
+            ),
+        ) from e
+
+
+@router.patch("/projects-workflow/{project_id}", response_model=TeamProjectOut)
+def update_project_workflow(project_id: str, payload: TeamProjectUpsertIn, db: Session = Depends(get_db)):
+    try:
+        project = db.query(TeamProject).filter(TeamProject.id == project_id).first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        name = (payload.name or "").strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Project name is required")
+        status = (payload.status or "running").strip().lower()
+        if status not in ("running", "new", "planned", "completed"):
+            status = "running"
+        team_id = (payload.teamId or "").strip() or None
+        if team_id:
+            team = db.query(Team).filter(Team.id == team_id).first()
+            if not team:
+                raise HTTPException(status_code=400, detail="Team not found")
+
+        project.name = name
+        project.status = status
+        project.team_id = team_id
+        project.structure = payload.structure if isinstance(payload.structure, dict) else None
+        db.commit()
+
+        db.query(ProjectAssignment).filter(ProjectAssignment.project_id == project.id).delete()
+        ids = list({x.strip() for x in (payload.assignedUserIds or []) if isinstance(x, str) and x.strip()})
+        if ids:
+            users = db.query(User).filter(User.id.in_(ids)).all()
+            valid = {u.id for u in users}
+            for uid in ids:
+                if uid in valid:
+                    db.add(ProjectAssignment(project_id=project.id, user_id=uid))
+        db.commit()
+        db.refresh(project)
+        return _serialize_project(db, project)
+    except HTTPException:
+        raise
+    except (OperationalError, ProgrammingError) as e:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Projects tables are not in the database yet. From the backend folder run: "
+                "alembic upgrade head"
+            ),
+        ) from e
+
+
 # --- Escalations by user (admin: list users with counts, then view one user's escalations) ---
 @router.get("/escalation-counts", response_model=list[UserEscalationCountOut])
 def list_escalation_counts_by_user(db: Session = Depends(get_db)):
-    """List all users with their escalation email count. Excludes default/system mailbox (e.g. techbank) already on admin dashboard."""
+    """List all users with their escalation email count and status (read/unread/replied). Excludes default/system mailbox."""
     excluded = _excluded_mailboxes_for_user_lists()
     users = db.query(User).order_by(User.email).all()
     users = [u for u in users if (u.email or "").strip().lower() not in excluded]
     if not hasattr(Email, "is_escalation") or not hasattr(Email, "mailbox_owner_email"):
-        return [UserEscalationCountOut(email=u.email, displayName=u.display_name, escalationCount=0) for u in users]
+        return [
+            UserEscalationCountOut(
+                email=u.email, displayName=u.display_name, escalationCount=0,
+                readCount=0, unreadCount=0, repliedCount=0,
+            )
+            for u in users
+        ]
+    E2 = aliased(Email)
     result = []
     for u in users:
-        count = db.query(Email).filter(
+        base = db.query(Email).filter(
             Email.is_escalation == True,
             Email.mailbox_owner_email == u.email,
-        ).count()
-        result.append(UserEscalationCountOut(email=u.email, displayName=u.display_name, escalationCount=count))
+        )
+        count = base.count()
+        read_count = base.filter(Email.is_read == True).count() if hasattr(Email, "is_read") else 0
+        unread_count = base.filter(Email.is_read == False).count() if hasattr(Email, "is_read") else 0
+        # Replied: distinct escalation conversations where the user has at least one sent message in that thread
+        if hasattr(Email, "conversation_id") and hasattr(Email, "folder_id") and hasattr(Email, "folder_name"):
+            sent_match = or_(
+                E2.folder_id == "sentitems",
+                func.coalesce(func.lower(E2.folder_name), "").like("%sent%"),
+            )
+            replied_exists = exists().where(
+                E2.conversation_id == Email.conversation_id,
+                E2.mailbox_owner_email == u.email,
+                sent_match,
+            )
+            replied_count = (
+                db.query(func.count(func.distinct(Email.conversation_id)))
+                .filter(
+                    Email.is_escalation == True,
+                    Email.mailbox_owner_email == u.email,
+                    Email.conversation_id.isnot(None),
+                    replied_exists,
+                )
+                .scalar()
+                or 0
+            )
+        else:
+            replied_count = 0
+        result.append(UserEscalationCountOut(
+            email=u.email,
+            displayName=u.display_name,
+            escalationCount=count,
+            readCount=read_count,
+            unreadCount=unread_count,
+            repliedCount=replied_count,
+        ))
     return result
 
 
@@ -254,7 +499,7 @@ def list_escalations_for_user(
     mailbox: str = Query(..., description="User email (mailbox) to show escalations for"),
     db: Session = Depends(get_db),
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page_size: int = Query(20, ge=1, le=500),
     from_date: str | None = Query(None, alias="from"),
     team: str | None = Query(None, description="Filter by assigned team"),
 ):
@@ -289,19 +534,59 @@ def list_escalations_for_user(
 # --- Leads by user (admin: list users with counts, then view one user's leads) ---
 @router.get("/lead-counts", response_model=list[UserLeadCountOut])
 def list_lead_counts_by_user(db: Session = Depends(get_db)):
-    """List all users with their lead email count. Excludes default/system mailbox (e.g. techbank) already on admin dashboard."""
+    """List all users with their lead email count and status (read/unread/replied). Excludes default/system mailbox."""
     excluded = _excluded_mailboxes_for_user_lists()
     users = db.query(User).order_by(User.email).all()
     users = [u for u in users if (u.email or "").strip().lower() not in excluded]
     if not hasattr(Email, "lead_label") or not hasattr(Email, "mailbox_owner_email"):
-        return [UserLeadCountOut(email=u.email, displayName=u.display_name, leadCount=0) for u in users]
+        return [
+            UserLeadCountOut(
+                email=u.email, displayName=u.display_name, leadCount=0,
+                readCount=0, unreadCount=0, repliedCount=0,
+            )
+            for u in users
+        ]
+    E2 = aliased(Email)
     result = []
     for u in users:
-        count = db.query(Email).filter(
+        base = db.query(Email).filter(
             Email.lead_label.isnot(None),
             Email.mailbox_owner_email == u.email,
-        ).count()
-        result.append(UserLeadCountOut(email=u.email, displayName=u.display_name, leadCount=count))
+        )
+        count = base.count()
+        read_count = base.filter(Email.is_read == True).count() if hasattr(Email, "is_read") else 0
+        unread_count = base.filter(Email.is_read == False).count() if hasattr(Email, "is_read") else 0
+        if hasattr(Email, "conversation_id") and hasattr(Email, "folder_id") and hasattr(Email, "folder_name"):
+            sent_match = or_(
+                E2.folder_id == "sentitems",
+                func.coalesce(func.lower(E2.folder_name), "").like("%sent%"),
+            )
+            replied_exists = exists().where(
+                E2.conversation_id == Email.conversation_id,
+                E2.mailbox_owner_email == u.email,
+                sent_match,
+            )
+            replied_count = (
+                db.query(func.count(func.distinct(Email.conversation_id)))
+                .filter(
+                    Email.lead_label.isnot(None),
+                    Email.mailbox_owner_email == u.email,
+                    Email.conversation_id.isnot(None),
+                    replied_exists,
+                )
+                .scalar()
+                or 0
+            )
+        else:
+            replied_count = 0
+        result.append(UserLeadCountOut(
+            email=u.email,
+            displayName=u.display_name,
+            leadCount=count,
+            readCount=read_count,
+            unreadCount=unread_count,
+            repliedCount=replied_count,
+        ))
     return result
 
 
@@ -310,7 +595,7 @@ def list_leads_for_user(
     mailbox: str = Query(..., description="User email (mailbox) to show leads for"),
     db: Session = Depends(get_db),
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page_size: int = Query(20, ge=1, le=500),
     label: str | None = Query(None, description="Filter by lead label: Hot, Warm, Cold"),
     from_date: str | None = Query(None, alias="from"),
     team: str | None = Query(None, description="Filter by assigned team"),

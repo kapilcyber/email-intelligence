@@ -12,7 +12,7 @@ from app.api import health, webhook, emails, dashboard, queue, settings as setti
 from app.api.deps import get_current_user_email
 from app.config import get_settings
 from app.db.session import get_db
-from app.db.models import User
+from app.db.models import User, Team
 
 settings = get_settings()
 app = FastAPI(
@@ -82,7 +82,26 @@ def api_me(
     role = getattr(user, "role", "Member") or "Member"
     if role == "Admin":
         is_admin = True
-    return {"email": email, "role": role, "isAdmin": is_admin}
+    reporting_manager = None
+    department = None
+    if getattr(user, "manager_id", None):
+        manager = db.query(User).filter(User.id == user.manager_id).first()
+        if manager:
+            reporting_manager = {
+                "displayName": getattr(manager, "display_name", None) or (manager.email.split("@")[0] if manager.email else None),
+                "email": manager.email,
+            }
+    if getattr(user, "team_id", None):
+        team = db.query(Team).filter(Team.id == user.team_id).first()
+        if team:
+            department = team.name
+    return {
+        "email": email,
+        "role": role,
+        "isAdmin": is_admin,
+        "reportingManager": reporting_manager,
+        "department": department,
+    }
 
 
 @app.get("/health")
@@ -104,11 +123,13 @@ def startup():
     try:
         from app.db import init_db
         init_db()
-        logger.info("Database connected and tables ready.")
+        logger.info(
+            "Database connected. Team project tables are ensured on startup; run 'alembic upgrade head' for full migrations."
+        )
     except Exception as e:
         logger.exception(
             "Database connection failed. Ensure PostgreSQL is running, the database "
-            "'email_intelligence' exists (e.g. createdb email_intelligence), and "
-            "DATABASE_URL or POSTGRES_* in .env are correct: %s",
+            "'email_intelligence' exists (e.g. createdb email_intelligence), run "
+            "'alembic upgrade head' for schema, and DATABASE_URL or POSTGRES_* in .env are correct: %s",
             e,
         )

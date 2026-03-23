@@ -11,8 +11,12 @@ const pathToLabel: Record<string, string> = {
   "/dashboard": "Dashboard",
   "/emails": "History",
   "/departments": "Departments",
+  "/escalations": "Escalations",
+  "/leads": "Leads",
   "/profile": "Profile",
   "/webhook": "Webhook",
+  "/threads": "Threads",
+  "/admin/team-projects": "Projects",
 };
 
 function getPageLabel(pathname: string): string {
@@ -45,7 +49,7 @@ export function Topbar({ environment = "Dev" }: { systemStatus?: SystemStatus; e
           <Search className="h-4 w-4 shrink-0 text-neutral-400" />
           <input
             type="search"
-            placeholder="Search projects..."
+            placeholder="Search threads..."
             className="min-w-0 flex-1 bg-transparent text-neutral-900 placeholder-neutral-500 outline-none dark:text-neutral-100 dark:placeholder-neutral-400"
             readOnly
             aria-label="Search"

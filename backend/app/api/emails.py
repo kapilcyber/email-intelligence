@@ -1,5 +1,6 @@
 import base64
 from datetime import datetime, timedelta
+from typing import Any
 from fastapi import APIRouter, Depends, Query, Body, Path, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
@@ -12,8 +13,22 @@ from app.workers.tasks import backfill_emails_task, backfill_classify_emails_tas
 from app.config import get_settings
 from app.graph.auth import get_auth_headers
 from app.api.deps import get_current_user_email
+from app.graph.auth import get_auth_headers
 
 router = APIRouter()
+
+
+def _display_category(row: Any) -> str | None:
+    """Category for display (History/Inbox). Prefer ai_category, then assigned_team, then 'General' if classified."""
+    cat = getattr(row, "ai_category", None)
+    if (cat or "").strip():
+        return (cat or "").strip()
+    team = getattr(row, "assigned_team", None)
+    if (team or "").strip():
+        return (team or "").strip()
+    if getattr(row, "ai_processed_at", None) is not None:
+        return "General"
+    return None
 
 
 class BackfillBody(BaseModel):
@@ -21,6 +36,8 @@ class BackfillBody(BaseModel):
     folder_id: str = "inbox"
     days: int = 7  # Last N days; use 0 or all=True to sync all emails from the folder
     all: bool = False  # When True, sync all emails (ignores days)
+    from_date: str | None = None  # YYYY-MM-DD: sync only from this date (inclusive)
+    to_date: str | None = None  # YYYY-MM-DD: sync only up to this date (inclusive)
 
 
 class EmailOut(BaseModel):
@@ -39,12 +56,34 @@ class EmailOut(BaseModel):
     ai_status: str | None = Field(None, alias="aiStatus")  # pending | completed | failed
     ai_processed_at: datetime | None = Field(None, alias="aiProcessedAt")
     processing_status: str | None = Field(None, alias="processingStatus")  # received | ingested | classified | failed
+    # Phase 3 — department/team (Tech, Sales, Accounts, etc.)
+    assigned_team: str | None = Field(None, alias="assignedTeam")
 
     model_config = {"from_attributes": True, "populate_by_name": True}
 
 
 class EmailsResponse(BaseModel):
     emails: list[EmailOut]
+    total: int
+    page: int
+    page_size: int = Field(alias="pageSize")
+
+    model_config = {"populate_by_name": True}
+
+
+class ConversationOut(BaseModel):
+    """One email thread (conversation) for Threads view."""
+    conversation_id: str = Field(alias="conversationId")
+    subject: str | None = None
+    last_received_at: datetime = Field(alias="lastReceivedAt")
+    message_count: int = Field(alias="messageCount")
+    participants_preview: str = Field(default="", alias="participantsPreview")
+
+    model_config = {"populate_by_name": True}
+
+
+class ConversationsResponse(BaseModel):
+    conversations: list[ConversationOut]
     total: int
     page: int
     page_size: int = Field(alias="pageSize")
@@ -90,6 +129,14 @@ class EmailDetailOut(BaseModel):
     ai_error_message: str | None = Field(None, alias="aiErrorMessage")
 
     model_config = {"from_attributes": True, "populate_by_name": True}
+
+
+class ThreadEmailsResponse(BaseModel):
+    """All emails in a thread, chronological order."""
+    conversation_id: str = Field(alias="conversationId")
+    emails: list[EmailDetailOut]
+
+    model_config = {"populate_by_name": True}
 
 
 @router.get("/emails", response_model=EmailsResponse, response_model_by_alias=True)
@@ -140,18 +187,195 @@ def list_emails(
                 folder=r.folder_name or r.folder_id or "",
                 status=r.status,
                 summary=getattr(r, "ai_summary", None) or None,
-                category=getattr(r, "ai_category", None),
+                category=_display_category(r),
                 priorityLabel=getattr(r, "ai_priority_label", None),
                 priorityScore=getattr(r, "ai_priority_score", None),
                 aiStatus=getattr(r, "ai_status", None),
                 aiProcessedAt=getattr(r, "ai_processed_at", None),
                 processingStatus=getattr(r, "processing_status", None),
+                assignedTeam=getattr(r, "assigned_team", None),
             )
             for r in rows
         ]
         return EmailsResponse(emails=emails, total=total, page=page, pageSize=page_size)
     except (OperationalError, Exception):
         return EmailsResponse(emails=[], total=0, page=page, pageSize=page_size)
+
+
+@router.get("/emails/conversations", response_model=ConversationsResponse, response_model_by_alias=True)
+def list_conversations(
+    current_user_email: str = Depends(get_current_user_email),
+    db: Session = Depends(get_db),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    search: str | None = Query(None),
+):
+    """List real email threads (Microsoft Graph conversationId only). One thread = one reply chain."""
+    try:
+        q = (
+            db.query(Email)
+            .filter(
+                Email.mailbox_owner_email == current_user_email,
+                Email.conversation_id.isnot(None),
+                Email.conversation_id != "",
+            )
+            .order_by(Email.received_at.desc())
+        )
+        if search and search.strip():
+            s = f"%{search.strip()}%"
+            q = q.filter(
+                (Email.subject.ilike(s)) | (Email.sender_email.ilike(s))
+            )
+        rows = q.limit(3000).all()
+        by_cid: dict[str, list] = {}
+        for r in rows:
+            cid = (r.conversation_id or "").strip()
+            if not cid or cid.startswith("thread:"):
+                continue
+            if cid not in by_cid:
+                by_cid[cid] = []
+            by_cid[cid].append(r)
+        threads = []
+        for cid, emails in by_cid.items():
+            latest = emails[0]
+            participants = set()
+            for e in emails[:10]:
+                participants.add(e.sender_email or "")
+                if e.to_recipients:
+                    for rec in (e.to_recipients if isinstance(e.to_recipients, list) else []):
+                        addr = (rec.get("email") or rec.get("emailAddress", {}).get("address")) if isinstance(rec, dict) else None
+                        if addr:
+                            participants.add(addr)
+            participants.discard("")
+            preview = ", ".join(sorted(participants)[:5])
+            if len(participants) > 5:
+                preview += "…"
+            threads.append(
+                ConversationOut(
+                    conversationId=cid,
+                    subject=latest.subject,
+                    lastReceivedAt=latest.received_at,
+                    messageCount=len(emails),
+                    participantsPreview=preview,
+                )
+            )
+        threads.sort(key=lambda t: t.last_received_at, reverse=True)
+        total = len(threads)
+        start = (page - 1) * page_size
+        page_threads = threads[start : start + page_size]
+        return ConversationsResponse(
+            conversations=page_threads,
+            total=total,
+            page=page,
+            pageSize=page_size,
+        )
+    except (OperationalError, Exception):
+        return ConversationsResponse(conversations=[], total=0, page=page, pageSize=page_size)
+
+
+@router.post("/emails/backfill-conversation-ids")
+def backfill_conversation_ids(
+    current_user_email: str = Depends(get_current_user_email),
+    db: Session = Depends(get_db),
+    limit: int = Query(100, ge=1, le=500),
+):
+    """Fetch conversationId from Graph for emails that don't have it. Run this so Threads view shows reply chains (no need to re-login)."""
+    try:
+        rows = (
+            db.query(Email)
+            .filter(
+                Email.mailbox_owner_email == current_user_email,
+                Email.conversation_id.is_(None),
+                Email.graph_id.isnot(None),
+                Email.graph_id != "",
+            )
+            .limit(limit)
+            .all()
+        )
+        if not rows:
+            return {"ok": True, "updated": 0, "message": "No emails need conversation ID."}
+        mailbox = (current_user_email or "").strip()
+        if not mailbox:
+            return {"ok": False, "updated": 0, "error": "User email required."}
+        updated = 0
+        with httpx.Client(timeout=15.0) as client:
+            for email in rows:
+                try:
+                    r = client.get(
+                        f"https://graph.microsoft.com/v1.0/users/{mailbox}/messages/{email.graph_id}",
+                        headers=get_auth_headers(),
+                        params={"$select": "conversationId"},
+                    )
+                    if r.status_code != 200:
+                        continue
+                    data = r.json()
+                    cid = (data.get("conversationId") or "").strip()
+                    if cid:
+                        email.conversation_id = cid
+                        db.commit()
+                        updated += 1
+                except Exception:
+                    continue
+        return {"ok": True, "updated": updated, "message": f"Updated {updated} email(s). Refresh Threads to see them."}
+    except Exception as e:
+        return {"ok": False, "updated": 0, "error": str(e)}
+
+
+@router.get("/emails/conversations/{conversation_id:path}/emails", response_model=ThreadEmailsResponse, response_model_by_alias=True)
+def get_conversation_emails(
+    conversation_id: str = Path(..., description="Conversation/thread ID"),
+    current_user_email: str = Depends(get_current_user_email),
+    db: Session = Depends(get_db),
+):
+    """Get all emails in a thread (chronological order). Only real reply chain by Graph conversationId."""
+    try:
+        rows = (
+            db.query(Email)
+            .filter(
+                Email.mailbox_owner_email == current_user_email,
+                Email.conversation_id == conversation_id,
+            )
+            .order_by(Email.received_at.asc())
+            .all()
+        )
+        if not rows:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+        out = []
+        for email in rows:
+            atts = db.query(Attachment).filter(Attachment.email_id == email.id).all()
+            out.append(
+                EmailDetailOut(
+                    id=email.id,
+                    messageId=email.message_id,
+                    subject=email.subject,
+                    sender=email.sender_email,
+                    senderDisplayName=email.sender_display_name,
+                    toRecipients=email.to_recipients or [],
+                    ccRecipients=email.cc_recipients or [],
+                    receivedAt=email.received_at,
+                    sentAt=email.sent_at,
+                    folder=email.folder_name or email.folder_id or "",
+                    bodyPreview=email.body_preview,
+                    bodyContent=email.body_content,
+                    bodyContentType=email.body_content_type,
+                    attachments=[AttachmentOut(id=a.id, name=a.name, content_type=a.content_type, size=a.size, is_inline=a.is_inline) for a in atts],
+                    status=email.status,
+                    summary=getattr(email, "ai_summary", None) or None,
+                    category=_display_category(email),
+                    priorityLabel=getattr(email, "ai_priority_label", None),
+                    priorityScore=getattr(email, "ai_priority_score", None),
+                    suggestedReplies=getattr(email, "ai_suggested_replies", None) or [],
+                    aiStatus=getattr(email, "ai_status", None),
+                    aiProcessedAt=getattr(email, "ai_processed_at", None),
+                    processingStatus=getattr(email, "processing_status", None),
+                    aiErrorMessage=getattr(email, "ai_error_message", None),
+                )
+            )
+        return ThreadEmailsResponse(conversationId=conversation_id, emails=out)
+    except HTTPException:
+        raise
+    except (OperationalError, Exception):
+        raise HTTPException(status_code=500, detail="Failed to load conversation")
 
 
 @router.get("/emails/{email_id}", response_model=EmailDetailOut, response_model_by_alias=True)
@@ -185,7 +409,7 @@ def get_email(
             attachments=[AttachmentOut(id=a.id, name=a.name, content_type=a.content_type, size=a.size, is_inline=a.is_inline) for a in atts],
             status=email.status,
             summary=getattr(email, "ai_summary", None) or None,
-            category=getattr(email, "ai_category", None),
+            category=_display_category(email),
             priorityLabel=getattr(email, "ai_priority_label", None),
             priorityScore=getattr(email, "ai_priority_score", None),
             suggestedReplies=getattr(email, "ai_suggested_replies", None) or [],
@@ -278,10 +502,26 @@ def trigger_backfill(
         from fastapi.responses import JSONResponse
         return JSONResponse(status_code=403, content={"error": "You can only sync your own mailbox."})
     try:
-        days = 0 if body.all else body.days
-        task = backfill_emails_task.delay(user_id.strip(), body.folder_id, days)
-        msg = "Backfill (all emails) enqueued." if body.all else f"Backfill (last {body.days} days) enqueued."
-        return {"ok": True, "taskId": task.id, "userId": user_id.strip(), "message": f"{msg} Run a Celery worker to process it; then refresh the dashboard."}
+        uid = user_id.strip()
+        from_date = (body.from_date or "").strip() or None
+        to_date = (body.to_date or "").strip() or None
+        if body.from_date or body.to_date:
+            days = 0
+            task_inbox = backfill_emails_task.delay(uid, "inbox", days, from_date, to_date)
+            task_sent = backfill_emails_task.delay(uid, "sentitems", days, from_date, to_date)
+            msg = f"Backfill ({from_date or '…'} to {to_date or '…'}) enqueued for Inbox and Sent Items."
+        else:
+            days = 0 if body.all else body.days
+            task_inbox = backfill_emails_task.delay(uid, "inbox", days)
+            task_sent = backfill_emails_task.delay(uid, "sentitems", days)
+            msg = "Backfill enqueued for Inbox and Sent Items." if body.all else f"Backfill (last {body.days} days) enqueued for Inbox and Sent Items."
+        return {
+            "ok": True,
+            "taskId": task_inbox.id,
+            "taskIds": [task_inbox.id, task_sent.id],
+            "userId": uid,
+            "message": f"{msg} Your sent replies will appear in Threads. Run a Celery worker; then refresh.",
+        }
     except Exception as e:
         from fastapi.responses import JSONResponse
         return JSONResponse(status_code=400, content={"error": str(e)})

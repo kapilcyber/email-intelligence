@@ -15,6 +15,7 @@ function randomDate(daysAgo: number): string {
   return d.toISOString();
 }
 
+const depts = ["Sales", "HR", "Accounts", "Tech", "General", "Spam"] as const;
 const mockEmails = Array.from({ length: 24 }, (_, i) => ({
   id: `email-${i + 1}`,
   messageId: `msg-${1000 + i}@graph.microsoft.com`,
@@ -45,6 +46,8 @@ const mockEmails = Array.from({ length: 24 }, (_, i) => ({
   receivedAt: randomDate(3),
   folder: ["Inbox", "Inbox", "Inbox", "Sales", "HR", "Tech", "Inbox", "Accounts", "HR", "Tech"][i % 10],
   status: (i % 10 === 2 ? "failed" : "stored") as "stored" | "failed",
+  category: depts[i % depts.length],
+  assignedTeam: depts[i % depts.length],
 }));
 
 export const mockData = {

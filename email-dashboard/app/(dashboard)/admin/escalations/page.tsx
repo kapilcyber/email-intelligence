@@ -25,13 +25,13 @@ import {
   Bar,
 } from "recharts";
 
-const PAGE_SIZE = 20;
-const CHART_PAGE_SIZE = 200;
+const DEFAULT_PAGE_SIZE = 20;
+const CHART_PAGE_SIZE = 400;
 const PRIORITY_LABELS = ["Critical", "High", "Medium", "Low", "Spam"];
 const CHART_COLORS = ["#ef4444", "#f97316", "#eab308", "#22c55e", "#94a3b8"];
 
 type ViewMode = "all" | "analytics" | "table";
-type DateRange = "month" | "year" | "custom";
+type DateRange = "all" | "month" | "year" | "custom";
 
 function formatDate(s: string) {
   try {
@@ -44,6 +44,9 @@ function formatDate(s: string) {
 
 function getDateRangeFromPreset(preset: DateRange): string {
   const now = new Date();
+  if (preset === "all") {
+    return "";
+  }
   if (preset === "month") {
     const start = new Date(now.getFullYear(), now.getMonth(), 1);
     return start.toISOString().slice(0, 10);
@@ -62,7 +65,7 @@ export default function AdminEscalationsPage() {
   );
 
   const [viewMode, setViewMode] = useState<ViewMode>("all");
-  const [dateRange, setDateRange] = useState<DateRange>("month");
+  const [dateRange, setDateRange] = useState<DateRange>("all");
   const [customFrom, setCustomFrom] = useState("");
   const [teamFilter, setTeamFilter] = useState<string>("");
   const [search, setSearch] = useState("");
@@ -76,6 +79,7 @@ export default function AdminEscalationsPage() {
   const [chartItems, setChartItems] = useState<EscalationLeadItem[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [loading, setLoading] = useState(true);
   const [chartLoading, setChartLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -106,7 +110,7 @@ export default function AdminEscalationsPage() {
       .getAdminEscalationsForUser({
         mailbox: selectedUserEmail,
         page,
-        pageSize: PAGE_SIZE,
+        pageSize,
         from: fromDate || undefined,
         team: teamFilter || undefined,
       })
@@ -156,7 +160,7 @@ export default function AdminEscalationsPage() {
 
   useEffect(() => {
     if (selectedUserEmail) loadTable();
-  }, [status, api, selectedUserEmail, page, teamFilter, fromDate]);
+  }, [status, api, selectedUserEmail, page, pageSize, teamFilter, fromDate]);
 
   useEffect(() => {
     if (selectedUserEmail && (viewMode === "all" || viewMode === "analytics")) {
@@ -171,7 +175,7 @@ export default function AdminEscalationsPage() {
       if (viewMode === "all" || viewMode === "analytics") loadCharts();
     }, 30000);
     return () => window.clearInterval(id);
-  }, [status, api, selectedUserEmail, page, teamFilter, fromDate, viewMode]);
+  }, [status, api, selectedUserEmail, page, pageSize, teamFilter, fromDate, viewMode]);
 
   const filteredItems = useMemo(() => {
     let list = items;
@@ -221,7 +225,7 @@ export default function AdminEscalationsPage() {
     return Object.entries(byPriority).map(([priority, count]) => ({ priority, count }));
   }, [chartItems]);
 
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const handleDownload = () => {
     const rows = [
@@ -276,13 +280,13 @@ export default function AdminEscalationsPage() {
           <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-50">Escalations</h1>
           <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
             {selectedUserEmail
-              ? `Escalation mails for ${selectedUser?.displayName ?? selectedUserEmail.split("@")[0]}`
+              ? `Escalation mails for ${selectedUser?.displayName ?? selectedUserEmail.split("@")[0]}. User counts are all-time; use the date filter below to narrow this list.`
               : "All users. Click a user to see their escalation mails."}
           </p>
         </div>
         {selectedUserEmail && (
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={() => (setSelectedUserEmail(null), setPage(1))} className="gap-2">
+            <Button variant="ghost" size="sm" onClick={() => (setSelectedUserEmail(null), setPage(1), setPageSize(DEFAULT_PAGE_SIZE))} className="gap-2">
               <ArrowLeft className="h-4 w-4" />
               Back to users
             </Button>
@@ -303,14 +307,21 @@ export default function AdminEscalationsPage() {
               ))}
             </div>
             <div className="flex items-center gap-2">
-              <Select value={dateRange} onValueChange={(v) => setDateRange(v as DateRange)}>
-                <SelectTrigger className="w-[140px]">
+              <Select
+                value={dateRange}
+                onValueChange={(v) => {
+                  setDateRange(v as DateRange);
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger className="w-[160px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="all">All time</SelectItem>
                   <SelectItem value="month">This month</SelectItem>
                   <SelectItem value="year">This year</SelectItem>
-                  <SelectItem value="custom">Custom date</SelectItem>
+                  <SelectItem value="custom">Custom from date</SelectItem>
                 </SelectContent>
               </Select>
               {dateRange === "custom" && (
@@ -369,7 +380,10 @@ export default function AdminEscalationsPage() {
                       <tr
                         key={u.email}
                         className="cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/50"
-                        onClick={() => setSelectedUserEmail(u.email)}
+                        onClick={() => {
+                          setPage(1);
+                          setSelectedUserEmail(u.email);
+                        }}
                       >
                         <td className="px-4 py-3 font-medium text-neutral-900 dark:text-neutral-50">
                           {u.displayName ?? u.email.split("@")[0]}
@@ -436,7 +450,7 @@ export default function AdminEscalationsPage() {
               <div>
                 <p className="text-sm font-medium text-neutral-500 dark:text-neutral-400">Date range</p>
                 <p className="text-lg font-semibold text-neutral-900 dark:text-neutral-50">
-                  {fromDate ? formatDate(fromDate) : "All"}
+                  {fromDate ? formatDate(fromDate) : "All time"}
                 </p>
               </div>
             </div>
@@ -541,6 +555,22 @@ export default function AdminEscalationsPage() {
                 Escalations table
               </CardTitle>
               <div className="flex flex-wrap items-center gap-2">
+                <Select
+                  value={String(pageSize)}
+                  onValueChange={(v) => {
+                    setPageSize(Number(v));
+                    setPage(1);
+                  }}
+                >
+                  <SelectTrigger className="w-[120px]">
+                    <SelectValue placeholder="Rows" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="20">20 per page</SelectItem>
+                    <SelectItem value="50">50 per page</SelectItem>
+                    <SelectItem value="100">100 per page</SelectItem>
+                  </SelectContent>
+                </Select>
                 <Select value={teamFilter || "all"} onValueChange={(v) => (setTeamFilter(v === "all" ? "" : v), setPage(1))}>
                   <SelectTrigger className="w-[140px]">
                     <SelectValue placeholder="Team" />
@@ -638,10 +668,17 @@ export default function AdminEscalationsPage() {
                     </tbody>
                   </table>
                 </div>
-                {totalPages > 1 && (
-                  <div className="mt-4 flex items-center justify-between">
+                {(totalPages > 1 || total > 0) && (
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
                     <p className="text-sm text-neutral-500 dark:text-neutral-400">
-                      Page {page} of {totalPages}
+                      {total > 0 ? (
+                        <>
+                          Showing {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} of {total}
+                          {totalPages > 1 ? ` · Page ${page} of ${totalPages}` : ""}
+                        </>
+                      ) : (
+                        `Page ${page} of ${totalPages}`
+                      )}
                     </p>
                     <div className="flex gap-2">
                       <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>

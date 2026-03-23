@@ -149,7 +149,7 @@ def ingest_email_task(
         email = Email(
             graph_id=data.get("id"),
             message_id=message_id,
-            conversation_id=data.get("conversationId"),
+            conversation_id=data.get("conversationId") or None,
             subject=data.get("subject"),
             body_preview=data.get("bodyPreview"),
             body_content=data.get("body", {}).get("content") if isinstance(data.get("body"), dict) else None,
@@ -255,7 +255,8 @@ def classify_email_task(self, email_id: str):
             )
 
         email.ai_summary = summary
-        email.ai_category = result.get("category")
+        raw_category = (result.get("category") or "").strip()
+        email.ai_category = raw_category if raw_category else "General"
         email.ai_priority_score = result.get("priority_score")
         email.ai_priority_label = result.get("priority_label")
         email.ai_suggested_replies = result.get("suggested_replies") or []
@@ -602,25 +603,53 @@ def get_queue_stats() -> dict:
 
 
 @celery_app.task(name="app.workers.tasks.backfill_emails_task")
-def backfill_emails_task(user_id: str, folder_id: str = "inbox", days: int = 7):
+def backfill_emails_task(
+    user_id: str,
+    folder_id: str = "inbox",
+    days: int = 7,
+    from_date: str | None = None,
+    to_date: str | None = None,
+):
     """
-    Historical sync: last N days, or all messages when days <= 0.
+    Historical sync: last N days, all messages when days <= 0, or by date range (from_date/to_date).
     Paginates through Graph (follows @odata.nextLink) and enqueues all messages.
+    Use folder_id 'inbox' for Inbox, 'sentitems' for Sent Items (so sent replies appear in threads).
+    from_date/to_date: optional YYYY-MM-DD; when set, only messages in that range are synced.
     """
     from datetime import timedelta
 
     base_url = f"https://graph.microsoft.com/v1.0/users/{user_id}/mailFolders/{folder_id}/messages"
     now_utc = datetime.now(timezone.utc)
-    if days <= 0:
-        since = "2000-01-01T00:00:00Z"
-    elif days == 1:
-        # Sync for today: from midnight today (UTC) to now — all of today's emails
-        since = now_utc.replace(hour=0, minute=0, second=0, microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
+    is_sent = str(folder_id).lower() == "sentitems"
+    date_field = "sentDateTime" if is_sent else "receivedDateTime"
+
+    if (from_date or "").strip() or (to_date or "").strip():
+        # Date range: build filter from from_date and/or to_date (YYYY-MM-DD)
+        parts = []
+        if (from_date or "").strip():
+            parts.append(f"{date_field} ge {(from_date or '').strip()}T00:00:00Z")
+        if (to_date or "").strip():
+            # Inclusive end of day: use next day 00:00:00 with 'lt'
+            try:
+                d = datetime.strptime((to_date or "").strip(), "%Y-%m-%d")
+                end_next = (d + timedelta(days=1)).strftime("%Y-%m-%dT00:00:00Z")
+                parts.append(f"{date_field} lt {end_next}")
+            except ValueError:
+                end_next = (to_date or "").strip() + "T23:59:59Z"
+                parts.append(f"{date_field} le {end_next}")
+        filter_expr = " and ".join(parts) if parts else None
     else:
-        since = (now_utc - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    # Newest first so recent emails are ingested first and show up quickly in the UI
-    params = {"$top": 999, "$filter": f"receivedDateTime ge {since}", "$orderby": "receivedDateTime desc"}
+        if days <= 0:
+            since = "2000-01-01T00:00:00Z"
+        elif days == 1:
+            since = now_utc.replace(hour=0, minute=0, second=0, microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
+        else:
+            since = (now_utc - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        filter_expr = f"{date_field} ge {since}"
+
+    params = {"$top": 999, "$filter": filter_expr, "$orderby": f"{date_field} desc"}
     total_enqueued = 0
+    folder_display = "Sent" if is_sent else ("Inbox" if str(folder_id).lower() == "inbox" else folder_id)
 
     with httpx.Client(timeout=60.0) as client:
         next_url: str | None = base_url
@@ -629,19 +658,18 @@ def backfill_emails_task(user_id: str, folder_id: str = "inbox", days: int = 7):
         while next_url:
             r = client.get(next_url, params=next_params, headers=get_auth_headers())
             if r.status_code != 200:
-                return {"ok": False, "error": r.text, "enqueued": total_enqueued}
+                return {"ok": False, "error": r.text, "enqueued": total_enqueued, "folder_id": folder_id}
             data = r.json()
             value = data.get("value", [])
             for item in value:
                 msg_id = item.get("id")
                 if msg_id:
-                    display_name = "Inbox" if folder_id == "inbox" else folder_id
                     ingest_email_task.delay(
-                        f"Users('{user_id}')/Messages('{msg_id}')", msg_id, user_id, folder_display_name=display_name
+                        f"Users('{user_id}')/Messages('{msg_id}')", msg_id, user_id, folder_display_name=folder_display
                     )
                     total_enqueued += 1
             next_link = data.get("@odata.nextLink")
             next_url = next_link if isinstance(next_link, str) else None
-            next_params = None  # nextLink already includes query params
+            next_params = None
 
-    return {"ok": True, "enqueued": total_enqueued}
+    return {"ok": True, "enqueued": total_enqueued, "folder_id": folder_id}

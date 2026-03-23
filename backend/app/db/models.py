@@ -154,3 +154,36 @@ class EscalationThread(Base):
     last_escalation_at = Column(DateTime(timezone=True), nullable=False)
     escalation_count = Column(Integer, default=1)
     last_email_id = Column(String(36), ForeignKey("emails.id", ondelete="SET NULL"), nullable=True)
+
+
+class TeamProject(Base):
+    """Admin-managed projects per team with workflow structure metadata."""
+    __tablename__ = "team_projects"
+
+    id = Column(String(36), primary_key=True, default=uuid_gen)
+    name = Column(String(256), nullable=False, index=True)
+    team_id = Column(String(36), ForeignKey("teams.id", ondelete="SET NULL"), nullable=True, index=True)
+    status = Column(String(32), nullable=False, default="running", index=True)  # running | new | planned | completed
+    structure = Column(JSONB, nullable=True)  # {"phases": [...], "notes": "..."}
+    created_by_user_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    team = relationship("Team", foreign_keys=[team_id])
+    assignments = relationship("ProjectAssignment", back_populates="project", cascade="all, delete-orphan")
+
+
+class ProjectAssignment(Base):
+    """User assignments to a team project."""
+    __tablename__ = "project_assignments"
+
+    id = Column(String(36), primary_key=True, default=uuid_gen)
+    project_id = Column(String(36), ForeignKey("team_projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    role = Column(String(64), nullable=True)  # optional project role label
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+    project = relationship("TeamProject", back_populates="assignments", foreign_keys=[project_id])
+    user = relationship("User", foreign_keys=[user_id])
+
+    __table_args__ = (Index("ix_project_assignments_unique", "project_id", "user_id", unique=True),)

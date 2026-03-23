@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { getApi } from "@/lib/api/client";
-import type { WorkflowNode, WorkflowTreeNode, UserOut, TeamOut } from "@/lib/types";
+import type { WorkflowNode, WorkflowTreeNode, UserOut } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -101,7 +101,6 @@ export default function AdminWorkflowPage() {
   );
   const [nodes, setNodes] = useState<WorkflowNode[]>([]);
   const [users, setUsers] = useState<UserOut[]>([]);
-  const [teams, setTeams] = useState<TeamOut[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
@@ -113,11 +112,10 @@ export default function AdminWorkflowPage() {
     if (status !== "authenticated") return;
     setLoading(true);
     setError(null);
-    Promise.all([api.getWorkflow(), api.getUsers(), api.getTeams()])
-      .then(([n, u, t]) => {
+    Promise.all([api.getWorkflow(), api.getUsers()])
+      .then(([n, u]) => {
         setNodes(n);
         setUsers(u);
-        setTeams(t);
       })
       .catch(() => setError("Failed to load workflow"))
       .finally(() => setLoading(false));
@@ -129,7 +127,6 @@ export default function AdminWorkflowPage() {
 
   const assignManager = (userId: string, managerId: string) => {
     setUpdatingId(userId);
-    // Pass empty string for "No manager" so the API receives it and clears manager_id
     api
       .updateUser(userId, { managerId: managerId })
       .then(() => load())

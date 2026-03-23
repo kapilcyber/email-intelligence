@@ -48,7 +48,7 @@ FastAPI backend for email ingestion (Phase 1) and AI classification (Phase 2): M
    Use `python -m pip` if `pip` is not on PATH.
 
 3. **PostgreSQL & Redis**
-   - **With DB:** Ensure PostgreSQL is running (e.g. pgAdmin 4). Create the app database once: from the `backend` folder run **`python scripts/create_db.py`** (uses `.env` credentials). Or in pgAdmin: right‑click **Databases → Create → Database**, name it `email_intelligence`. Set `DATABASE_URL` or `POSTGRES_*` in `.env`.
+   - **With DB:** Ensure PostgreSQL is running (e.g. pgAdmin 4). Create the app database once: from the `backend` folder run **`python scripts/create_db.py`** (uses `.env` credentials). Or in pgAdmin: right‑click **Databases → Create → Database**, name it `email_intelligence`. Set `DATABASE_URL` or `POSTGRES_*` in `.env`. **Then run `alembic upgrade head`** to create/update tables (the app does not create tables at startup).
    - **Without PostgreSQL:** The API runs without a database: health reports database as "error", dashboard metrics and emails return zeros/empty. Start the API and dashboard as usual; the UI will load and show "Database or backend may be unavailable" if the backend is unreachable.
    - **Redis** is used for Celery and queue stats. If Redis is not running, health reports redis as "error" and queue stats return zeros; the API still responds.
 
@@ -60,10 +60,10 @@ FastAPI backend for email ingestion (Phase 1) and AI classification (Phase 2): M
    ```
 
 5. **Alembic (database migrations)**  
-   From the `backend` folder:
-   - **Fresh DB:** `alembic upgrade head` creates all tables (senders, emails, attachments, teams, users).
-   - **Existing DB already in sync:** `alembic stamp head` to mark current without running.
-   - **New migration after model changes:** `alembic revision --autogenerate -m "description"` then `alembic upgrade head`.  
+   Schema is managed only by Alembic; the API does not run `create_all` at startup. From the `backend` folder:
+   - **Fresh DB or first run:** `alembic upgrade head` creates all tables (senders, emails, attachments, teams, users, etc.).
+   - **Existing DB already in sync with migrations:** `alembic stamp head` to mark current without running.
+   - **After adding/changing models:** `alembic revision --autogenerate -m "description"` then `alembic upgrade head`.  
    See `alembic/README.md` for more.
 
 ## Run
@@ -139,6 +139,7 @@ Indexes: `processing_status`, `ai_status` (and existing `message_id`, `received_
 | GET | /api/emails | List emails (page, pageSize, search, from, to) |
 | **POST** | **/api/emails/backfill** | Enqueue sync of existing mail from Graph (body: `user_id`, optional `folder_id`, `days`) |
 | GET | /api/dashboard/metrics | KPIs for dashboard |
+| GET | /api/dashboard/calendar-events | User’s Outlook calendar (Graph `calendarView`; app permission **Calendars.Read**) |
 | GET | /api/webhook/status | Webhook subscription status |
 | POST | /api/webhook/notify | Graph callback (validation + notifications) |
 | POST | /api/webhook/subscribe | Create subscription (body: `user_id`) |

@@ -12,26 +12,29 @@ import {
   PanelLeftClose,
   PanelLeft,
   CreditCard,
-  Plus,
   Users,
   Network,
   AlertCircle,
   UserCircle,
+  MessageSquare,
+  FolderKanban,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
 import { getApi } from "@/lib/api/client";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/emails", label: "History", icon: Mail },
-  { href: "/departments", label: "Inbox", icon: FolderOpen },
+  { href: "/threads", label: "Threads", icon: MessageSquare },
+  { href: "/departments", label: "Departments", icon: FolderOpen },
   { href: "/escalations", label: "Escalations", icon: AlertCircle },
+  { href: "/leads", label: "Leads", icon: List },
 ];
 
 const adminNavItems = [
   { href: "/admin/teams", label: "Teams", icon: Users },
   { href: "/admin/team-leaders", label: "Team leaders", icon: UserCircle },
+  { href: "/admin/team-projects", label: "Projects", icon: FolderKanban },
   { href: "/admin/workflow", label: "Workflow", icon: Network },
   { href: "/admin/escalations", label: "Escalations", icon: AlertCircle },
   { href: "/admin/leads", label: "Leads", icon: List },
@@ -95,18 +98,6 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
           </div>
         )}
       </div>
-
-      {/* Create Task */}
-      {!collapsed && (
-        <div className="p-3">
-          <Link href="/dashboard">
-            <Button className="w-full justify-center gap-2 rounded-lg bg-[#1E1E1E] text-white hover:bg-[#2d2d2d] dark:bg-neutral-800 dark:hover:bg-neutral-700">
-              <Plus className="h-4 w-4" />
-              Create Task
-            </Button>
-          </Link>
-        </div>
-      )}
 
       {/* Main nav */}
       <nav className="flex-1 space-y-0.5 px-3 py-2 overflow-auto">

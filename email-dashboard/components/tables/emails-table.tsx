@@ -42,6 +42,7 @@ export function EmailsTable({ emails, isLoading, emptyMessage = "No emails found
             <tr className="border-b border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-900/50">
               <th className="px-4 py-3 text-left font-medium text-neutral-600 dark:text-neutral-400">Subject</th>
               <th className="px-4 py-3 text-left font-medium text-neutral-600 dark:text-neutral-400">Sender</th>
+              <th className="px-4 py-3 text-left font-medium text-neutral-600 dark:text-neutral-400">Department</th>
               <th className="px-4 py-3 text-left font-medium text-neutral-600 dark:text-neutral-400">Priority</th>
               <th className="px-4 py-3 text-left font-medium text-neutral-600 dark:text-neutral-400">AI Status</th>
               <th className="px-4 py-3 text-left font-medium text-neutral-600 dark:text-neutral-400">Received</th>
@@ -54,6 +55,7 @@ export function EmailsTable({ emails, isLoading, emptyMessage = "No emails found
               <tr key={i} className="border-b border-neutral-100 dark:border-neutral-800/50">
                 <td className="px-4 py-3"><Skeleton className="h-4 w-48" /></td>
                 <td className="px-4 py-3"><Skeleton className="h-4 w-32" /></td>
+                <td className="px-4 py-3"><Skeleton className="h-4 w-20" /></td>
                 <td className="px-4 py-3"><Skeleton className="h-5 w-14" /></td>
                 <td className="px-4 py-3"><Skeleton className="h-5 w-16" /></td>
                 <td className="px-4 py-3"><Skeleton className="h-4 w-20" /></td>
@@ -87,6 +89,7 @@ export function EmailsTable({ emails, isLoading, emptyMessage = "No emails found
             <tr className="border-b border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-900/50">
               <th className="px-4 py-3 text-left font-medium text-neutral-600 dark:text-neutral-400">Subject</th>
               <th className="px-4 py-3 text-left font-medium text-neutral-600 dark:text-neutral-400">Sender</th>
+              <th className="px-4 py-3 text-left font-medium text-neutral-600 dark:text-neutral-400">Department</th>
               <th className="px-4 py-3 text-left font-medium text-neutral-600 dark:text-neutral-400">Priority</th>
               <th className="px-4 py-3 text-left font-medium text-neutral-600 dark:text-neutral-400">AI Status</th>
               <th className="px-4 py-3 text-left font-medium text-neutral-600 dark:text-neutral-400">Received</th>
@@ -128,6 +131,9 @@ export function EmailsTable({ emails, isLoading, emptyMessage = "No emails found
                   </td>
                   <td className="min-w-[120px] max-w-[240px] break-words px-4 py-3 text-neutral-600 dark:text-neutral-400">
                     {email.sender ?? "—"}
+                  </td>
+                  <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400" title={!email.category ? "Same as Inbox department; run sync & classify to assign" : undefined}>
+                    {email.category ?? "—"}
                   </td>
                   <td className="px-4 py-3">
                     <PriorityBadge label={email.priorityLabel} />

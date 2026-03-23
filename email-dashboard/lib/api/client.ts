@@ -1,8 +1,11 @@
 import type {
   HealthResponse,
   DashboardMetrics,
+  CalendarEventsResponse,
   EmailsResponse,
   EmailDetail,
+  ConversationsResponse,
+  ThreadEmailsResponse,
   QueueStatusResponse,
   SettingsConfig,
   SystemHealthResponse,
@@ -15,9 +18,26 @@ import type {
   WorkflowNode,
   TeamStatusOut,
   MeResponse,
+  TeamProjectOut,
 } from "@/lib/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
+
+/** Parse FastAPI `{ detail: string | object[] }` or `{ error: string }` into a user-facing message. */
+function apiErrorMessage(body: unknown, status: number): string {
+  if (body && typeof body === "object") {
+    const o = body as { detail?: unknown; error?: string; message?: string };
+    if (typeof o.error === "string" && o.error.trim()) return o.error;
+    if (typeof o.message === "string" && o.message.trim()) return o.message;
+    const d = o.detail;
+    if (typeof d === "string" && d.trim()) return d;
+    if (Array.isArray(d) && d.length > 0) {
+      const first = d[0] as { msg?: string };
+      if (typeof first?.msg === "string") return first.msg;
+    }
+  }
+  return `API error: ${status}`;
+}
 
 function buildHeaders(
   userEmail: string | null,
@@ -42,8 +62,7 @@ async function fetchApi<T>(
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    const msg = typeof (body as { error?: string }).error === "string" ? (body as { error: string }).error : `API error: ${res.status}`;
-    throw new Error(msg);
+    throw new Error(apiErrorMessage(body, res.status));
   }
   return res.json() as Promise<T>;
 }
@@ -62,7 +81,32 @@ function createApi(userEmail: string | null, userDisplayName?: string | null) {
     fetchApi<T>(path, options, userEmail, userDisplayName);
   return {
     getHealth: () => withUser<HealthResponse>("/api/health"),
-    getDashboardMetrics: () => withUser<DashboardMetrics>("/api/dashboard/metrics"),
+    getDashboardMetrics: (period?: "daily" | "weekly" | "monthly" | "yearly") =>
+      withUser<DashboardMetrics>(`/api/dashboard/metrics${period ? `?period=${encodeURIComponent(period)}` : ""}`),
+    /**
+     * Dashboard calendar list. Default: meeting invites from synced Mail (`source=mail`, no Calendars.Read).
+     * Optional `source=graph` + Bearer for legacy Graph calendarView.
+     */
+    getDashboardCalendarEvents: (
+      days?: number,
+      accessToken?: string | null,
+      source: "mail" | "graph" = "mail"
+    ) => {
+      const params = new URLSearchParams();
+      if (days != null) params.set("days", String(days));
+      if (source) params.set("source", source);
+      const q = params.toString();
+      const headers =
+        accessToken?.trim() != null && accessToken.trim().length > 0
+          ? { ...buildHeaders(userEmail ?? null, userDisplayName ?? null), Authorization: `Bearer ${accessToken.trim()}` }
+          : buildHeaders(userEmail ?? null, userDisplayName ?? null);
+      return fetchApi<CalendarEventsResponse>(
+        `/api/dashboard/calendar-events${q ? `?${q}` : ""}`,
+        { headers },
+        userEmail ?? null,
+        userDisplayName ?? null
+      );
+    },
     getEmails: (params?: {
       page?: number;
       pageSize?: number;
@@ -84,10 +128,28 @@ function createApi(userEmail: string | null, userDisplayName?: string | null) {
       return withUser<EmailsResponse>(`/api/emails${q ? `?${q}` : ""}`);
     },
     getEmail: (id: string) => withUser<EmailDetail>(`/api/emails/${id}`),
+    /** List email threads (conversations) for Threads view */
+    getConversations: (params?: { page?: number; pageSize?: number; search?: string }) => {
+      const searchParams = new URLSearchParams();
+      if (params?.page != null) searchParams.set("page", String(params.page));
+      if (params?.pageSize != null) searchParams.set("pageSize", String(params.pageSize));
+      if (params?.search) searchParams.set("search", params.search);
+      const q = searchParams.toString();
+      return withUser<ConversationsResponse>(`/api/emails/conversations${q ? `?${q}` : ""}`);
+    },
+    /** Get all emails in a thread (chronological) */
+    getConversationEmails: (conversationId: string) =>
+      withUser<ThreadEmailsResponse>(`/api/emails/conversations/${encodeURIComponent(conversationId)}/emails`),
+    /** Backfill conversationId from Graph so Threads view populates (no re-login needed) */
+    backfillConversationIds: (limit?: number) =>
+      withUser<{ ok: boolean; updated?: number; message?: string; error?: string }>(
+        `/api/emails/backfill-conversation-ids${limit != null ? `?limit=${limit}` : ""}`,
+        { method: "POST" }
+      ),
     getAttachmentUrl,
     getQueueStatus: () => withUser<QueueStatusResponse>("/api/queue/status"),
     getSettings: () => withUser<SettingsConfig>("/api/settings"),
-    triggerBackfill: (body?: { user_id?: string; folder_id?: string; days?: number; all?: boolean }) =>
+    triggerBackfill: (body?: { user_id?: string; folder_id?: string; days?: number; all?: boolean; from_date?: string; to_date?: string }) =>
       withUser<{ ok: boolean; taskId?: string; userId?: string; message?: string; error?: string }>(
         "/api/emails/backfill",
         { method: "POST", body: JSON.stringify(body ?? {}) }
@@ -130,13 +192,14 @@ function createApi(userEmail: string | null, userDisplayName?: string | null) {
       if (params?.team) searchParams.set("team", params.team);
       return withUser<EscalationsResponse>(`/api/admin/escalations?${searchParams.toString()}`);
     },
-    getLeads: (params?: { page?: number; pageSize?: number; label?: string; team?: string; from?: string }) => {
+    getLeads: (params?: { page?: number; pageSize?: number; label?: string; team?: string; from?: string; mine?: boolean }) => {
       const searchParams = new URLSearchParams();
       if (params?.page != null) searchParams.set("page", String(params.page));
       if (params?.pageSize != null) searchParams.set("pageSize", String(params.pageSize));
       if (params?.label) searchParams.set("label", params.label);
       if (params?.team) searchParams.set("team", params.team);
       if (params?.from) searchParams.set("from", params.from);
+      if (params?.mine === true) searchParams.set("mine", "true");
       const q = searchParams.toString();
       return withUser<LeadsResponse>(`/api/leads${q ? `?${q}` : ""}`);
     },
@@ -200,6 +263,40 @@ function createApi(userEmail: string | null, userDisplayName?: string | null) {
         { method: "POST" }
       );
     },
+    getProjectsWorkflow: (params?: { teamId?: string; status?: "running" | "new" | "planned" | "completed" }) => {
+      const searchParams = new URLSearchParams();
+      if (params?.teamId) searchParams.set("teamId", params.teamId);
+      if (params?.status) searchParams.set("status", params.status);
+      const q = searchParams.toString();
+      return withUser<TeamProjectOut[]>(`/api/admin/projects-workflow${q ? `?${q}` : ""}`);
+    },
+    getProjectWorkflow: (projectId: string) =>
+      withUser<TeamProjectOut>(`/api/admin/projects-workflow/${encodeURIComponent(projectId)}`),
+    createProjectWorkflow: (body: {
+      name: string;
+      teamId?: string | null;
+      status?: "running" | "new" | "planned" | "completed";
+      structure?: { phases?: string[]; notes?: string };
+      assignedUserIds?: string[];
+    }) =>
+      withUser<TeamProjectOut>("/api/admin/projects-workflow", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    updateProjectWorkflow: (
+      projectId: string,
+      body: {
+        name: string;
+        teamId?: string | null;
+        status?: "running" | "new" | "planned" | "completed";
+        structure?: { phases?: string[]; notes?: string };
+        assignedUserIds?: string[];
+      }
+    ) =>
+      withUser<TeamProjectOut>(`/api/admin/projects-workflow/${projectId}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      }),
   };
 }
 
