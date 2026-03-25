@@ -8,7 +8,7 @@ from fastapi.responses import RedirectResponse, Response
 
 from fastapi import Depends, Header
 
-from app.api import health, webhook, emails, dashboard, queue, settings as settings_api, system as system_api, phase3 as phase3_api, admin as admin_api
+from app.api import health, webhook, emails, dashboard, queue, settings as settings_api, system as system_api, phase3 as phase3_api, admin as admin_api, mom as mom_api
 from app.api.deps import get_current_user_email
 from app.config import get_settings
 from app.db.session import get_db
@@ -37,6 +37,7 @@ app.include_router(queue.router, prefix="/api/queue", tags=["queue"])
 app.include_router(settings_api.router, prefix="/api", tags=["settings"])
 app.include_router(system_api.router, prefix="/api", tags=["system"])
 app.include_router(phase3_api.router, prefix="/api", tags=["phase3"])
+app.include_router(mom_api.router, prefix="/api/mom", tags=["mom"])
 app.include_router(admin_api.router, prefix="/api/admin", tags=["admin"])
 
 
@@ -96,6 +97,7 @@ def api_me(
         if team:
             department = team.name
     return {
+        "userId": user.id,
         "email": email,
         "role": role,
         "isAdmin": is_admin,

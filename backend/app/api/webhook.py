@@ -3,7 +3,7 @@ from fastapi import APIRouter, Request, Response
 from pydantic import BaseModel
 from app.config import get_settings
 from app.graph.webhook import get_subscription_status, subscribe
-from app.workers.tasks import ingest_email_task
+from app.workers.tasks import enqueue_ingest_email_task
 import redis
 
 router = APIRouter()
@@ -64,7 +64,7 @@ async def notify(request: Request):
         resource_data = notification.get("resourceData") or {}
         graph_id = resource_data.get("id")
         if resource and graph_id:
-            ingest_email_task.delay(resource, graph_id)
+            enqueue_ingest_email_task(resource, graph_id)
     return Response(status_code=202)
 
 

@@ -1,4 +1,5 @@
 from datetime import datetime, timezone, timedelta
+from typing import Any
 from urllib.parse import quote
 import re
 import httpx
@@ -7,10 +8,11 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from sqlalchemy.exc import OperationalError
 from app.db.session import get_db
-from app.db.models import Email, DailySummary
-from app.workers.tasks import get_queue_stats, generate_daily_summary_task
+from app.db.models import Email, DailySummary, User, TeamProject, ProjectAssignment, Team
+from app.workers.tasks import get_queue_stats_for_user, generate_daily_summary_task
 from app.api.deps import get_current_user_email
 from app.graph.auth import get_auth_headers
+from app.http_client import httpx_client
 
 router = APIRouter()
 
@@ -80,7 +82,7 @@ def _verify_delegated_user_matches(bearer_token: str, expected_lower: str) -> st
     url = "https://graph.microsoft.com/v1.0/me?$select=mail,userPrincipalName"
     headers = {"Authorization": f"Bearer {bearer_token}"}
     try:
-        with httpx.Client(timeout=15.0) as client:
+        with httpx_client(timeout=15.0) as client:
             r = client.get(url, headers=headers)
     except Exception as e:
         return f"Could not verify sign-in token: {e!s}"
@@ -112,7 +114,7 @@ def _graph_calendar_events_delegated(
     url = _calendar_view_url("me", start_s, end_s)
     headers = {"Authorization": f"Bearer {bearer_token}"}
     try:
-        with httpx.Client(timeout=30.0) as client:
+        with httpx_client(timeout=30.0) as client:
             r = client.get(url, headers=headers)
     except Exception as e:
         return [], f"Graph request failed: {e!s}"
@@ -145,7 +147,7 @@ def _graph_calendar_events(
     url = _calendar_view_url(f"users/{user_seg}", start_s, end_s)
     headers = get_auth_headers()
     try:
-        with httpx.Client(timeout=30.0) as client:
+        with httpx_client(timeout=30.0) as client:
             r = client.get(url, headers=headers)
     except Exception as e:
         return [], f"Graph request failed: {e!s}"
@@ -203,6 +205,9 @@ def _email_looks_like_meeting_invite(email: Email) -> bool:
     if _subject_looks_like_resume_noise(email.subject):
         return False
     rp = email.raw_payload if isinstance(email.raw_payload, dict) else {}
+    odata_type = str(rp.get("@odata.type") or "").lower()
+    if "eventmessage" in odata_type:
+        return True
     mt = str(rp.get("meetingMessageType") or "").lower()
     if mt and mt not in ("none", "notamessage"):
         return True
@@ -212,7 +217,10 @@ def _email_looks_like_meeting_invite(email: Email) -> bool:
         x in subj
         for x in (
             "meeting",
+            "invitation",
             "invitation:",
+            "meeting request",
+            "webinar",
             " invite:",
             "teams meeting",
             "zoom meeting",
@@ -240,6 +248,28 @@ def _email_looks_like_meeting_invite(email: Email) -> bool:
 _ISO_RE = re.compile(
     r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?"
 )
+_HUMAN_DATE_RE = re.compile(
+    r"\b(\d{1,2})(?:st|nd|rd|th)?\s+"
+    r"(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|"
+    r"aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)"
+    r"(?:\s*,?\s*(\d{4}))?\b",
+    re.I,
+)
+_HUMAN_TIME_RE = re.compile(r"\b(\d{1,2}):(\d{2})\s*(am|pm)?\b", re.I)
+_MONTHS = {
+    "jan": 1, "january": 1,
+    "feb": 2, "february": 2,
+    "mar": 3, "march": 3,
+    "apr": 4, "april": 4,
+    "may": 5,
+    "jun": 6, "june": 6,
+    "jul": 7, "july": 7,
+    "aug": 8, "august": 8,
+    "sep": 9, "sept": 9, "september": 9,
+    "oct": 10, "october": 10,
+    "nov": 11, "november": 11,
+    "dec": 12, "december": 12,
+}
 
 
 def _parse_iso_datetimes(text: str) -> list[datetime]:
@@ -258,6 +288,93 @@ def _parse_iso_datetimes(text: str) -> list[datetime]:
         except Exception:
             continue
     return out
+
+
+def _parse_human_datetime(text: str, fallback_year: int) -> datetime | None:
+    if not text:
+        return None
+    dm = _HUMAN_DATE_RE.search(text)
+    if not dm:
+        return None
+    day = int(dm.group(1))
+    mon_s = (dm.group(2) or "").lower()
+    month = _MONTHS.get(mon_s)
+    if not month:
+        return None
+    year = int(dm.group(3)) if dm.group(3) else fallback_year
+    hour = 9
+    minute = 0
+    tm = _HUMAN_TIME_RE.search(text)
+    if tm:
+        hour = int(tm.group(1))
+        minute = int(tm.group(2))
+        ap = (tm.group(3) or "").lower()
+        if ap == "pm" and hour < 12:
+            hour += 12
+        elif ap == "am" and hour == 12:
+            hour = 0
+    try:
+        return datetime(year, month, day, hour, minute, tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+# Graph Windows → IANA (subset) for meeting startDateTime / endDateTime timeZone
+_GRAPH_WINDOWS_TZ_TO_IANA: dict[str, str] = {
+    "utc": "UTC",
+    "tijuana": "America/Tijuana",
+    "pacific standard time": "America/Los_Angeles",
+    "mountain standard time": "America/Denver",
+    "central standard time": "America/Chicago",
+    "eastern standard time": "America/New_York",
+    "gmt standard time": "Europe/London",
+    "w. europe standard time": "Europe/Berlin",
+    "central europe standard time": "Europe/Warsaw",
+    "india standard time": "Asia/Kolkata",
+    "singapore standard time": "Asia/Singapore",
+    "tokyo standard time": "Asia/Tokyo",
+    "australia eastern standard time": "Australia/Sydney",
+}
+
+
+def _parse_graph_date_time_time_zone(obj: Any) -> datetime | None:
+    """Parse Graph dateTimeTimeZone to UTC-aware datetime."""
+    if not isinstance(obj, dict):
+        return None
+    ds = obj.get("dateTime")
+    if not ds or not isinstance(ds, str):
+        return None
+    ds = ds.strip()
+    if not ds:
+        return None
+    tz_key = (obj.get("timeZone") or "UTC").strip() or "UTC"
+    if ds.endswith("Z"):
+        ds = ds[:-1] + "+00:00"
+    # Graph may send 7-digit fractional seconds; fromisoformat needs ≤6 in practice
+    ds = re.sub(r"(\.\d{6})\d+", r"\1", ds)
+    try:
+        dt = datetime.fromisoformat(ds)
+    except ValueError:
+        try:
+            dt = datetime.fromisoformat(ds[:19])
+        except ValueError:
+            return None
+    if dt.tzinfo is not None:
+        return dt.astimezone(timezone.utc)
+    tz_l = tz_key.lower()
+    if tz_l in ("utc", "gmt", "greenwich mean time"):
+        return dt.replace(tzinfo=timezone.utc)
+    iana = _GRAPH_WINDOWS_TZ_TO_IANA.get(tz_l)
+    if not iana and "/" in tz_key:
+        iana = tz_key  # already IANA
+    if iana:
+        try:
+            from zoneinfo import ZoneInfo
+
+            return dt.replace(tzinfo=ZoneInfo(iana)).astimezone(timezone.utc)
+        except Exception:
+            pass
+    return dt.replace(tzinfo=timezone.utc)
 
 
 def _extract_online_meeting_url(text: str) -> str | None:
@@ -280,9 +397,18 @@ def _email_to_calendar_event_dict(email: Email) -> dict:
     mt = str(rp.get("meetingMessageType") or "").lower()
     is_cancelled = mt == "meetingcancelled"
     text_blob = f"{email.subject or ''}\n{email.body_preview or ''}"
-    times = _parse_iso_datetimes(text_blob)
-    start_dt: datetime | None = times[0] if times else None
-    end_dt: datetime | None = times[1] if len(times) > 1 else None
+
+    start_dt = _parse_graph_date_time_time_zone(rp.get("startDateTime"))
+    end_dt = _parse_graph_date_time_time_zone(rp.get("endDateTime"))
+    if start_dt is None or end_dt is None:
+        times = _parse_iso_datetimes(text_blob)
+        if start_dt is None:
+            start_dt = times[0] if times else None
+        if end_dt is None:
+            end_dt = times[1] if len(times) > 1 else None
+    if start_dt is None:
+        fallback_year = (email.received_at.year if email.received_at else datetime.now(timezone.utc).year)
+        start_dt = _parse_human_datetime(text_blob, fallback_year)
     if start_dt is None:
         ra = email.received_at
         if ra is not None:
@@ -300,7 +426,26 @@ def _email_to_calendar_event_dict(email: Email) -> dict:
 
     org_name = (email.sender_display_name or "").strip() or None
     org_email = (email.sender_email or "").strip() or None
+    org_block = rp.get("organizer") if isinstance(rp.get("organizer"), dict) else {}
+    org_ea = (org_block.get("emailAddress") or {}) if isinstance(org_block, dict) else {}
+    if isinstance(org_ea, dict):
+        if not org_name and org_ea.get("name"):
+            org_name = str(org_ea.get("name")).strip() or org_name
+        if not org_email and org_ea.get("address"):
+            org_email = str(org_ea.get("address")).strip() or org_email
+
     join_url = _extract_online_meeting_url(text_blob)
+    om = rp.get("onlineMeeting") if isinstance(rp.get("onlineMeeting"), dict) else {}
+    if not join_url and isinstance(om, dict):
+        ju = (om.get("joinUrl") or "").strip()
+        if ju:
+            join_url = ju
+
+    loc_disp = ""
+    loc = rp.get("location")
+    if isinstance(loc, dict):
+        loc_disp = (loc.get("displayName") or "").strip()
+
     return {
         "id": email.id,
         "subject": (email.subject or "(Meeting mail)").strip(),
@@ -312,7 +457,7 @@ def _email_to_calendar_event_dict(email: Email) -> dict:
         "webLink": None,
         "isCancelled": is_cancelled,
         "isOnlineMeeting": bool(join_url),
-        "location": None,
+        "location": loc_disp or None,
         "showAs": None,
     }
 
@@ -329,14 +474,16 @@ def _calendar_events_from_synced_mail(
     """
     try:
         lookback = datetime.now(timezone.utc) - timedelta(days=120)
+        mbox = (mailbox or "").strip().lower()
         rows = (
             db.query(Email)
             .filter(
-                Email.mailbox_owner_email == mailbox,
+                Email.mailbox_owner_email.isnot(None),
+                func.lower(Email.mailbox_owner_email) == mbox,
                 Email.received_at >= lookback,
             )
             .order_by(Email.received_at.desc())
-            .limit(1200)
+            .limit(2000)
             .all()
         )
     except (OperationalError, Exception) as e:
@@ -372,11 +519,14 @@ def dashboard_metrics(
     now_utc = datetime.now(timezone.utc)
     try:
         today_start = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
-        base = db.query(Email).filter(Email.mailbox_owner_email == current_user_email)
+        base = db.query(Email).filter(
+            Email.mailbox_owner_email.isnot(None),
+            func.lower(Email.mailbox_owner_email) == current_user_email,
+        )
         emails_today = base.filter(Email.received_at >= today_start).count()
     except (OperationalError, Exception):
         emails_today = 0
-    queue_stats = get_queue_stats()
+    queue_stats = get_queue_stats_for_user(current_user_email)
 
     total_emails = 0
     total_classified = 0
@@ -396,7 +546,10 @@ def dashboard_metrics(
             since = now_utc - timedelta(days=365)
 
     try:
-        base = db.query(Email).filter(Email.mailbox_owner_email == current_user_email)
+        base = db.query(Email).filter(
+            Email.mailbox_owner_email.isnot(None),
+            func.lower(Email.mailbox_owner_email) == current_user_email,
+        )
         if since is not None:
             base = base.filter(Email.received_at >= since)
         total_emails = base.count()
@@ -448,14 +601,18 @@ def get_daily_summary(
                 db.query(DailySummary)
                 .filter(
                     DailySummary.summary_date == day_start,
-                    DailySummary.mailbox_owner_email == current_user_email,
+                    DailySummary.mailbox_owner_email.isnot(None),
+                    func.lower(DailySummary.mailbox_owner_email) == current_user_email,
                 )
                 .all()
             )
         else:
             row = (
                 db.query(DailySummary)
-                .filter(DailySummary.mailbox_owner_email == current_user_email)
+                .filter(
+                    DailySummary.mailbox_owner_email.isnot(None),
+                    func.lower(DailySummary.mailbox_owner_email) == current_user_email,
+                )
                 .order_by(DailySummary.summary_date.desc())
                 .first()
             )
@@ -513,3 +670,194 @@ def dashboard_calendar_events(
 
     events, err = _calendar_events_from_synced_mail(db, mailbox, start_utc, end_utc)
     return {"events": events, "error": err}
+
+
+@router.get("/notifications")
+def dashboard_notifications(
+    current_user_email: str = Depends(get_current_user_email),
+    db: Session = Depends(get_db),
+):
+    """
+    Bell notifications for current mailbox only (user/admin sees own mailbox).
+    Includes: new mail, meeting scheduled, AI pending/failed, unreplied mails, important upcoming dates.
+    """
+    now_utc = datetime.now(timezone.utc)
+    mailbox = (current_user_email or "").strip().lower()
+
+    try:
+        recent_rows = (
+            db.query(Email)
+            .filter(
+                Email.mailbox_owner_email.isnot(None),
+                func.lower(Email.mailbox_owner_email) == mailbox,
+                Email.received_at >= now_utc - timedelta(days=14),
+            )
+            .order_by(Email.received_at.desc())
+            .limit(1500)
+            .all()
+        )
+    except (OperationalError, Exception) as e:
+        return {"items": [], "error": f"Could not load notifications: {e!s}"}
+
+    items: list[dict] = []
+
+    # 1) New mail in last 6 hours
+    new_rows = [r for r in recent_rows if r.received_at and r.received_at >= now_utc - timedelta(hours=6)]
+    if new_rows:
+        items.append(
+            {
+                "id": "new-mail",
+                "kind": "new_mail",
+                "title": f"{len(new_rows)} new mail(s)",
+                "message": "New emails arrived in your mailbox.",
+                "level": "info",
+                "at": max(r.received_at for r in new_rows).isoformat(),
+                "count": len(new_rows),
+                "href": "/emails",
+            }
+        )
+
+    # 2) AI pending/failed in last 24h
+    pending_rows = [
+        r
+        for r in recent_rows
+        if (getattr(r, "ai_status", None) in ("pending", "failed")) and r.received_at and r.received_at >= now_utc - timedelta(days=1)
+    ]
+    if pending_rows:
+        items.append(
+            {
+                "id": "ai-pending",
+                "kind": "ai_pending",
+                "title": f"{len(pending_rows)} mail(s) not classified",
+                "message": "Some emails are pending/failed AI classification.",
+                "level": "warning",
+                "at": max(r.received_at for r in pending_rows).isoformat(),
+                "count": len(pending_rows),
+                "href": "/emails",
+            }
+        )
+
+    # 3) Meeting schedules in next 14 days
+    meetings, _ = _calendar_events_from_synced_mail(db, mailbox, now_utc - timedelta(days=1), now_utc + timedelta(days=14))
+    upcoming_meetings = []
+    for ev in meetings:
+        try:
+            s = (ev.get("start") or {}).get("dateTime") or ""
+            dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            if dt >= now_utc:
+                upcoming_meetings.append((dt, ev))
+        except Exception:
+            continue
+    upcoming_meetings.sort(key=lambda x: x[0])
+    if upcoming_meetings:
+        dt, ev = upcoming_meetings[0]
+        items.append(
+            {
+                "id": "meeting-next",
+                "kind": "meeting_scheduled",
+                "title": "Meeting scheduled",
+                "message": f"{ev.get('subject') or 'Meeting'} on {dt.strftime('%d %b %Y %H:%M UTC')}",
+                "level": "info",
+                "at": dt.isoformat(),
+                "count": len(upcoming_meetings),
+                "href": "/dashboard",
+            }
+        )
+
+    # 4) Important upcoming dates (meeting dates in next 30 days, grouped by day)
+    important_days: dict[str, int] = {}
+    for dt, _ev in upcoming_meetings:
+        if dt > now_utc + timedelta(days=30):
+            continue
+        k = dt.strftime("%Y-%m-%d")
+        important_days[k] = (important_days.get(k) or 0) + 1
+    if important_days:
+        next_day = sorted(important_days.keys())[0]
+        items.append(
+            {
+                "id": "important-dates",
+                "kind": "important_date",
+                "title": "Important date from mail",
+                "message": f"{important_days[next_day]} item(s) on {next_day}",
+                "level": "info",
+                "at": f"{next_day}T00:00:00+00:00",
+                "count": sum(important_days.values()),
+                "href": "/dashboard",
+            }
+        )
+
+    # 5) Unreplied inbox mails (>24h old) by conversation
+    sent_cids = set()
+    for r in recent_rows:
+        folder = (getattr(r, "folder_name", None) or getattr(r, "folder_id", None) or "").lower()
+        if "sent" in folder and (r.conversation_id or "").strip():
+            sent_cids.add((r.conversation_id or "").strip())
+    unreplied = []
+    for r in recent_rows:
+        folder = (getattr(r, "folder_name", None) or getattr(r, "folder_id", None) or "").lower()
+        cid = (r.conversation_id or "").strip()
+        if "inbox" not in folder:
+            continue
+        if not r.received_at or r.received_at > now_utc - timedelta(hours=24):
+            continue
+        if cid and cid in sent_cids:
+            continue
+        unreplied.append(r)
+    if unreplied:
+        items.append(
+            {
+                "id": "unreplied",
+                "kind": "unreplied_mail",
+                "title": f"{len(unreplied)} mail(s) awaiting reply",
+                "message": "Inbox mails older than 24h without a sent reply in thread.",
+                "level": "warning",
+                "at": max(r.received_at for r in unreplied).isoformat(),
+                "count": len(unreplied),
+                "href": "/threads",
+            }
+        )
+
+    items.sort(key=lambda x: x.get("at", ""), reverse=True)
+    return {"items": items[:15], "error": None}
+
+
+@router.get("/my-projects")
+def dashboard_my_projects(
+    current_user_email: str = Depends(get_current_user_email),
+    db: Session = Depends(get_db),
+):
+    """Projects assigned to the current user (for user dashboard project visibility)."""
+    email = (current_user_email or "").strip().lower()
+    try:
+        user = db.query(User).filter(func.lower(User.email) == email).first()
+        if not user:
+            return {"projects": []}
+
+        rows = (
+            db.query(ProjectAssignment, TeamProject, Team)
+            .join(TeamProject, TeamProject.id == ProjectAssignment.project_id)
+            .outerjoin(Team, Team.id == TeamProject.team_id)
+            .filter(ProjectAssignment.user_id == user.id)
+            .order_by(TeamProject.updated_at.desc())
+            .all()
+        )
+        projects: list[dict] = []
+        for a, p, t in rows:
+            projects.append(
+                {
+                    "projectId": p.id,
+                    "projectName": p.name,
+                    "status": p.status,
+                    "teamName": (t.name if t else None),
+                    "role": a.role,
+                    "responsibilities": a.responsibilities,
+                    "reportsToUserId": a.reports_to_user_id,
+                    "structure": p.structure if isinstance(p.structure, dict) else None,
+                    "updatedAt": (p.updated_at.isoformat() if p.updated_at else None),
+                }
+            )
+        return {"projects": projects}
+    except (OperationalError, Exception):
+        return {"projects": []}

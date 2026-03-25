@@ -2,16 +2,25 @@
 Phase 4: Admin APIs — teams, users, workflow (who leads whom), team status.
 """
 from datetime import datetime
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Body
 from sqlalchemy import exists, func, or_
 from sqlalchemy.orm import Session, aliased
 from sqlalchemy.exc import OperationalError, ProgrammingError
 from pydantic import BaseModel, Field
 
 from app.db.session import get_db
-from app.db.models import Team, User, Email, TeamProject, ProjectAssignment
+from app.db.models import Team, User, Email, Attachment, TeamProject, ProjectAssignment
 from app.api.deps import get_admin_user
-from app.api.phase3 import _email_to_item
+from app.api.phase3 import _email_to_item, RetagEmailBody, _perform_retag
+from app.api.emails import (
+    ConversationOut,
+    ConversationsResponse,
+    EmailDetailOut,
+    AttachmentOut,
+    ThreadEmailsResponse,
+    _display_category,
+    _bcc_from_email,
+)
 from app.config import get_settings
 
 router = APIRouter(dependencies=[Depends(get_admin_user)])
@@ -66,7 +75,17 @@ class ProjectAssignmentOut(BaseModel):
     userId: str
     email: str
     displayName: str | None = None
+    role: str | None = None  # project-specific role
+    responsibilities: str | None = None  # what they do on this project
+    # Project-internal manager (another assignee), not org workflow.
+    reportsToUserId: str | None = None
+
+
+class ProjectAssignmentUpsertIn(BaseModel):
+    userId: str
     role: str | None = None
+    responsibilities: str | None = None
+    reportsToUserId: str | None = None
 
 
 class TeamProjectOut(BaseModel):
@@ -76,6 +95,10 @@ class TeamProjectOut(BaseModel):
     teamName: str | None = None
     status: str
     structure: dict | None = None
+    # Explicit project lead (not org "team lead").
+    projectLeadUserId: str | None = None
+    # Admin user id who created the project (used for mailbox thread access).
+    createdByUserId: str | None = None
     assignedUsers: list[ProjectAssignmentOut] = []
     createdAt: datetime
     updatedAt: datetime
@@ -86,7 +109,11 @@ class TeamProjectUpsertIn(BaseModel):
     teamId: str | None = None
     status: str = "running"
     structure: dict | None = None
-    assignedUserIds: list[str] = []
+    projectLeadUserId: str | None = None
+    # Per-user project role and responsibilities (preferred over assignedUserIds alone).
+    assignments: list[ProjectAssignmentUpsertIn] = Field(default_factory=list)
+    # Legacy: user ids only. Ignored when assignments is non-empty.
+    assignedUserIds: list[str] = Field(default_factory=list)
 
 
 class TeamStatusOut(BaseModel):
@@ -136,6 +163,8 @@ def _serialize_project(db: Session, project: TeamProject) -> TeamProjectOut:
             email=u.email,
             displayName=u.display_name,
             role=a.role,
+            responsibilities=a.responsibilities,
+            reportsToUserId=a.reports_to_user_id,
         )
         for a, u in assignments
     ]
@@ -146,10 +175,122 @@ def _serialize_project(db: Session, project: TeamProject) -> TeamProjectOut:
         teamName=team_name,
         status=project.status,
         structure=project.structure if isinstance(project.structure, dict) else None,
+        projectLeadUserId=project.project_lead_user_id,
+        createdByUserId=project.created_by_user_id,
         assignedUsers=users,
         createdAt=project.created_at,
         updatedAt=project.updated_at,
     )
+
+
+def _effective_project_assignments(payload: TeamProjectUpsertIn) -> list[ProjectAssignmentUpsertIn]:
+    if payload.assignments:
+        return payload.assignments
+    return [
+        ProjectAssignmentUpsertIn(userId=uid.strip())
+        for uid in (payload.assignedUserIds or [])
+        if isinstance(uid, str) and uid.strip()
+    ]
+
+
+def _assignment_valid_user_ids(items: list[ProjectAssignmentUpsertIn], db: Session) -> set[str]:
+    uids = list({(i.userId or "").strip() for i in items if (i.userId or "").strip()})
+    if not uids:
+        return set()
+    users = db.query(User).filter(User.id.in_(uids)).all()
+    return {u.id for u in users}
+
+
+def _normalize_project_reports_to(uid: str, reports_to: str | None, valid: set[str]) -> str | None:
+    if not reports_to or not str(reports_to).strip():
+        return None
+    r = str(reports_to).strip()
+    if r == uid or r not in valid:
+        return None
+    return r
+
+
+def _resolve_project_lead_for_save(
+    lead_id: str | None, valid_assignees: set[str]
+) -> str | None:
+    raw = (lead_id or "").strip() or None
+    if not raw:
+        return None
+    if not valid_assignees:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot set a project lead when no users are assigned.",
+        )
+    if raw not in valid_assignees:
+        raise HTTPException(
+            status_code=400,
+            detail="Project lead must be one of the assigned users.",
+        )
+    return raw
+
+
+def _user_id_for_admin_email(db: Session, admin_email: str) -> str | None:
+    u = db.query(User).filter(User.email == (admin_email or "").strip().lower()).first()
+    return u.id if u else None
+
+
+def _folder_is_inbox_spam_junk(email: Email) -> bool:
+    fn = (email.folder_name or "").lower()
+    fid = (email.folder_id or "").lower()
+    for k in ("inbox", "spam", "junk"):
+        if k in fn or k in fid:
+            return True
+    return False
+
+
+def _recipient_emails_from_json(recipients) -> list[str]:
+    if not recipients or not isinstance(recipients, list):
+        return []
+    out: list[str] = []
+    for rec in recipients:
+        if not isinstance(rec, dict):
+            continue
+        addr = rec.get("email")
+        if not addr and isinstance(rec.get("emailAddress"), dict):
+            addr = rec["emailAddress"].get("address")
+        if addr and str(addr).strip():
+            out.append(str(addr).strip().lower())
+    return out
+
+
+def _email_contains_project_name(email: Email, project_name: str) -> bool:
+    """True only if the exact project name (case-insensitive) appears in subject or body."""
+    pn = (project_name or "").strip()
+    if not pn:
+        return False
+    pl = pn.lower()
+    subj = (email.subject or "").lower()
+    if pl in subj:
+        return True
+    preview = (email.body_preview or "").lower()
+    if pl in preview:
+        return True
+    body = email.body_content or ""
+    if len(body) > 200_000:
+        body = body[:200_000]
+    if pl in body.lower():
+        return True
+    return False
+
+
+def _assert_project_mailbox_threads_access(project: TeamProject, admin_email: str, db: Session) -> None:
+    """Only the creating admin may list mailbox threads (when creator is recorded)."""
+    creator_id = project.created_by_user_id
+    if not creator_id:
+        return
+    creator = db.query(User).filter(User.id == creator_id).first()
+    if not creator:
+        return
+    if (creator.email or "").strip().lower() != (admin_email or "").strip().lower():
+        raise HTTPException(
+            status_code=403,
+            detail="Only the admin who created this project can view related mailbox threads.",
+        )
 
 
 # --- Teams ---
@@ -341,7 +482,11 @@ def get_project_workflow(project_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/projects-workflow", response_model=TeamProjectOut)
-def create_project_workflow(payload: TeamProjectUpsertIn, db: Session = Depends(get_db)):
+def create_project_workflow(
+    payload: TeamProjectUpsertIn,
+    db: Session = Depends(get_db),
+    admin_email: str = Depends(get_admin_user),
+):
     try:
         name = (payload.name or "").strip()
         if not name:
@@ -355,24 +500,42 @@ def create_project_workflow(payload: TeamProjectUpsertIn, db: Session = Depends(
             if not team:
                 raise HTTPException(status_code=400, detail="Team not found")
 
+        items = _effective_project_assignments(payload)
+        valid = _assignment_valid_user_ids(items, db)
+        lead_for_project = _resolve_project_lead_for_save(payload.projectLeadUserId, valid)
+        creator_id = _user_id_for_admin_email(db, admin_email)
+
         project = TeamProject(
             name=name,
             team_id=team_id,
             status=status,
             structure=payload.structure if isinstance(payload.structure, dict) else None,
+            project_lead_user_id=lead_for_project,
+            created_by_user_id=creator_id,
         )
         db.add(project)
         db.commit()
         db.refresh(project)
 
-        ids = list({x.strip() for x in (payload.assignedUserIds or []) if isinstance(x, str) and x.strip()})
-        if ids:
-            users = db.query(User).filter(User.id.in_(ids)).all()
-            valid = {u.id for u in users}
-            for uid in ids:
-                if uid in valid:
-                    db.add(ProjectAssignment(project_id=project.id, user_id=uid))
+        if items:
+            for item in items:
+                uid = (item.userId or "").strip()
+                if uid not in valid:
+                    continue
+                role = (item.role or "").strip()[:64] or None
+                resp = (item.responsibilities or "").strip() or None
+                reports_to = _normalize_project_reports_to(uid, item.reportsToUserId, valid)
+                db.add(
+                    ProjectAssignment(
+                        project_id=project.id,
+                        user_id=uid,
+                        role=role,
+                        responsibilities=resp,
+                        reports_to_user_id=reports_to,
+                    )
+                )
             db.commit()
+            db.refresh(project)
 
         return _serialize_project(db, project)
     except HTTPException:
@@ -388,7 +551,12 @@ def create_project_workflow(payload: TeamProjectUpsertIn, db: Session = Depends(
 
 
 @router.patch("/projects-workflow/{project_id}", response_model=TeamProjectOut)
-def update_project_workflow(project_id: str, payload: TeamProjectUpsertIn, db: Session = Depends(get_db)):
+def update_project_workflow(
+    project_id: str,
+    payload: TeamProjectUpsertIn,
+    db: Session = Depends(get_db),
+    admin_email: str = Depends(get_admin_user),
+):
     try:
         project = db.query(TeamProject).filter(TeamProject.id == project_id).first()
         if not project:
@@ -409,19 +577,235 @@ def update_project_workflow(project_id: str, payload: TeamProjectUpsertIn, db: S
         project.status = status
         project.team_id = team_id
         project.structure = payload.structure if isinstance(payload.structure, dict) else None
-        db.commit()
+        if not project.created_by_user_id:
+            project.created_by_user_id = _user_id_for_admin_email(db, admin_email)
 
         db.query(ProjectAssignment).filter(ProjectAssignment.project_id == project.id).delete()
-        ids = list({x.strip() for x in (payload.assignedUserIds or []) if isinstance(x, str) and x.strip()})
-        if ids:
-            users = db.query(User).filter(User.id.in_(ids)).all()
-            valid = {u.id for u in users}
-            for uid in ids:
-                if uid in valid:
-                    db.add(ProjectAssignment(project_id=project.id, user_id=uid))
+        items = _effective_project_assignments(payload)
+        valid = _assignment_valid_user_ids(items, db)
+        project.project_lead_user_id = _resolve_project_lead_for_save(payload.projectLeadUserId, valid)
+
+        if items:
+            for item in items:
+                uid = (item.userId or "").strip()
+                if uid not in valid:
+                    continue
+                role = (item.role or "").strip()[:64] or None
+                resp = (item.responsibilities or "").strip() or None
+                reports_to = _normalize_project_reports_to(uid, item.reportsToUserId, valid)
+                db.add(
+                    ProjectAssignment(
+                        project_id=project.id,
+                        user_id=uid,
+                        role=role,
+                        responsibilities=resp,
+                        reports_to_user_id=reports_to,
+                    )
+                )
         db.commit()
         db.refresh(project)
         return _serialize_project(db, project)
+    except HTTPException:
+        raise
+    except (OperationalError, ProgrammingError) as e:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Projects tables are not in the database yet. From the backend folder run: "
+                "alembic upgrade head"
+            ),
+        ) from e
+
+
+@router.get(
+    "/projects-workflow/{project_id}/mailbox-threads",
+    response_model=ConversationsResponse,
+    response_model_by_alias=True,
+)
+def list_project_mailbox_threads(
+    project_id: str,
+    db: Session = Depends(get_db),
+    admin_email: str = Depends(get_admin_user),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100, alias="pageSize"),
+):
+    """
+    Threads in the creating admin's mailbox where at least one Inbox/Spam/Junk message contains the project name.
+    Counts and previews use only messages that contain the project name (not the whole reply chain).
+    """
+    try:
+        project = db.query(TeamProject).filter(TeamProject.id == project_id).first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        _assert_project_mailbox_threads_access(project, admin_email, db)
+
+        mailbox = (admin_email or "").strip().lower()
+
+        candidates = (
+            db.query(Email)
+            .filter(
+                Email.mailbox_owner_email == mailbox,
+                Email.conversation_id.isnot(None),
+                Email.conversation_id != "",
+            )
+            .order_by(Email.received_at.desc())
+            .limit(8000)
+            .all()
+        )
+        seed_emails = [
+            e
+            for e in candidates
+            if _folder_is_inbox_spam_junk(e) and not (e.conversation_id or "").strip().startswith("thread:")
+        ]
+        matched_seeds = [e for e in seed_emails if _email_contains_project_name(e, project.name)]
+        cids = {(e.conversation_id or "").strip() for e in matched_seeds if e.conversation_id}
+
+        if not cids:
+            return ConversationsResponse(conversations=[], total=0, page=page, pageSize=page_size)
+
+        cid_list = list(cids)
+        all_in_threads = (
+            db.query(Email)
+            .filter(
+                Email.mailbox_owner_email == mailbox,
+                Email.conversation_id.in_(cid_list),
+            )
+            .order_by(Email.received_at.desc())
+            .all()
+        )
+        by_cid: dict[str, list] = {}
+        for r in all_in_threads:
+            cid = (r.conversation_id or "").strip()
+            if not cid or cid.startswith("thread:"):
+                continue
+            by_cid.setdefault(cid, []).append(r)
+
+        threads: list[ConversationOut] = []
+        for cid, emails in by_cid.items():
+            matching = [e for e in emails if _email_contains_project_name(e, project.name)]
+            if not matching:
+                continue
+            matching_sorted = sorted(matching, key=lambda x: x.received_at, reverse=True)
+            latest = matching_sorted[0]
+            participants: set[str] = set()
+            for e in matching_sorted[:20]:
+                if e.sender_email:
+                    participants.add(e.sender_email.strip().lower())
+                for addr in _recipient_emails_from_json(e.to_recipients):
+                    participants.add(addr)
+                for addr in _recipient_emails_from_json(e.cc_recipients):
+                    participants.add(addr)
+            participants.discard("")
+            preview = ", ".join(sorted(participants)[:5])
+            if len(participants) > 5:
+                preview += "…"
+            threads.append(
+                ConversationOut(
+                    conversationId=cid,
+                    subject=latest.subject,
+                    lastReceivedAt=latest.received_at,
+                    messageCount=len(matching_sorted),
+                    participantsPreview=preview,
+                )
+            )
+        threads.sort(key=lambda t: t.last_received_at, reverse=True)
+        total = len(threads)
+        start = (page - 1) * page_size
+        page_threads = threads[start : start + page_size]
+        return ConversationsResponse(conversations=page_threads, total=total, page=page, pageSize=page_size)
+    except HTTPException:
+        raise
+    except (OperationalError, ProgrammingError) as e:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Projects tables are not in the database yet. From the backend folder run: "
+                "alembic upgrade head"
+            ),
+        ) from e
+
+
+@router.get(
+    "/projects-workflow/{project_id}/mailbox-threads/{conversation_id:path}/emails",
+    response_model=ThreadEmailsResponse,
+    response_model_by_alias=True,
+)
+def get_project_mailbox_conversation_emails(
+    project_id: str,
+    conversation_id: str,
+    db: Session = Depends(get_db),
+    admin_email: str = Depends(get_admin_user),
+):
+    """
+    Messages in this conversation that contain the project name only (chronological).
+    Same mailbox and access rules as list_project_mailbox_threads.
+    """
+    try:
+        project = db.query(TeamProject).filter(TeamProject.id == project_id).first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        _assert_project_mailbox_threads_access(project, admin_email, db)
+
+        mailbox = (admin_email or "").strip().lower()
+        rows = (
+            db.query(Email)
+            .filter(
+                Email.mailbox_owner_email == mailbox,
+                Email.conversation_id == conversation_id,
+            )
+            .order_by(Email.received_at.asc())
+            .all()
+        )
+        if not rows:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+        filtered = [e for e in rows if _email_contains_project_name(e, project.name)]
+        if not filtered:
+            raise HTTPException(
+                status_code=404,
+                detail="No messages in this thread contain the project name.",
+            )
+        out: list[EmailDetailOut] = []
+        for email in filtered:
+            atts = db.query(Attachment).filter(Attachment.email_id == email.id).all()
+            out.append(
+                EmailDetailOut(
+                    id=email.id,
+                    messageId=email.message_id,
+                    subject=email.subject,
+                    sender=email.sender_email,
+                    senderDisplayName=email.sender_display_name,
+                    toRecipients=email.to_recipients or [],
+                    ccRecipients=email.cc_recipients or [],
+                    bccRecipients=_bcc_from_email(email),
+                    receivedAt=email.received_at,
+                    sentAt=email.sent_at,
+                    folder=email.folder_name or email.folder_id or "",
+                    bodyPreview=email.body_preview,
+                    bodyContent=email.body_content,
+                    bodyContentType=email.body_content_type,
+                    attachments=[
+                        AttachmentOut(
+                            id=a.id,
+                            name=a.name,
+                            content_type=a.content_type,
+                            size=a.size,
+                            is_inline=a.is_inline,
+                        )
+                        for a in atts
+                    ],
+                    status=email.status,
+                    summary=getattr(email, "ai_summary", None) or None,
+                    category=_display_category(email),
+                    priorityLabel=getattr(email, "ai_priority_label", None),
+                    priorityScore=getattr(email, "ai_priority_score", None),
+                    suggestedReplies=getattr(email, "ai_suggested_replies", None) or [],
+                    aiStatus=getattr(email, "ai_status", None),
+                    aiProcessedAt=getattr(email, "ai_processed_at", None),
+                    processingStatus=getattr(email, "processing_status", None),
+                    aiErrorMessage=getattr(email, "ai_error_message", None),
+                )
+            )
+        return ThreadEmailsResponse(conversationId=conversation_id, emails=out)
     except HTTPException:
         raise
     except (OperationalError, ProgrammingError) as e:
@@ -628,6 +1012,62 @@ def list_leads_for_user(
         }
     except (OperationalError, Exception):
         return {"leads": [], "total": 0, "page": page, "pageSize": page_size}
+
+
+@router.get("/retagged")
+def admin_list_retagged_for_mailbox(
+    mailbox: str = Query(..., description="Mailbox owner email"),
+    db: Session = Depends(get_db),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=500, alias="pageSize"),
+    from_date: str | None = Query(None, alias="from"),
+):
+    """Retagged emails (ex escalation/lead) for a user's mailbox. Admin only."""
+    mailbox_l = (mailbox or "").strip().lower()
+    if not mailbox_l or "@" not in mailbox_l:
+        raise HTTPException(status_code=400, detail="Valid mailbox (user email) required")
+    try:
+        if not hasattr(Email, "retagged_at"):
+            return {"retagged": [], "total": 0, "page": page, "pageSize": page_size}
+        q = db.query(Email).filter(
+            Email.retagged_at.isnot(None),
+            Email.mailbox_owner_email == mailbox_l,
+        )
+        if from_date:
+            try:
+                dt = datetime.fromisoformat(from_date.replace("Z", "+00:00"))
+                q = q.filter(Email.received_at >= dt)
+            except ValueError:
+                pass
+        total = q.count()
+        rows = q.order_by(Email.retagged_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+        return {
+            "retagged": [_email_to_item(r) for r in rows],
+            "total": total,
+            "page": page,
+            "pageSize": page_size,
+        }
+    except (OperationalError, Exception):
+        return {"retagged": [], "total": 0, "page": page, "pageSize": page_size}
+
+
+@router.patch("/emails/{email_id}/retag")
+def admin_retag_email(
+    email_id: str,
+    mailbox: str = Query(..., description="Mailbox owner email (must match the email row)"),
+    body: RetagEmailBody = Body(...),
+    db: Session = Depends(get_db),
+    admin_email: str = Depends(get_admin_user),
+):
+    """Retag escalation/lead mail in another user's mailbox. Admin only."""
+    email = db.query(Email).filter(Email.id == email_id).first()
+    if not email:
+        raise HTTPException(status_code=404, detail="Email not found")
+    owner = (getattr(email, "mailbox_owner_email", None) or "").strip().lower()
+    if owner != (mailbox or "").strip().lower():
+        raise HTTPException(status_code=400, detail="Email does not belong to the specified mailbox")
+    _perform_retag(db, email, body.assigned_team, admin_email)
+    return {"ok": True, "emailId": email_id, "assignedTeam": email.assigned_team}
 
 
 # --- Workflow (who leads whom) ---

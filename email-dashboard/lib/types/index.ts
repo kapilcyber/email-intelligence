@@ -46,6 +46,38 @@ export interface CalendarEventsResponse {
   error: string | null;
 }
 
+export interface NotificationItem {
+  id: string;
+  kind: "new_mail" | "meeting_scheduled" | "ai_pending" | "important_date" | "unreplied_mail" | string;
+  title: string;
+  message: string;
+  level: "info" | "warning" | "error" | string;
+  at: string;
+  count?: number;
+  href?: string;
+}
+
+export interface NotificationsResponse {
+  items: NotificationItem[];
+  error: string | null;
+}
+
+export interface MyProjectItem {
+  projectId: string;
+  projectName: string;
+  status: "running" | "new" | "planned" | "completed" | string;
+  teamName: string | null;
+  role: string | null;
+  responsibilities: string | null;
+  reportsToUserId: string | null;
+  structure: { phases?: string[]; notes?: string } | null;
+  updatedAt: string | null;
+}
+
+export interface MyProjectsResponse {
+  projects: MyProjectItem[];
+}
+
 export type EmailStatus = "stored" | "failed";
 
 export type AiStatus = "pending" | "completed" | "failed";
@@ -115,6 +147,7 @@ export interface EmailDetail {
   senderDisplayName: string | null;
   toRecipients: { email?: string; name?: string }[];
   ccRecipients: { email?: string; name?: string }[];
+  bccRecipients?: { email?: string; name?: string }[];
   receivedAt: string;
   sentAt: string | null;
   folder: string | null;
@@ -169,6 +202,8 @@ export interface QueueStatusResponse {
   failed: number;
   retryCount: number;
   workerUptime: number; // seconds
+  /** Celery workers visible to the broker (shared across users). */
+  activeWorkers?: number;
   taskDistribution?: { name: string; count: number }[];
 }
 
@@ -210,6 +245,10 @@ export interface EscalationLeadItem {
   escalationReasons?: string[] | null;
   /** Whether the email has been read (from Outlook/is_read) */
   isRead?: boolean;
+  /** Set when mail was retagged out of escalation/lead */
+  retaggedAt?: string | null;
+  retaggedBy?: string | null;
+  retagPreviousSummary?: string | null;
 }
 
 export interface EscalationsResponse {
@@ -221,6 +260,14 @@ export interface EscalationsResponse {
 
 export interface LeadsResponse {
   leads: EscalationLeadItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+/** Mails moved from escalation/lead to a department via Retag */
+export interface RetaggedResponse {
+  retagged: EscalationLeadItem[];
   total: number;
   page: number;
   pageSize: number;
@@ -294,7 +341,19 @@ export interface ProjectAssignmentOut {
   userId: string;
   email: string;
   displayName: string | null;
+  /** Role on this project (e.g. Tech lead). */
   role?: string | null;
+  /** What this person does on the project. */
+  responsibilities?: string | null;
+  /** Another assignee they report to on this project only (not org manager). */
+  reportsToUserId?: string | null;
+}
+
+export interface ProjectAssignmentUpsert {
+  userId: string;
+  role?: string | null;
+  responsibilities?: string | null;
+  reportsToUserId?: string | null;
 }
 
 export interface TeamProjectOut {
@@ -304,12 +363,17 @@ export interface TeamProjectOut {
   teamName: string | null;
   status: "running" | "new" | "planned" | "completed";
   structure: { phases?: string[]; notes?: string } | null;
+  /** Explicit project lead; must be an assigned user. Not the same as org "team lead". */
+  projectLeadUserId?: string | null;
+  /** Admin user who created the project (mailbox threads are scoped to this user). */
+  createdByUserId?: string | null;
   assignedUsers: ProjectAssignmentOut[];
   createdAt: string;
   updatedAt: string;
 }
 
 export interface MeResponse {
+  userId?: string;
   email: string;
   role: string;
   isAdmin: boolean;

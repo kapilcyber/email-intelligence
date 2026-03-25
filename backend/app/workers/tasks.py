@@ -11,8 +11,15 @@ from app.graph.auth import get_auth_headers
 from app.ai.classifier import classify_email_content
 from app.ai.escalation import compute_escalation
 from app.ai.trust import evaluate_suspicious, update_sender_trust, should_override_to_spam
-import httpx
 import redis
+from app.http_client import httpx_client
+from app.workers.user_queue import (
+    normalize_mailbox_key,
+    resource_to_user_id,
+    user_queue_incr,
+    count_active_reserved_for_mailbox,
+    user_queue_get,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +28,33 @@ engine = create_engine(settings.database_url)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 _tables_ensured = False
+
+
+def enqueue_ingest_email_task(
+    resource: str,
+    graph_id: str,
+    user_id: str | None = None,
+    folder_display_name: str | None = None,
+) -> None:
+    """Enqueue ingest; increments per-mailbox queue counter (webhook + backfill should use this)."""
+    uid = user_id or resource_to_user_id(resource)
+    mb = normalize_mailbox_key(uid)
+    user_queue_incr(mb)
+    ingest_email_task.delay(resource, graph_id, user_id=uid, folder_display_name=folder_display_name)
+
+
+def enqueue_classify_email_task(email_id: str, mailbox_owner_email: str | None = None) -> None:
+    """Enqueue classify; increments per-mailbox counter. Resolves mailbox from DB if omitted."""
+    mb = normalize_mailbox_key(mailbox_owner_email)
+    if not mb:
+        db = SessionLocal()
+        try:
+            row = db.query(Email.mailbox_owner_email).filter(Email.id == email_id).first()
+            mb = normalize_mailbox_key(row[0] if row else None)
+        finally:
+            db.close()
+    user_queue_incr(mb)
+    classify_email_task.delay(email_id, mailbox_owner_email=mb)
 
 
 def _ensure_tables():
@@ -37,7 +71,7 @@ def _normalize_message(user_id: str, graph_id: str) -> dict | None:
     # Request message with attachments expanded so we can store attachment metadata (name, type, size, isInline).
     url = f"https://graph.microsoft.com/v1.0/users/{user_id}/messages/{graph_id}"
     params = {"$expand": "attachments"}
-    with httpx.Client(timeout=30.0) as client:
+    with httpx_client(timeout=30.0) as client:
         r = client.get(url, headers=get_auth_headers(), params=params)
         if r.status_code != 200:
             return None
@@ -121,7 +155,12 @@ def ingest_email_task(
         message_id = data.get("internetMessageId") or data.get("id")
         if not message_id:
             return
-        existing = db.query(Email).filter(Email.message_id == message_id).first()
+        raw_uid = (user_id or "").strip()
+        mailbox_norm = raw_uid.lower() if "@" in raw_uid else raw_uid
+        existing = db.query(Email).filter(
+            Email.message_id == message_id,
+            Email.mailbox_owner_email == mailbox_norm,
+        ).first()
         if existing:
             return
         sender_info = (data.get("sender") or {}).get("emailAddress") or {}
@@ -158,13 +197,14 @@ def ingest_email_task(
             sender_id=sender_id,
             sender_display_name=sender_name,
             cc_recipients=_parse_recipients(data.get("ccRecipients")),
+            bcc_recipients=_parse_recipients(data.get("bccRecipients")),
             to_recipients=_parse_recipients(data.get("toRecipients")),
             received_at=received_dt,
             sent_at=_parse_sent_at(data.get("sentDateTime")),
             is_read=data.get("isRead", False),
             folder_id=folder,
             folder_name=folder_name or "Inbox",
-            mailbox_owner_email=user_id,
+            mailbox_owner_email=mailbox_norm,
             status="stored",
             raw_payload={k: v for k, v in data.items() if k not in ("body",)},
         )
@@ -187,7 +227,7 @@ def ingest_email_task(
                 db.add(a)
         db.commit()
         if email_id_to_classify:
-            classify_email_task.delay(email_id_to_classify)
+            enqueue_classify_email_task(email_id_to_classify, mailbox_norm)
     except Exception as e:
         db.rollback()
         raise self.retry(exc=e)
@@ -207,7 +247,7 @@ def _record_ai_latency(latency_seconds: float) -> None:
 
 
 @celery_app.task(bind=True, name="app.workers.tasks.classify_email_task", max_retries=3)
-def classify_email_task(self, email_id: str):
+def classify_email_task(self, email_id: str, mailbox_owner_email: str | None = None):
     """
     Phase 2: Run AI classification on an email (summary, category, priority, reply suggestions).
     Called after ingest_email_task for new emails; can also be triggered manually for re-classification.
@@ -262,8 +302,10 @@ def classify_email_task(self, email_id: str):
         email.ai_suggested_replies = result.get("suggested_replies") or []
         email.ai_processed_at = datetime.now(timezone.utc)
         email.ai_confidence_score = result.get("confidence_score")
+        # User retagged: do not re-apply escalation/lead/team-from-category
+        skip_after_retag = getattr(email, "retagged_at", None) is not None
         # Phase 3: escalation (enterprise: keywords, RE chain, CC seniors, thread length, negative tone + AI priority)
-        if getattr(Email, "is_escalation", None) is not None:
+        if not skip_after_retag and getattr(Email, "is_escalation", None) is not None:
             cfg = get_settings()
             thread_count = None
             if getattr(email, "conversation_id", None):
@@ -300,7 +342,7 @@ def classify_email_task(self, email_id: str):
                 email.lead_label = ai_lead_label
             if getattr(Email, "lead_metadata", None) is not None:
                 email.lead_metadata = {"buying_signals": result.get("buying_signals") or []}
-        if getattr(Email, "assigned_team", None) is not None:
+        if not skip_after_retag and getattr(Email, "assigned_team", None) is not None:
             category = (result.get("category") or "").strip()
             category_to_team = {"Sales": "Sales", "Accounts": "Accounts", "Tech": "Tech", "HR": "General", "General": "General", "Spam": "General"}
             email.assigned_team = category_to_team.get(category) if category else None
@@ -339,7 +381,9 @@ def classify_email_task(self, email_id: str):
             and cfg.sales_lead_webhook_url
             and cfg.sales_lead_webhook_url.strip()
         ):
-            notify_sales_lead_task.delay(email.id)
+            mb_lead = normalize_mailbox_key(email.mailbox_owner_email)
+            user_queue_incr(mb_lead)
+            notify_sales_lead_task.delay(email.id, mailbox_owner_email=email.mailbox_owner_email)
     except Exception as e:
         db.rollback()
         err_msg = str(e)
@@ -377,20 +421,22 @@ def backfill_classify_emails_task(limit: int = 500, mailbox_owner_email: str | N
     _ensure_tables()
     db = SessionLocal()
     try:
-        q = db.query(Email.id).filter(Email.ai_processed_at.is_(None))
+        q = (
+            db.query(Email.id, Email.mailbox_owner_email)
+            .filter(Email.ai_processed_at.is_(None))
+        )
         if mailbox_owner_email and mailbox_owner_email.strip():
             q = q.filter(Email.mailbox_owner_email == mailbox_owner_email.strip())
         rows = q.order_by(Email.received_at.desc()).limit(limit).all()
-        ids = [r[0] for r in rows]
-        for email_id in ids:
-            classify_email_task.delay(email_id)
-        return {"ok": True, "enqueued": len(ids)}
+        for email_id, mbox in rows:
+            enqueue_classify_email_task(email_id, mbox)
+        return {"ok": True, "enqueued": len(rows)}
     finally:
         db.close()
 
 
 @celery_app.task(bind=True, name="app.workers.tasks.notify_sales_lead_task", max_retries=3)
-def notify_sales_lead_task(self, email_id: str):
+def notify_sales_lead_task(self, email_id: str, mailbox_owner_email: str | None = None):
     """
     Notify the sales team when a lead is detected. POSTs to SALES_LEAD_WEBHOOK_URL with lead payload.
     Sales team emails are resolved from Team 'Sales' in DB; webhook consumer can use them to send emails/Slack.
@@ -429,7 +475,7 @@ def notify_sales_lead_task(self, email_id: str):
             "sales_team_emails": sales_team_emails,
         }
         url = cfg.sales_lead_webhook_url.strip()
-        with httpx.Client(timeout=15.0) as client:
+        with httpx_client(timeout=15.0) as client:
             r = client.post(url, json=payload)
             if r.status_code >= 400:
                 raise RuntimeError(f"Webhook returned {r.status_code}: {r.text[:500]}")
@@ -518,7 +564,7 @@ def generate_daily_summary_task(self, date_str: str | None = None):
         if cfg.daily_summary_webhook_url and cfg.daily_summary_webhook_url.strip():
             url = cfg.daily_summary_webhook_url.strip()
             payload = {"date": day_start.strftime("%Y-%m-%d"), "summaries": summaries_payload}
-            with httpx.Client(timeout=15.0) as client:
+            with httpx_client(timeout=15.0) as client:
                 r = client.post(url, json=payload)
                 if r.status_code >= 400:
                     raise RuntimeError(f"Webhook {r.status_code}: {r.text[:300]}")
@@ -602,6 +648,28 @@ def get_queue_stats() -> dict:
         }
 
 
+def get_queue_stats_for_user(mailbox_owner_email: str) -> dict:
+    """
+    Queue metrics scoped to one mailbox: Redis outstanding counter + best-effort active/reserved
+    for that mailbox. Worker counts remain deployment-wide.
+    """
+    from app.workers.celery_app import celery_app
+
+    g = get_queue_stats()
+    mb = normalize_mailbox_key(mailbox_owner_email)
+    pending = user_queue_get(mb)
+    active_my = count_active_reserved_for_mailbox(mb, celery_app)
+    return {
+        "pending": pending,
+        "active": active_my,
+        "failed": 0,
+        "retry_count": 0,
+        "worker_uptime": g.get("worker_uptime", 0),
+        "active_workers": g.get("active_workers", 0),
+        "task_distribution": [],
+    }
+
+
 @celery_app.task(name="app.workers.tasks.backfill_emails_task")
 def backfill_emails_task(
     user_id: str,
@@ -651,7 +719,7 @@ def backfill_emails_task(
     total_enqueued = 0
     folder_display = "Sent" if is_sent else ("Inbox" if str(folder_id).lower() == "inbox" else folder_id)
 
-    with httpx.Client(timeout=60.0) as client:
+    with httpx_client(timeout=60.0) as client:
         next_url: str | None = base_url
         next_params: dict | None = params
 
@@ -664,8 +732,11 @@ def backfill_emails_task(
             for item in value:
                 msg_id = item.get("id")
                 if msg_id:
-                    ingest_email_task.delay(
-                        f"Users('{user_id}')/Messages('{msg_id}')", msg_id, user_id, folder_display_name=folder_display
+                    enqueue_ingest_email_task(
+                        f"Users('{user_id}')/Messages('{msg_id}')",
+                        msg_id,
+                        user_id,
+                        folder_display_name=folder_display,
                     )
                     total_enqueued += 1
             next_link = data.get("@odata.nextLink")

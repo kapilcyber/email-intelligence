@@ -5,43 +5,95 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { getApi } from "@/lib/api/client";
-import type { TeamProjectOut, WorkflowNode, WorkflowTreeNode } from "@/lib/types";
+import type { TeamProjectOut, ProjectAssignmentOut } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowLeft, ChevronRight, GitBranch, Network, User } from "lucide-react";
+import { ProjectMailboxThreads } from "@/components/projects/project-mailbox-threads";
 
-/** Reporting tree limited to users assigned to this project (edges only when manager is also on project). */
-function buildProjectMemberTree(assignedUserIds: string[], allNodes: WorkflowNode[]): WorkflowTreeNode[] {
-  const idSet = new Set(assignedUserIds);
-  const nodes = allNodes.filter((n) => idSet.has(n.id));
-  const byId = new Map<string, WorkflowTreeNode>();
-  for (const n of nodes) {
-    byId.set(n.id, { ...n, children: [] });
-  }
-  const roots: WorkflowTreeNode[] = [];
-  for (const n of nodes) {
-    const node = byId.get(n.id)!;
-    const mgrInProject = n.managerId && idSet.has(n.managerId);
-    const parent = mgrInProject ? byId.get(n.managerId!) : null;
-    if (parent) {
-      parent.children.push(node);
-    } else {
-      roots.push(node);
+/** Tree node: assignment row + nested children (project reporting only). */
+interface ProjectMemberTreeNode extends ProjectAssignmentOut {
+  children: ProjectMemberTreeNode[];
+}
+
+/** Resolve project-only manager link; drops invalid targets and simple cycles. */
+function computeEffectiveProjectParents(assignments: ProjectAssignmentOut[]): Map<string, string | null> {
+  const idSet = new Set(assignments.map((a) => a.userId));
+  const raw = new Map(assignments.map((a) => [a.userId, a.reportsToUserId ?? null]));
+  const result = new Map<string, string | null>();
+  for (const a of assignments) {
+    const direct = raw.get(a.userId) ?? null;
+    let parent: string | null = null;
+    if (direct && idSet.has(direct) && direct !== a.userId) {
+      let cur: string | null = direct;
+      const seen = new Set<string>();
+      let valid = true;
+      while (cur) {
+        if (cur === a.userId) {
+          valid = false;
+          break;
+        }
+        if (seen.has(cur)) {
+          valid = false;
+          break;
+        }
+        seen.add(cur);
+        const next = raw.get(cur) ?? null;
+        if (!next || !idSet.has(next)) break;
+        cur = next;
+      }
+      if (valid) parent = direct;
     }
+    result.set(a.userId, parent);
+  }
+  return result;
+}
+
+function projectRoleBadge(role: string | null | undefined): {
+  label: string;
+  variant: "default" | "warning" | "secondary" | "success";
+} {
+  const r = (role ?? "").trim();
+  if (!r) return { label: "Team member", variant: "secondary" };
+  const lower = r.toLowerCase();
+  if (r === "TL" || lower === "team lead" || lower === "tl") return { label: "TL", variant: "success" };
+  if (r === "Manager" || lower === "manager") return { label: "Manager", variant: "warning" };
+  return { label: r, variant: "secondary" };
+}
+
+function buildProjectAssignmentTree(assignments: ProjectAssignmentOut[]): ProjectMemberTreeNode[] {
+  const parents = computeEffectiveProjectParents(assignments);
+  const byId = new Map<string, ProjectMemberTreeNode>();
+  for (const a of assignments) {
+    byId.set(a.userId, { ...a, children: [] });
+  }
+  const roots: ProjectMemberTreeNode[] = [];
+  for (const a of assignments) {
+    const node = byId.get(a.userId)!;
+    const p = parents.get(a.userId);
+    const parentNode = p ? byId.get(p) : undefined;
+    if (parentNode) parentNode.children.push(node);
+    else roots.push(node);
   }
   return roots;
 }
 
-function HierarchyNode({ node }: { node: WorkflowTreeNode }) {
+function ProjectHierarchyNode({
+  node,
+  projectLeadUserId,
+}: {
+  node: ProjectMemberTreeNode;
+  projectLeadUserId: string | null | undefined;
+}) {
   const label = node.displayName ?? node.email;
-  const roleVariant =
-    node.role === "Admin" ? "error" : node.role === "Manager" ? "warning" : "secondary";
+  const isProjectLead = projectLeadUserId && node.userId === projectLeadUserId;
+  const rb = projectRoleBadge(node.role);
 
   return (
     <div className="flex flex-col items-center">
-      <Card className="w-[200px] shrink-0 border-2 border-neutral-200 shadow-md transition-shadow hover:shadow-lg dark:border-neutral-700">
+      <Card className="w-[220px] shrink-0 border-2 border-neutral-200 shadow-md transition-shadow hover:shadow-lg dark:border-neutral-700">
         <CardContent className="p-3">
           <div className="flex items-center gap-2">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800">
@@ -50,18 +102,15 @@ function HierarchyNode({ node }: { node: WorkflowTreeNode }) {
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium text-neutral-900 dark:text-neutral-50">{label}</p>
               <div className="mt-1 flex flex-wrap items-center gap-1">
-                <Badge variant={roleVariant} className="px-1.5 py-0 text-[10px]">
-                  {node.role}
+                <Badge variant={rb.variant} className="px-1.5 py-0 text-[10px]">
+                  {rb.label}
                 </Badge>
-                {node.isTeamLead && (
+                {isProjectLead && (
                   <Badge variant="default" className="px-1.5 py-0 text-[10px]">
-                    Lead
+                    Project lead
                   </Badge>
                 )}
               </div>
-              {node.teamName && (
-                <p className="mt-0.5 truncate text-xs text-neutral-500 dark:text-neutral-400">{node.teamName}</p>
-              )}
             </div>
           </div>
         </CardContent>
@@ -71,7 +120,7 @@ function HierarchyNode({ node }: { node: WorkflowTreeNode }) {
           <div className="h-4 w-0.5 bg-neutral-300 dark:bg-neutral-600" />
           <div className="flex flex-wrap justify-center gap-8 pt-2">
             {node.children.map((child) => (
-              <HierarchyNode key={child.id} node={child} />
+              <ProjectHierarchyNode key={child.userId} node={child} projectLeadUserId={projectLeadUserId} />
             ))}
           </div>
         </>
@@ -80,13 +129,19 @@ function HierarchyNode({ node }: { node: WorkflowTreeNode }) {
   );
 }
 
-function MemberWorkflowChart({ roots }: { roots: WorkflowTreeNode[] }) {
+function ProjectMemberChart({
+  roots,
+  projectLeadUserId,
+}: {
+  roots: ProjectMemberTreeNode[];
+  projectLeadUserId: string | null | undefined;
+}) {
   if (roots.length === 0) return null;
   return (
     <div className="overflow-x-auto py-4">
       <div className="flex min-w-max flex-wrap justify-center gap-8">
         {roots.map((node) => (
-          <HierarchyNode key={node.id} node={node} />
+          <ProjectHierarchyNode key={node.userId} node={node} projectLeadUserId={projectLeadUserId} />
         ))}
       </div>
     </div>
@@ -104,7 +159,7 @@ export default function AdminProjectWorkflowPage() {
   );
 
   const [project, setProject] = useState<TeamProjectOut | null>(null);
-  const [workflowNodes, setWorkflowNodes] = useState<WorkflowNode[]>([]);
+  const [myUserId, setMyUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -112,24 +167,34 @@ export default function AdminProjectWorkflowPage() {
     if (status !== "authenticated" || !id) return;
     setLoading(true);
     setError(null);
-    Promise.all([api.getProjectWorkflow(id), api.getWorkflow()])
-      .then(([p, w]) => {
+    Promise.all([api.getProjectWorkflow(id), api.getMe().catch(() => null)])
+      .then(([p, me]) => {
         setProject(p);
-        setWorkflowNodes(w);
+        setMyUserId(me?.userId ?? null);
       })
       .catch(() => {
-        setError("Failed to load project or workflow.");
+        setError("Failed to load project.");
         setProject(null);
       })
       .finally(() => setLoading(false));
   }, [status, api, id]);
 
-  const assignedIds = useMemo(() => project?.assignedUsers.map((u) => u.userId) ?? [], [project]);
   const memberRoots = useMemo(
-    () => buildProjectMemberTree(assignedIds, workflowNodes),
-    [assignedIds, workflowNodes]
+    () => (project ? buildProjectAssignmentTree(project.assignedUsers) : []),
+    [project]
   );
   const phases = project?.structure?.phases ?? [];
+
+  const byUserId = useMemo(() => {
+    const m = new Map<string, ProjectAssignmentOut>();
+    if (!project) return m;
+    for (const u of project.assignedUsers) m.set(u.userId, u);
+    return m;
+  }, [project]);
+
+  const canViewMailboxThreads =
+    project &&
+    (!project.createdByUserId || !myUserId || project.createdByUserId === myUserId);
 
   if (!id) {
     return (
@@ -174,6 +239,14 @@ export default function AdminProjectWorkflowPage() {
             <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
               {project.teamName ?? "No team"} · <span className="capitalize">{project.status}</span>
             </p>
+            {project.projectLeadUserId && (
+              <p className="mt-2 text-sm text-indigo-800 dark:text-indigo-200">
+                <span className="font-medium">Project lead:</span>{" "}
+                {project.assignedUsers.find((x) => x.userId === project.projectLeadUserId)?.displayName ??
+                  project.assignedUsers.find((x) => x.userId === project.projectLeadUserId)?.email ??
+                  "—"}
+              </p>
+            )}
             <div className="mt-3 flex flex-wrap gap-2">
               <Link href="/admin/team-projects">
                 <Button variant="outline" size="sm" type="button">
@@ -182,8 +255,9 @@ export default function AdminProjectWorkflowPage() {
               </Link>
             </div>
             <p className="mt-2 text-xs text-neutral-400 dark:text-neutral-500">
-              Open <strong>Projects</strong> in the sidebar and click <strong>Edit</strong> on this project to change phases,
-              notes, or assignments.
+              Open <strong>Projects</strong> in the sidebar and click <strong>Edit</strong> on this project to set{" "}
+              <strong>project lead</strong>, <strong>reports to on this project</strong>, roles, and assignments. This page
+              does <strong>not</strong> use Admin → Workflow (org Manager/Member/team lead).
             </p>
           </div>
 
@@ -231,38 +305,55 @@ export default function AdminProjectWorkflowPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
                 <Network className="h-5 w-5" />
-                Team workflow (reporting)
+                Project team (reporting on this project)
               </CardTitle>
               <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                Assigned people and how they report to each other within this project (same hierarchy style as Admin →
-                Workflow).
+                Chart and “reports to” use only fields you set on this project. Org roles (Manager/Member) and org team lead
+                are not shown here.
               </p>
             </CardHeader>
             <CardContent>
-              {assignedIds.length === 0 ? (
+              {project.assignedUsers.length === 0 ? (
                 <p className="text-sm text-neutral-500 dark:text-neutral-400">
-                  No users assigned. Assign members on the project form to see their reporting tree here.
+                  No users assigned. Assign members on the project form to see the tree here.
                 </p>
               ) : memberRoots.length === 0 ? (
                 <p className="text-sm text-neutral-500 dark:text-neutral-400">Could not build hierarchy.</p>
               ) : (
-                <MemberWorkflowChart roots={memberRoots} />
+                <ProjectMemberChart roots={memberRoots} projectLeadUserId={project.projectLeadUserId} />
               )}
               {project.assignedUsers.length > 0 && (
                 <ul className="mt-4 divide-y divide-neutral-200 rounded-lg border border-neutral-200 dark:divide-neutral-700 dark:border-neutral-700">
                   {project.assignedUsers.map((u) => {
-                    const node = workflowNodes.find((n) => n.id === u.userId);
-                    const mgr =
-                      node?.managerId && workflowNodes.find((x) => x.id === node.managerId);
+                    const reportsTo = u.reportsToUserId ? byUserId.get(u.reportsToUserId) : undefined;
                     return (
-                      <li key={u.userId} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm">
-                        <span className="font-medium text-neutral-900 dark:text-neutral-100">
-                          {u.displayName ?? u.email}
-                        </span>
-                        <span className="text-xs text-neutral-500 dark:text-neutral-400">
-                          Reports to:{" "}
-                          {mgr ? (mgr.displayName ?? mgr.email) : "—"}
-                        </span>
+                      <li key={u.userId} className="space-y-1 px-3 py-3 text-sm">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div>
+                            <span className="font-medium text-neutral-900 dark:text-neutral-100">
+                              {u.displayName ?? u.email}
+                            </span>
+                            {u.role?.trim() && (
+                              <span className="ml-2 rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-medium text-indigo-800 dark:bg-indigo-900/50 dark:text-indigo-200">
+                                {u.role.trim()}
+                              </span>
+                            )}
+                            {project.projectLeadUserId === u.userId && (
+                              <span className="ml-2 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200">
+                                Project lead
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                            Reports to on project:{" "}
+                            {reportsTo ? (reportsTo.displayName ?? reportsTo.email) : "—"}
+                          </span>
+                        </div>
+                        {u.responsibilities && (
+                          <p className="text-xs leading-relaxed text-neutral-600 dark:text-neutral-400">
+                            {u.responsibilities}
+                          </p>
+                        )}
                       </li>
                     );
                   })}
@@ -270,6 +361,21 @@ export default function AdminProjectWorkflowPage() {
               )}
             </CardContent>
           </Card>
+
+          <div className="space-y-2">
+            <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">Mailbox &amp; threads</h2>
+            {canViewMailboxThreads ? (
+              <ProjectMailboxThreads projectId={project.id} projectName={project.name} />
+            ) : (
+              <Card className="rounded-2xl border-amber-200 bg-amber-50/80 dark:border-amber-900 dark:bg-amber-950/20">
+                <CardContent className="p-4 text-sm text-amber-900 dark:text-amber-100">
+                  Related inbox/spam threads are only available to the admin who created this project. Open this project
+                  while signed in as that account, or ask them to save the project once (Edit → Update) so the creator is
+                  recorded.
+                </CardContent>
+              </Card>
+            )}
+          </div>
         </>
       )}
     </div>

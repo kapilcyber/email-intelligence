@@ -164,6 +164,17 @@ export default function EmailDetailPage() {
                 </div>
               </div>
             )}
+            {email.bccRecipients && email.bccRecipients.length > 0 && (
+              <div className="flex gap-3 sm:col-span-2">
+                <Users className="mt-0.5 h-4 w-4 shrink-0 text-neutral-400" />
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wider text-neutral-400 dark:text-neutral-500">Bcc</p>
+                  <p className="mt-0.5 break-words text-sm text-neutral-700 dark:text-neutral-200">
+                    {formatRecipients(email.bccRecipients)}
+                  </p>
+                </div>
+              </div>
+            )}
             <div className="flex gap-3">
               <Calendar className="mt-0.5 h-4 w-4 shrink-0 text-neutral-400" />
               <div>
@@ -231,9 +242,23 @@ export default function EmailDetailPage() {
               {hasSummary ? (
                 <p className="mt-0.5 text-sm text-neutral-700 dark:text-neutral-300">{email.summary}</p>
               ) : (
-                <p className="mt-0.5 text-sm italic text-neutral-500 dark:text-neutral-400">
-                  Summary not available (AI pending or failed).
-                </p>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <p className="text-sm italic text-neutral-500 dark:text-neutral-400">
+                    Summary not available (AI pending or failed).
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 gap-1.5 px-2 text-xs"
+                    onClick={handleRetryAi}
+                    disabled={retrying}
+                    title="Retrieve summary"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 ${retrying ? "animate-spin" : ""}`} />
+                    {retrying ? "Retrieving…" : "Retrieve"}
+                  </Button>
+                </div>
               )}
             </div>
             <div className="flex flex-wrap items-center gap-2">

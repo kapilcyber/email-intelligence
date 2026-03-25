@@ -8,7 +8,8 @@ import type { EscalationLeadItem } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { List, ChevronRight } from "lucide-react";
+import { List, ChevronRight, Tags } from "lucide-react";
+import { RetagMailControl } from "@/components/escalations/retag-mail-control";
 
 const PAGE_SIZE = 20;
 const LEAD_LABELS = ["Hot", "Warm", "Cold"] as const;
@@ -49,6 +50,10 @@ export default function LeadsPage() {
   const [fromDate, setFromDate] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<"leads" | "retag">("leads");
+  const [retagItems, setRetagItems] = useState<EscalationLeadItem[]>([]);
+  const [retagTotal, setRetagTotal] = useState(0);
+  const [retagPage, setRetagPage] = useState(1);
 
   const load = () => {
     if (status !== "authenticated") return;
@@ -70,25 +75,66 @@ export default function LeadsPage() {
       .finally(() => setLoading(false));
   };
 
+  const loadRetag = () => {
+    if (status !== "authenticated") return;
+    setLoading(true);
+    setError(null);
+    api
+      .getRetagged({ page: retagPage, pageSize: PAGE_SIZE, from: fromDate || undefined })
+      .then((r) => {
+        setRetagItems(r.retagged);
+        setRetagTotal(r.total);
+      })
+      .catch(() => setError("Failed to load ReTag list"))
+      .finally(() => setLoading(false));
+  };
+
   useEffect(() => {
-    load();
-  }, [status, api, page, labelFilter, fromDate]);
+    if (tab === "leads") load();
+    else loadRetag();
+  }, [status, api, page, labelFilter, fromDate, tab, retagPage]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const retagTotalPages = Math.max(1, Math.ceil(retagTotal / PAGE_SIZE));
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-50">My Leads</h1>
         <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-          Lead emails in your mailbox (Hot / Warm / Cold). Open to view details.
+          Lead emails in your mailbox. <strong>Retag</strong> removes the lead and routes to a department; see{" "}
+          <strong>ReTag</strong> for history.
         </p>
+        <div className="mt-3 inline-flex rounded-lg border border-neutral-200 bg-white p-0.5 dark:border-neutral-700 dark:bg-neutral-900">
+          <button
+            type="button"
+            onClick={() => (setTab("leads"), setPage(1))}
+            className={`rounded-md px-3 py-1.5 text-sm font-medium ${
+              tab === "leads"
+                ? "bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900"
+                : "text-neutral-600 dark:text-neutral-400"
+            }`}
+          >
+            Leads
+          </button>
+          <button
+            type="button"
+            onClick={() => (setTab("retag"), setRetagPage(1))}
+            className={`flex items-center gap-1 rounded-md px-3 py-1.5 text-sm font-medium ${
+              tab === "retag" ? "bg-indigo-600 text-white dark:bg-indigo-500" : "text-neutral-600 dark:text-neutral-400"
+            }`}
+          >
+            <Tags className="h-3.5 w-3.5" />
+            ReTag
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
         <select
           value={labelFilter}
           onChange={(e) => (setLabelFilter(e.target.value), setPage(1))}
+          disabled={tab === "retag"}
           className="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
         >
           <option value="">All leads</option>
@@ -102,7 +148,7 @@ export default function LeadsPage() {
           type="date"
           className="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
           value={fromDate}
-          onChange={(e) => (setFromDate(e.target.value), setPage(1))}
+          onChange={(e) => (setFromDate(e.target.value), setPage(1), setRetagPage(1))}
         />
       </div>
 
@@ -115,21 +161,80 @@ export default function LeadsPage() {
       <Card className="rounded-2xl">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <List className="h-5 w-5" />
-            My Leads ({total})
+            {tab === "leads" ? (
+              <>
+                <List className="h-5 w-5" />
+                My Leads ({total})
+              </>
+            ) : (
+              <>
+                <Tags className="h-5 w-5" />
+                ReTag ({retagTotal})
+              </>
+            )}
           </CardTitle>
         </CardHeader>
         <CardContent>
           {loading ? (
             <Skeleton className="h-64 w-full rounded-lg" />
-          ) : items.length === 0 ? (
+          ) : tab === "leads" ? (
+            items.length === 0 ? (
+              <p className="py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">
+                No lead emails in your mailbox.
+              </p>
+            ) : (
+              <ul className="divide-y divide-neutral-200 dark:divide-neutral-700">
+                {items.map((item) => (
+                  <li key={item.id} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0 flex-1">
+                      <Link
+                        href={`/emails/${item.id}`}
+                        className="font-medium text-neutral-900 hover:underline dark:text-neutral-50"
+                      >
+                        {item.subject || "(No subject)"}
+                      </Link>
+                      <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
+                        {item.sender} · {formatDate(item.receivedAt)} · {item.priorityLabel ?? "—"}
+                      </p>
+                      <div className="mt-1 flex flex-wrap items-center gap-2">
+                        {item.leadLabel && (
+                          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${leadBadgeClass(item.leadLabel)}`}>
+                            {item.leadLabel}
+                          </span>
+                        )}
+                        {item.assignedTeam && (
+                          <span className="text-xs text-neutral-500 dark:text-neutral-400">{item.assignedTeam}</span>
+                        )}
+                      </div>
+                      {item.summary && (
+                        <p className="mt-1 line-clamp-2 text-sm text-neutral-600 dark:text-neutral-300">{item.summary}</p>
+                      )}
+                      {item.buyingSignals && item.buyingSignals.length > 0 && (
+                        <p className="mt-1 text-xs text-emerald-600 dark:text-emerald-400">
+                          Signals: {item.buyingSignals.join(", ")}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end gap-2 sm:flex-row sm:items-center">
+                      <RetagMailControl emailId={item.id} onDone={load} compact />
+                      <Link href={`/emails/${item.id}`}>
+                        <Button variant="ghost" size="icon">
+                          <ChevronRight className="h-4 w-4" />
+                        </Button>
+                      </Link>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )
+          ) : retagItems.length === 0 ? (
             <p className="py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">
-              No lead emails in your mailbox.
+              No retagged mail yet. Use Retag on a lead above.
             </p>
           ) : (
             <ul className="divide-y divide-neutral-200 dark:divide-neutral-700">
-              {items.map((item) => (
-                <li key={item.id} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
+              {retagItems.map((item) => (
+                <li key={item.id} className="flex flex-col gap-1 py-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0 flex-1">
                     <Link
                       href={`/emails/${item.id}`}
@@ -138,41 +243,25 @@ export default function LeadsPage() {
                       {item.subject || "(No subject)"}
                     </Link>
                     <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
-                      {item.sender} · {formatDate(item.receivedAt)} · {item.priorityLabel ?? "—"}
+                      Dept: {item.assignedTeam ?? "—"} · {item.sender} · {formatDate(item.receivedAt)}
                     </p>
-                    <div className="mt-1 flex flex-wrap items-center gap-2">
-                      {item.leadLabel && (
-                        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${leadBadgeClass(item.leadLabel)}`}>
-                          {item.leadLabel}
-                        </span>
-                      )}
-                      {item.assignedTeam && (
-                        <span className="text-xs text-neutral-500 dark:text-neutral-400">
-                          {item.assignedTeam}
-                        </span>
-                      )}
-                    </div>
-                    {item.summary && (
-                      <p className="mt-1 line-clamp-2 text-sm text-neutral-600 dark:text-neutral-300">{item.summary}</p>
-                    )}
-                    {item.buyingSignals && item.buyingSignals.length > 0 && (
-                      <p className="mt-1 text-xs text-emerald-600 dark:text-emerald-400">
-                        Signals: {item.buyingSignals.join(", ")}
+                    {item.retaggedAt && (
+                      <p className="text-xs text-neutral-500">
+                        Retagged {formatDate(item.retaggedAt)}
+                        {item.retagPreviousSummary ? ` · ${item.retagPreviousSummary}` : ""}
                       </p>
                     )}
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Link href={`/emails/${item.id}`}>
-                      <Button variant="ghost" size="icon">
-                        <ChevronRight className="h-4 w-4" />
-                      </Button>
-                    </Link>
-                  </div>
+                  <Link href={`/emails/${item.id}`}>
+                    <Button variant="ghost" size="icon">
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </Link>
                 </li>
               ))}
             </ul>
           )}
-          {totalPages > 1 && (
+          {tab === "leads" && totalPages > 1 && (
             <div className="mt-4 flex items-center justify-between">
               <p className="text-sm text-neutral-500 dark:text-neutral-400">
                 Page {page} of {totalPages}
@@ -182,6 +271,26 @@ export default function LeadsPage() {
                   Previous
                 </Button>
                 <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
+                  Next
+                </Button>
+              </div>
+            </div>
+          )}
+          {tab === "retag" && retagTotalPages > 1 && (
+            <div className="mt-4 flex items-center justify-between">
+              <p className="text-sm text-neutral-500 dark:text-neutral-400">
+                Page {retagPage} of {retagTotalPages}
+              </p>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" disabled={retagPage <= 1} onClick={() => setRetagPage((p) => p - 1)}>
+                  Previous
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={retagPage >= retagTotalPages}
+                  onClick={() => setRetagPage((p) => p + 1)}
+                >
                   Next
                 </Button>
               </div>

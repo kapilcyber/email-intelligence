@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { getApi } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
+import { formatMomTimeRange } from "@/lib/mom-eligibility";
 import type {
   DashboardMetrics,
   EmailRecord,
@@ -13,6 +14,7 @@ import type {
   UserEscalationCountOut,
   UserLeadCountOut,
   CalendarEventOut,
+  MyProjectItem,
 } from "@/lib/types";
 import Link from "next/link";
 import {
@@ -91,10 +93,17 @@ function parseGraphDateTime(iso: string | undefined | null): Date | null {
   return isNaN(d.getTime()) ? null : d;
 }
 
-function formatCalendarEventWhen(ev: CalendarEventOut): string {
-  const d = parseGraphDateTime(ev.start?.dateTime);
-  if (!d) return "—";
-  return d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+function formatMeetingTimeRange(ev: CalendarEventOut): string {
+  const start = parseGraphDateTime(ev.start?.dateTime);
+  const end = parseGraphDateTime(ev.end?.dateTime);
+  if (!start && !end) return "—";
+  if (start && !end) return start.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  if (!start && end) return end.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  return `${start!.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })} - ${end!.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`;
+}
+
+function toDateKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function onlineMeetingLinkLabel(url: string | null | undefined): string {
@@ -607,6 +616,12 @@ export default function DashboardPage() {
   const [calendarEvents, setCalendarEvents] = useState<CalendarEventOut[]>([]);
   const [calendarError, setCalendarError] = useState<string | null>(null);
   const [calendarLoading, setCalendarLoading] = useState(false);
+  const [myProjects, setMyProjects] = useState<MyProjectItem[]>([]);
+  const [calendarMonthStart, setCalendarMonthStart] = useState(() => {
+    const n = new Date();
+    return new Date(n.getFullYear(), n.getMonth(), 1);
+  });
+  const [selectedMeetingDateKey, setSelectedMeetingDateKey] = useState(() => toDateKey(new Date()));
   const syncPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const syncStopRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -616,7 +631,7 @@ export default function DashboardPage() {
     setCalendarLoading(true);
     // Meeting invites from synced Mail (Graph Mail), not Graph calendar — works for all users with mail sync.
     api
-      .getDashboardCalendarEvents(14, null, "mail")
+      .getDashboardCalendarEvents(21, null, "mail")
       .then((r) => {
         setCalendarEvents(r.events ?? []);
         setCalendarError(r.error ?? null);
@@ -628,9 +643,84 @@ export default function DashboardPage() {
       .finally(() => setCalendarLoading(false));
   }, [api, status]);
 
+  const refreshMeetingsFromMailbox = useCallback(async () => {
+    if (status !== "authenticated") return;
+    setCalendarLoading(true);
+    setCalendarError(null);
+    try {
+      // Meetings panel refresh should fetch recent mailbox mail first (Inbox + Sent),
+      // then reload meeting events from synced messages.
+      await api.triggerBackfill({ days: 30 });
+      await loadCalendar();
+    } catch {
+      setCalendarError("Could not refresh meetings from mailbox.");
+      setCalendarLoading(false);
+    }
+  }, [api, status, loadCalendar]);
+
   const displayedCalendarEvents = useMemo(
-    () => selectDashboardCalendarEvents(calendarEvents, new Date()).slice(0, 8),
+    () => selectDashboardCalendarEvents(calendarEvents, new Date()),
     [calendarEvents]
+  );
+
+  const calendarGroups = useMemo(() => {
+    const byDate = new Map<string, { label: string; events: CalendarEventOut[] }>();
+    displayedCalendarEvents.forEach((ev) => {
+      const d = parseGraphDateTime(ev.start?.dateTime);
+      const key = d ? d.toISOString().slice(0, 10) : "unknown";
+      const label = d
+        ? d.toLocaleDateString(undefined, { weekday: "short", day: "2-digit", month: "short", year: "numeric" })
+        : "Unknown date";
+      const row = byDate.get(key) ?? { label, events: [] };
+      row.events.push(ev);
+      byDate.set(key, row);
+    });
+    return Array.from(byDate.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([, v]) => v);
+  }, [displayedCalendarEvents]);
+
+  const meetingsByDate = useMemo(() => {
+    const map = new Map<string, CalendarEventOut[]>();
+    displayedCalendarEvents.forEach((ev) => {
+      const d = parseGraphDateTime(ev.start?.dateTime);
+      if (!d) return;
+      const key = toDateKey(d);
+      const list = map.get(key) ?? [];
+      list.push(ev);
+      map.set(key, list);
+    });
+    for (const [, list] of map) {
+      list.sort((a, b) => {
+        const ta = parseGraphDateTime(a.start?.dateTime)?.getTime() ?? 0;
+        const tb = parseGraphDateTime(b.start?.dateTime)?.getTime() ?? 0;
+        return ta - tb;
+      });
+    }
+    return map;
+  }, [displayedCalendarEvents]);
+
+  const calendarDays = useMemo(() => {
+    const firstDay = new Date(calendarMonthStart.getFullYear(), calendarMonthStart.getMonth(), 1);
+    const monthStartDow = firstDay.getDay(); // 0 Sunday
+    const gridStart = new Date(firstDay);
+    gridStart.setDate(firstDay.getDate() - monthStartDow);
+    return Array.from({ length: 42 }).map((_, i) => {
+      const d = new Date(gridStart);
+      d.setDate(gridStart.getDate() + i);
+      const key = toDateKey(d);
+      return {
+        date: d,
+        key,
+        inMonth: d.getMonth() == calendarMonthStart.getMonth(),
+        count: meetingsByDate.get(key)?.length ?? 0,
+      };
+    });
+  }, [calendarMonthStart, meetingsByDate]);
+
+  const selectedMeetings = useMemo(
+    () => meetingsByDate.get(selectedMeetingDateKey) ?? [],
+    [meetingsByDate, selectedMeetingDateKey]
   );
 
   const refresh = useCallback(() => {
@@ -652,6 +742,11 @@ export default function DashboardPage() {
     if (status !== "authenticated") return;
     loadCalendar();
   }, [status, loadCalendar]);
+
+  useEffect(() => {
+    if (status !== "authenticated") return;
+    api.getMyProjects().then((r) => setMyProjects(r.projects ?? [])).catch(() => setMyProjects([]));
+  }, [status, api]);
 
   useEffect(() => {
     if (status !== "authenticated") return;
@@ -871,7 +966,7 @@ export default function DashboardPage() {
 
   const kpiCards = [
     { title: "Emails Today", value: loadingMetrics ? "—" : (metrics?.emailsIngestedToday ?? 0), subtitle: "Received today" },
-    { title: "Queue Size", value: loadingMetrics ? "—" : (metrics?.queueSize ?? 0), subtitle: "Tasks pending" },
+    { title: "Queue Size", value: loadingMetrics ? "—" : (metrics?.queueSize ?? 0), subtitle: "Your tasks pending" },
     { title: "Workers", value: loadingMetrics ? "—" : `${metrics?.activeWorkers ?? 0} active`, subtitle: "Active workers" },
     { title: "Classified", value: loadingMetrics ? "—" : `${metrics?.totalClassified ?? 0} / ${metrics?.totalEmails ?? 0}`, subtitle: "Total emails" },
   ];
@@ -928,7 +1023,7 @@ export default function DashboardPage() {
               <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-sky-100 text-sky-600 dark:bg-sky-900/30 dark:text-sky-400">
                 <Calendar className="h-6 w-6" />
               </div>
-              <span className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">Sync calendar</span>
+              <span className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">Sync mails by date range</span>
             </div>
             <div className="flex min-w-0 flex-wrap items-center gap-2 sm:flex-nowrap">
               <input
@@ -936,14 +1031,14 @@ export default function DashboardPage() {
                 value={syncFromDate}
                 onChange={(e) => setSyncFromDate(e.target.value)}
                 className="h-10 min-w-0 flex-1 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100"
-                aria-label="Sync from date"
+                aria-label="Mail sync from date"
               />
               <input
                 type="date"
                 value={syncToDate}
                 onChange={(e) => setSyncToDate(e.target.value)}
                 className="h-10 min-w-0 flex-1 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100"
-                aria-label="Sync to date"
+                aria-label="Mail sync to date"
               />
             </div>
             <Button
@@ -953,12 +1048,12 @@ export default function DashboardPage() {
               variant="secondary"
               className="h-10 w-full text-sm"
             >
-              {syncRangeLoading ? "Syncing…" : "Run range sync"}
+              {syncRangeLoading ? "Syncing mails…" : "Run mail range sync"}
             </Button>
           </div>
         </div>
         <p className="px-4 text-[11px] text-neutral-500 dark:text-neutral-400 md:px-6">
-          Calendar sync uses Inbox + Sent. Leave one date empty for an open-ended range.
+          This sync is for mailbox emails (Inbox + Sent) between dates. Meetings are shown separately in the Meetings section.
         </p>
       </section>
 
@@ -1015,6 +1110,41 @@ export default function DashboardPage() {
           </section>
         </div>
         <div className="space-y-4">
+          {myProjects.length > 0 && (
+            <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm dark:border-neutral-700 dark:bg-neutral-900/50">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">My projects</h2>
+                <button type="button" className="rounded p-1 text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-700" aria-label="More">
+                  <MoreHorizontal className="h-4 w-4" />
+                </button>
+              </div>
+              <ul className="space-y-2">
+                {myProjects.slice(0, 6).map((p) => (
+                  <li key={p.projectId} className="rounded-lg border border-neutral-200 bg-neutral-50/50 p-3 dark:border-neutral-700 dark:bg-neutral-800/40">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100">{p.projectName}</p>
+                      <span className="rounded bg-neutral-200 px-2 py-0.5 text-[10px] font-medium uppercase text-neutral-700 dark:bg-neutral-700 dark:text-neutral-200">
+                        {p.status}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                      Team: {p.teamName ?? "—"} · Role: {p.role ?? "—"}
+                    </p>
+                    {p.responsibilities && (
+                      <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-300">
+                        {p.responsibilities}
+                      </p>
+                    )}
+                    {p.structure?.notes && (
+                      <p className="mt-1 line-clamp-2 text-[11px] text-neutral-500 dark:text-neutral-400">
+                        {p.structure.notes}
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {me?.isAdmin ? (
             <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm dark:border-neutral-700 dark:bg-neutral-900/50">
               <div className="mb-4 flex items-center justify-between">
@@ -1115,13 +1245,15 @@ export default function DashboardPage() {
             <div className="mb-4 flex items-center justify-between">
               <div>
                 <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">Meetings</h2>
-                <p className="text-[11px] text-neutral-500 dark:text-neutral-400">From meeting invites in your synced mail (not resume/CV)</p>
+                <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+                  Your mailbox ({session?.user?.email ?? "—"}): meeting invites synced from Mail — same list for every user and admins on their own login.
+                </p>
               </div>
               <button
                 type="button"
                 className="rounded p-1 text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-700"
                 aria-label="Refresh calendar"
-                onClick={loadCalendar}
+                onClick={refreshMeetingsFromMailbox}
               >
                 <RefreshCw className={`h-4 w-4 ${calendarLoading ? "animate-spin" : ""}`} />
               </button>
@@ -1143,38 +1275,95 @@ export default function DashboardPage() {
               </p>
             )}
             {displayedCalendarEvents.length > 0 && (
-              <ul className="max-h-72 space-y-2 overflow-y-auto pr-1">
-                {displayedCalendarEvents.map((ev) => (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <button
+                    type="button"
+                    className="rounded border border-neutral-200 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+                    onClick={() =>
+                      setCalendarMonthStart((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1))
+                    }
+                  >
+                    Prev
+                  </button>
+                  <p className="text-xs font-semibold text-neutral-700 dark:text-neutral-200">
+                    {calendarMonthStart.toLocaleDateString(undefined, { month: "long", year: "numeric" })}
+                  </p>
+                  <button
+                    type="button"
+                    className="rounded border border-neutral-200 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+                    onClick={() =>
+                      setCalendarMonthStart((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1))
+                    }
+                  >
+                    Next
+                  </button>
+                </div>
+                <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-medium text-neutral-500">
+                  {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((wd) => (
+                    <div key={wd} className="py-1">{wd}</div>
+                  ))}
+                </div>
+                <div className="grid grid-cols-7 gap-1">
+                  {calendarDays.map((d) => {
+                    const isSelected = d.key === selectedMeetingDateKey;
+                    const isToday = d.key === toDateKey(new Date());
+                    return (
+                      <button
+                        key={d.key}
+                        type="button"
+                        onClick={() => setSelectedMeetingDateKey(d.key)}
+                        className={`relative min-h-[46px] rounded border px-1 py-1 text-left text-[11px] ${
+                          d.inMonth
+                            ? "border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900"
+                            : "border-neutral-100 bg-neutral-50 text-neutral-400 dark:border-neutral-800 dark:bg-neutral-900/50"
+                        } ${isSelected ? "ring-2 ring-indigo-500" : ""}`}
+                      >
+                        <span className={`${isToday ? "font-bold text-indigo-600 dark:text-indigo-400" : ""}`}>
+                          {d.date.getDate()}
+                        </span>
+                        {d.count > 0 && (
+                          <span className="absolute bottom-1 right-1 rounded-full bg-indigo-600 px-1.5 text-[10px] font-medium text-white">
+                            {d.count}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-600 dark:text-neutral-300">
+                    {selectedMeetings.length > 0
+                      ? `Meetings on ${selectedMeetingDateKey}`
+                      : `No meetings on ${selectedMeetingDateKey}`}
+                  </p>
+                  {selectedMeetings.map((ev) => (
                     <li
                       key={ev.id ?? `${ev.subject}-${ev.start?.dateTime}`}
-                      className={`rounded-lg border border-neutral-200 bg-neutral-50/50 p-3 dark:border-neutral-700 dark:bg-neutral-800/50 ${
+                      className={`list-none rounded-lg border border-neutral-200 bg-neutral-50/50 p-3 dark:border-neutral-700 dark:bg-neutral-800/50 ${
                         ev.isCancelled ? "opacity-75" : ""
                       }`}
                     >
                       <div className="flex flex-wrap items-start justify-between gap-2">
                         <p
-                          className={`text-sm font-medium text-neutral-900 dark:text-neutral-100 ${
+                          className={`min-w-0 flex-1 text-sm font-medium text-neutral-900 dark:text-neutral-100 ${
                             ev.isCancelled ? "line-through" : ""
                           }`}
                         >
                           {ev.subject}
                         </p>
-                        {ev.isCancelled && (
-                          <span className="shrink-0 rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-800 dark:bg-red-900/50 dark:text-red-200">
-                            Cancelled
+                        {!ev.isCancelled && (
+                          <span className="shrink-0 rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] font-medium text-neutral-700 dark:bg-neutral-700 dark:text-neutral-200">
+                            {formatMeetingTimeRange(ev)}
                           </span>
                         )}
                       </div>
-                      <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-                        {formatCalendarEventWhen(ev)}
-                        {ev.location ? ` · ${ev.location}` : ""}
+                      <p className="mt-1 text-xs font-medium text-neutral-700 dark:text-neutral-300">
+                        Scheduled: {formatMomTimeRange(ev)}
                       </p>
-                      {(ev.organizerName || ev.organizerEmail) && (
-                        <p className="mt-0.5 text-[11px] text-neutral-500 dark:text-neutral-500">
-                          {ev.organizerName ?? ev.organizerEmail}
-                          {ev.organizerName && ev.organizerEmail ? ` · ${ev.organizerEmail}` : ""}
-                        </p>
-                      )}
+                      {ev.location ? (
+                        <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">{ev.location}</p>
+                      ) : null}
                       <div className="mt-2 flex flex-wrap gap-2">
                         {ev.joinUrl && !ev.isCancelled && (
                           <a
@@ -1201,7 +1390,8 @@ export default function DashboardPage() {
                       </div>
                     </li>
                   ))}
-              </ul>
+                </div>
+              </div>
             )}
           </div>
         </div>

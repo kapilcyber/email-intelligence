@@ -1,14 +1,14 @@
 from typing import Any
-import httpx
 from app.config import get_settings
 from app.graph.auth import get_auth_headers
+from app.http_client import httpx_client
 
 GRAPH_BASE = "https://graph.microsoft.com/v1.0"
 
 
 def _get(url: str, params: dict | None = None) -> dict[str, Any]:
     settings = get_settings()
-    with httpx.Client(timeout=30.0) as client:
+    with httpx_client(timeout=30.0) as client:
         r = client.get(
             url,
             params=params or {},

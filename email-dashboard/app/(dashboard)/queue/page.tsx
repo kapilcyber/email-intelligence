@@ -48,7 +48,7 @@ export default function QueueMonitorPage() {
         <div>
           <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-50">Queue Monitor</h1>
           <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-            Redis & Celery workers
+            Your mailbox backlog (not the whole deployment)
           </p>
         </div>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -72,25 +72,40 @@ export default function QueueMonitorPage() {
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <Card className="rounded-2xl">
           <CardHeader>
             <CardTitle className="text-sm font-medium text-neutral-500 dark:text-neutral-400">
-              Pending
+              Your pending
             </CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-semibold text-neutral-900 dark:text-neutral-50">{data.pending}</p>
+            <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">Enqueued for your mailbox</p>
           </CardContent>
         </Card>
         <Card className="rounded-2xl">
           <CardHeader>
             <CardTitle className="text-sm font-medium text-neutral-500 dark:text-neutral-400">
-              Active
+              Your active
             </CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-semibold text-neutral-900 dark:text-neutral-50">{data.active}</p>
+            <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">Running now (best-effort)</p>
+          </CardContent>
+        </Card>
+        <Card className="rounded-2xl">
+          <CardHeader>
+            <CardTitle className="text-sm font-medium text-neutral-500 dark:text-neutral-400">
+              Workers
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-semibold text-neutral-900 dark:text-neutral-50">
+              {data.activeWorkers ?? "—"}
+            </p>
+            <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">Shared pool</p>
           </CardContent>
         </Card>
         <Card className="rounded-2xl">

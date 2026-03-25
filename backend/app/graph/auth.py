@@ -1,6 +1,6 @@
 import time
-import httpx
 from app.config import get_settings
+from app.http_client import httpx_client
 
 _token_cache: dict[str, tuple[float, str]] = {}  # (expires_at, token)
 TOKEN_BUFFER_SECONDS = 300
@@ -21,7 +21,7 @@ def get_access_token() -> str:
         "scope": "https://graph.microsoft.com/.default",
         "grant_type": "client_credentials",
     }
-    with httpx.Client() as client:
+    with httpx_client() as client:
         r = client.post(url, data=data)
         r.raise_for_status()
         body = r.json()

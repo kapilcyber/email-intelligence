@@ -9,7 +9,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Download, Info, Table2, Users } from "lucide-react";
+import { ArrowLeft, Download, Info, Table2, Tags, Users } from "lucide-react";
+import { RetagMailControl } from "@/components/escalations/retag-mail-control";
 import {
   LineChart,
   Line,
@@ -75,6 +76,10 @@ export default function AdminLeadsPage() {
   const [userCounts, setUserCounts] = useState<UserLeadCountOut[]>([]);
   const [userCountsLoading, setUserCountsLoading] = useState(true);
   const [selectedUserEmail, setSelectedUserEmail] = useState<string | null>(null);
+  const [mailKindTab, setMailKindTab] = useState<"leads" | "retag">("leads");
+  const [retagItems, setRetagItems] = useState<EscalationLeadItem[]>([]);
+  const [retagTotal, setRetagTotal] = useState(0);
+  const [retagPage, setRetagPage] = useState(1);
   const [items, setItems] = useState<EscalationLeadItem[]>([]);
   const [chartItems, setChartItems] = useState<EscalationLeadItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -122,6 +127,25 @@ export default function AdminLeadsPage() {
       .finally(() => setLoading(false));
   };
 
+  const loadAdminRetag = () => {
+    if (status !== "authenticated" || !selectedUserEmail) return;
+    setLoading(true);
+    setError(null);
+    api
+      .getAdminRetagged({
+        mailbox: selectedUserEmail,
+        page: retagPage,
+        pageSize,
+        from: fromDate || undefined,
+      })
+      .then((r) => {
+        setRetagItems(r.retagged);
+        setRetagTotal(r.total);
+      })
+      .catch(() => setError("Failed to load ReTag list"))
+      .finally(() => setLoading(false));
+  };
+
   const loadCharts = () => {
     if (status !== "authenticated" || !selectedUserEmail) return;
     setChartLoading(true);
@@ -157,23 +181,35 @@ export default function AdminLeadsPage() {
   }, [status, selectedUserEmail]);
 
   useEffect(() => {
-    if (selectedUserEmail) loadTable();
-  }, [status, api, selectedUserEmail, page, pageSize, labelFilter, teamFilter, fromDate]);
+    if (selectedUserEmail && mailKindTab === "leads") loadTable();
+  }, [status, api, selectedUserEmail, page, pageSize, labelFilter, teamFilter, fromDate, mailKindTab]);
 
   useEffect(() => {
-    if (selectedUserEmail && (viewMode === "all" || viewMode === "analytics")) {
+    if (selectedUserEmail && mailKindTab === "retag") loadAdminRetag();
+  }, [status, api, selectedUserEmail, mailKindTab, retagPage, pageSize, fromDate]);
+
+  useEffect(() => {
+    if (
+      selectedUserEmail &&
+      mailKindTab === "leads" &&
+      (viewMode === "all" || viewMode === "analytics")
+    ) {
       loadCharts();
     }
-  }, [status, api, selectedUserEmail, viewMode, labelFilter, teamFilter, fromDate]);
+  }, [status, api, selectedUserEmail, viewMode, labelFilter, teamFilter, fromDate, mailKindTab]);
 
   useEffect(() => {
     if (status !== "authenticated" || !selectedUserEmail) return;
     const id = window.setInterval(() => {
-      loadTable();
-      if (viewMode === "all" || viewMode === "analytics") loadCharts();
+      if (mailKindTab === "leads") {
+        loadTable();
+        if (viewMode === "all" || viewMode === "analytics") loadCharts();
+      } else {
+        loadAdminRetag();
+      }
     }, 30000);
     return () => window.clearInterval(id);
-  }, [status, api, selectedUserEmail, page, pageSize, labelFilter, teamFilter, fromDate, viewMode]);
+  }, [status, api, selectedUserEmail, page, pageSize, labelFilter, teamFilter, fromDate, viewMode, mailKindTab]);
 
   const filteredItems = useMemo(() => {
     let list = items;
@@ -281,10 +317,45 @@ export default function AdminLeadsPage() {
         </div>
         {selectedUserEmail && (
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={() => (setSelectedUserEmail(null), setPage(1), setPageSize(DEFAULT_PAGE_SIZE))} className="gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => (
+                setSelectedUserEmail(null),
+                setPage(1),
+                setPageSize(DEFAULT_PAGE_SIZE),
+                setMailKindTab("leads")
+              )}
+              className="gap-2"
+            >
               <ArrowLeft className="h-4 w-4" />
               Back to users
             </Button>
+            <div className="flex rounded-lg border border-neutral-200 bg-white p-0.5 dark:border-neutral-700 dark:bg-neutral-900">
+              <button
+                type="button"
+                onClick={() => (setMailKindTab("leads"), setPage(1))}
+                className={`rounded-md px-3 py-1.5 text-sm font-medium ${
+                  mailKindTab === "leads"
+                    ? "bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900"
+                    : "text-neutral-600 dark:text-neutral-400"
+                }`}
+              >
+                Leads
+              </button>
+              <button
+                type="button"
+                onClick={() => (setMailKindTab("retag"), setRetagPage(1))}
+                className={`flex items-center gap-1 rounded-md px-3 py-1.5 text-sm font-medium ${
+                  mailKindTab === "retag"
+                    ? "bg-indigo-600 text-white dark:bg-indigo-500"
+                    : "text-neutral-600 dark:text-neutral-400"
+                }`}
+              >
+                <Tags className="h-3.5 w-3.5" />
+                ReTag
+              </button>
+            </div>
             <div className="flex rounded-lg border border-neutral-200 bg-white p-0.5 dark:border-neutral-700 dark:bg-neutral-900">
               {(["all", "analytics", "table"] as const).map((mode) => (
                 <button
@@ -402,7 +473,7 @@ export default function AdminLeadsPage() {
         </Card>
       )}
 
-      {selectedUserEmail && (
+      {selectedUserEmail && mailKindTab === "leads" && (
         <>
       {/* KPI cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -620,6 +691,7 @@ export default function AdminLeadsPage() {
                         <th className="px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">Mail type</th>
                         <th className="px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">Status</th>
                         <th className="px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">Date</th>
+                        <th className="px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">Retag</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-neutral-200 dark:divide-neutral-700">
@@ -660,6 +732,20 @@ export default function AdminLeadsPage() {
                             </span>
                           </td>
                           <td className="px-4 py-3 text-neutral-500">{formatDate(item.receivedAt)}</td>
+                          <td className="px-4 py-3 align-top">
+                            {selectedUserEmail && (
+                              <RetagMailControl
+                                emailId={item.id}
+                                adminMailbox={selectedUserEmail}
+                                departmentNames={teamNames}
+                                onDone={() => {
+                                  loadTable();
+                                  if (mailKindTab === "retag") loadAdminRetag();
+                                }}
+                                compact
+                              />
+                            )}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -693,6 +779,70 @@ export default function AdminLeadsPage() {
         </Card>
       )}
         </>
+      )}
+
+      {selectedUserEmail && mailKindTab === "retag" && (
+        <Card className="rounded-xl border-neutral-200 dark:border-neutral-800">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Tags className="h-5 w-5" />
+              ReTag — {selectedUserEmail} ({retagTotal})
+            </CardTitle>
+            <p className="text-sm font-normal text-neutral-500 dark:text-neutral-400">
+              Mail this user retagged from escalation/lead into another department.
+            </p>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <Skeleton className="h-64 w-full rounded-lg" />
+            ) : retagItems.length === 0 ? (
+              <p className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">No retagged mail.</p>
+            ) : (
+              <div className="overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-700">
+                <table className="w-full text-left text-sm">
+                  <thead className="border-b border-neutral-200 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800/50">
+                    <tr>
+                      <th className="px-4 py-3">Subject</th>
+                      <th className="px-4 py-3">Department</th>
+                      <th className="px-4 py-3">Retagged</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-200 dark:divide-neutral-700">
+                    {retagItems.map((item) => (
+                      <tr key={item.id}>
+                        <td className="px-4 py-3">
+                          <Link href={`/emails/${item.id}`} className="font-medium hover:underline">
+                            {item.subject || "(No subject)"}
+                          </Link>
+                        </td>
+                        <td className="px-4 py-3">{item.assignedTeam ?? "—"}</td>
+                        <td className="px-4 py-3 text-xs text-neutral-500">
+                          {item.retaggedAt ? formatDate(item.retaggedAt) : "—"}
+                          {item.retagPreviousSummary ? ` · ${item.retagPreviousSummary}` : ""}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {Math.ceil(retagTotal / pageSize) > 1 && (
+              <div className="mt-4 flex justify-between">
+                <Button variant="outline" size="sm" disabled={retagPage <= 1} onClick={() => setRetagPage((p) => p - 1)}>
+                  Previous
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={retagPage >= Math.ceil(retagTotal / pageSize)}
+                  onClick={() => setRetagPage((p) => p + 1)}
+                >
+                  Next
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       )}
     </div>
   );

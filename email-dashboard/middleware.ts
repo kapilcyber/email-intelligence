@@ -21,5 +21,8 @@ export const config = {
     "/departments/:path*",
     "/escalations",
     "/leads",
+    "/retag",
+    "/mom",
+    "/mom/:path*",
   ],
 };

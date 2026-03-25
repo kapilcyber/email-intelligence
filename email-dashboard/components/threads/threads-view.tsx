@@ -8,7 +8,7 @@ import type { ConversationItem, EmailDetail } from "@/lib/types";
 import { stripQuotedContentForThread } from "@/lib/email-body-strip-quotes";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Mail, MessageSquare, Calendar, ChevronRight } from "lucide-react";
+import { ArrowLeft, Mail, MessageSquare, Calendar, ChevronRight, Download } from "lucide-react";
 
 const PAGE_SIZE = 25;
 
@@ -41,7 +41,7 @@ function formatResponseTime(ms: number): string {
   return "<1s";
 }
 
-function ThreadEmailCard({ email, index, responseTimeMs }: { email: EmailDetail; index: number; responseTimeMs?: number }) {
+export function ThreadEmailCard({ email, index, responseTimeMs }: { email: EmailDetail; index: number; responseTimeMs?: number }) {
   const isHtml = (email.bodyContentType || "").toLowerCase() === "html";
   const rawBody = email.bodyContent || email.bodyPreview || null;
   const stripped =
@@ -78,6 +78,16 @@ function ThreadEmailCard({ email, index, responseTimeMs }: { email: EmailDetail;
             <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
               To: {formatRecipients(email.toRecipients)}
             </p>
+            {email.ccRecipients && email.ccRecipients.length > 0 && (
+              <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
+                Cc: {formatRecipients(email.ccRecipients)}
+              </p>
+            )}
+            {email.bccRecipients && email.bccRecipients.length > 0 && (
+              <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
+                Bcc: {formatRecipients(email.bccRecipients)}
+              </p>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400">
@@ -139,6 +149,16 @@ export function ThreadsView({ basePath }: ThreadsViewProps) {
   const [backfilling, setBackfilling] = useState(false);
   const [backfillMessage, setBackfillMessage] = useState<string | null>(null);
 
+  const [exportFrom, setExportFrom] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return d.toISOString().slice(0, 10);
+  });
+  const [exportTo, setExportTo] = useState(() => new Date().toISOString().slice(0, 10));
+  const [exportOnlyThread, setExportOnlyThread] = useState(false);
+  const [exportBusy, setExportBusy] = useState(false);
+  const [exportErr, setExportErr] = useState<string | null>(null);
+
   const selectedConversation = useMemo(
     () => conversations.find((c) => c.conversationId === selectedId) ?? null,
     [conversations, selectedId]
@@ -170,6 +190,29 @@ export function ThreadsView({ basePath }: ThreadsViewProps) {
       .catch(() => setThreadEmails([]))
       .finally(() => setThreadLoading(false));
   }, [selectedId, status, api]);
+
+  const handleDownloadReplyReport = async () => {
+    if (status !== "authenticated") return;
+    setExportErr(null);
+    setExportBusy(true);
+    try {
+      const blob = await api.downloadThreadRepliesCsv({
+        from: exportFrom,
+        to: exportTo,
+        conversationId: exportOnlyThread && selectedId ? selectedId : undefined,
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `thread-replies-${exportFrom}-to-${exportTo}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setExportErr(e instanceof Error ? e.message : "Download failed");
+    } finally {
+      setExportBusy(false);
+    }
+  };
 
   const runBackfillConversationIds = () => {
     if (status !== "authenticated") return;
@@ -223,6 +266,58 @@ export function ThreadsView({ basePath }: ThreadsViewProps) {
               }}
               className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm placeholder:text-neutral-400 focus:border-neutral-400 focus:outline-none focus:ring-1 focus:ring-neutral-400 dark:border-neutral-600 dark:bg-neutral-800 dark:placeholder:text-neutral-500"
             />
+          </div>
+          <div className="mt-4 rounded-lg border border-neutral-200 bg-white p-3 dark:border-neutral-600 dark:bg-neutral-800/80">
+            <p className="text-xs font-semibold text-neutral-800 dark:text-neutral-200">Download reply report (CSV)</p>
+            <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+              One row per reply in the range: response time vs previous message, thread / previous / reply subjects, From,
+              To, Cc, Bcc, previous sender. UTF-8 (opens in Excel).
+            </p>
+            <div className="mt-2 flex flex-col gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="flex flex-col gap-0.5 text-[10px] font-medium uppercase tracking-wide text-neutral-500">
+                  From
+                  <input
+                    type="date"
+                    value={exportFrom}
+                    onChange={(e) => setExportFrom(e.target.value)}
+                    className="rounded-md border border-neutral-200 bg-white px-2 py-1.5 text-xs dark:border-neutral-600 dark:bg-neutral-900"
+                  />
+                </label>
+                <label className="flex flex-col gap-0.5 text-[10px] font-medium uppercase tracking-wide text-neutral-500">
+                  To
+                  <input
+                    type="date"
+                    value={exportTo}
+                    onChange={(e) => setExportTo(e.target.value)}
+                    className="rounded-md border border-neutral-200 bg-white px-2 py-1.5 text-xs dark:border-neutral-600 dark:bg-neutral-900"
+                  />
+                </label>
+              </div>
+              {selectedId && (
+                <label className="flex cursor-pointer items-center gap-2 text-xs text-neutral-600 dark:text-neutral-400">
+                  <input
+                    type="checkbox"
+                    checked={exportOnlyThread}
+                    onChange={(e) => setExportOnlyThread(e.target.checked)}
+                    className="rounded border-neutral-300"
+                  />
+                  Only the selected conversation
+                </label>
+              )}
+              {exportErr && <p className="text-xs text-red-600 dark:text-red-400">{exportErr}</p>}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full gap-2"
+                disabled={exportBusy || !exportFrom || !exportTo}
+                onClick={handleDownloadReplyReport}
+              >
+                <Download className="h-4 w-4" />
+                {exportBusy ? "Preparing…" : "Download CSV"}
+              </Button>
+            </div>
           </div>
         </div>
         <div className="flex-1 overflow-y-auto">
