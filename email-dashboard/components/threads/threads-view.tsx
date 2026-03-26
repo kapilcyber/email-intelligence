@@ -248,26 +248,28 @@ export function ThreadsView({ basePath }: ThreadsViewProps) {
     <div className="flex h-[calc(100vh-4rem)] flex-col md:flex-row">
       <aside className="flex w-full flex-col border-r border-neutral-200 bg-neutral-50/80 dark:border-neutral-700 dark:bg-neutral-900/30 md:w-96">
         <div className="border-b border-neutral-200 p-4 dark:border-neutral-700">
-          <div className="flex items-center gap-2">
-            <MessageSquare className="h-5 w-5 text-neutral-600 dark:text-neutral-400" />
-            <h1 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">Threads</h1>
+          <div data-tour-id="threads-sidebar">
+            <div className="flex items-center gap-2">
+              <MessageSquare className="h-5 w-5 text-neutral-600 dark:text-neutral-400" />
+              <h1 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">Threads</h1>
+            </div>
+            <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+              Real reply chains only. Sync from History (Inbox + Sent) so your sent replies appear here.
+            </p>
+            <div className="mt-3">
+              <input
+                type="search"
+                placeholder="Search by subject or sender…"
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setPage(1);
+                }}
+                className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm placeholder:text-neutral-400 focus:border-neutral-400 focus:outline-none focus:ring-1 focus:ring-neutral-400 dark:border-neutral-600 dark:bg-neutral-800 dark:placeholder:text-neutral-500"
+              />
+            </div>
           </div>
-          <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-            Real reply chains only. Sync from History (Inbox + Sent) so your sent replies appear here.
-          </p>
-          <div className="mt-3">
-            <input
-              type="search"
-              placeholder="Search by subject or sender…"
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setPage(1);
-              }}
-              className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm placeholder:text-neutral-400 focus:border-neutral-400 focus:outline-none focus:ring-1 focus:ring-neutral-400 dark:border-neutral-600 dark:bg-neutral-800 dark:placeholder:text-neutral-500"
-            />
-          </div>
-          <div className="mt-4 rounded-lg border border-neutral-200 bg-white p-3 dark:border-neutral-600 dark:bg-neutral-800/80">
+          <div data-tour-id="threads-export" className="mt-4 rounded-lg border border-neutral-200 bg-white p-3 dark:border-neutral-600 dark:bg-neutral-800/80">
             <p className="text-xs font-semibold text-neutral-800 dark:text-neutral-200">Download reply report (CSV)</p>
             <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
               One row per reply in the range: response time vs previous message, thread / previous / reply subjects, From,
@@ -320,7 +322,7 @@ export function ThreadsView({ basePath }: ThreadsViewProps) {
             </div>
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto">
+        <div data-tour-id="threads-list" className="flex-1 overflow-y-auto">
           {loading && (
             <div className="space-y-2 p-3">
               {[1, 2, 3, 4, 5].map((i) => (
@@ -408,7 +410,7 @@ export function ThreadsView({ basePath }: ThreadsViewProps) {
         )}
       </aside>
 
-      <main className="flex flex-1 flex-col overflow-hidden bg-white dark:bg-neutral-950">
+      <main data-tour-id="threads-detail" className="flex flex-1 flex-col overflow-hidden bg-white dark:bg-neutral-950">
         {!selectedId && (
           <div className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center">
             <MessageSquare className="h-12 w-12 text-neutral-300 dark:text-neutral-600" />

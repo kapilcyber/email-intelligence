@@ -144,6 +144,100 @@ def ensure_mom_meeting_records_table() -> None:
             conn.execute(text(step.strip()))
 
 
+_USER_ACTIVITY_DDL_STEPS = [
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP WITH TIME ZONE NULL",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS role_promoted_at TIMESTAMP WITH TIME ZONE NULL",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS role_promotion_dismissed_at TIMESTAMP WITH TIME ZONE NULL",
+    "CREATE INDEX IF NOT EXISTS ix_users_last_login_at ON users (last_login_at)",
+]
+
+
+def ensure_user_activity_columns() -> None:
+    with engine.begin() as conn:
+        for step in _USER_ACTIVITY_DDL_STEPS:
+            conn.execute(text(step.strip()))
+
+
+_USER_LOGIN_EVENTS_DDL_STEPS = [
+    """
+CREATE TABLE IF NOT EXISTS user_login_events (
+    id VARCHAR(36) PRIMARY KEY,
+    user_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    email VARCHAR(512) NOT NULL,
+    occurred_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    source VARCHAR(32) NOT NULL
+)
+""".strip(),
+    "CREATE INDEX IF NOT EXISTS ix_user_login_events_occurred_at ON user_login_events (occurred_at DESC)",
+    "CREATE INDEX IF NOT EXISTS ix_user_login_events_user_id ON user_login_events (user_id)",
+    "CREATE INDEX IF NOT EXISTS ix_user_login_events_email ON user_login_events (email)",
+    "CREATE INDEX IF NOT EXISTS ix_user_login_events_user_occurred ON user_login_events (user_id, occurred_at DESC)",
+]
+
+
+def ensure_user_login_events_table() -> None:
+    with engine.begin() as conn:
+        for step in _USER_LOGIN_EVENTS_DDL_STEPS:
+            conn.execute(text(step.strip()))
+
+
+_RETAG_APPROVALS_DDL_STEPS = [
+    """
+CREATE TABLE IF NOT EXISTS retag_approval_requests (
+    id VARCHAR(36) PRIMARY KEY,
+    email_id VARCHAR(36) NOT NULL REFERENCES emails(id) ON DELETE CASCADE,
+    mailbox_owner_email VARCHAR(512) NOT NULL,
+    requested_by_email VARCHAR(512) NOT NULL,
+    requested_team VARCHAR(64) NOT NULL,
+    status VARCHAR(32) NOT NULL DEFAULT 'pending',
+    requested_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() AT TIME ZONE 'utc'),
+    reviewed_at TIMESTAMP WITH TIME ZONE NULL,
+    reviewed_by_email VARCHAR(512) NULL,
+    review_note TEXT NULL
+)
+""".strip(),
+    "CREATE INDEX IF NOT EXISTS ix_retag_req_email_id ON retag_approval_requests (email_id)",
+    "CREATE INDEX IF NOT EXISTS ix_retag_req_mailbox_owner_email ON retag_approval_requests (mailbox_owner_email)",
+    "CREATE INDEX IF NOT EXISTS ix_retag_req_requested_by_email ON retag_approval_requests (requested_by_email)",
+    "CREATE INDEX IF NOT EXISTS ix_retag_req_requested_team ON retag_approval_requests (requested_team)",
+    "CREATE INDEX IF NOT EXISTS ix_retag_req_status ON retag_approval_requests (status)",
+    "CREATE INDEX IF NOT EXISTS ix_retag_req_requested_at ON retag_approval_requests (requested_at DESC)",
+    "CREATE INDEX IF NOT EXISTS ix_retag_req_pending_email ON retag_approval_requests (email_id, status)",
+]
+
+
+def ensure_retag_approval_requests_table() -> None:
+    with engine.begin() as conn:
+        for step in _RETAG_APPROVALS_DDL_STEPS:
+            conn.execute(text(step.strip()))
+
+
+def backfill_user_login_events_from_users() -> None:
+    """One synthetic event per existing user so history lists aren't empty before new traffic."""
+    from app.db.models import User, UserLoginEvent
+
+    db = SessionLocal()
+    try:
+        for u in db.query(User).order_by(User.email).all():
+            has_any = db.query(UserLoginEvent.id).filter(UserLoginEvent.user_id == u.id).limit(1).first()
+            if has_any:
+                continue
+            ts = u.last_login_at or u.created_at
+            if not ts:
+                continue
+            db.add(
+                UserLoginEvent(
+                    user_id=u.id,
+                    email=u.email,
+                    occurred_at=ts,
+                    source="session",
+                )
+            )
+        db.commit()
+    finally:
+        db.close()
+
+
 def init_db():
     """Verify database connectivity; ensure optional tables that some envs skip via Alembic."""
     with engine.connect() as conn:
@@ -153,3 +247,7 @@ def init_db():
     ensure_email_message_per_mailbox_index()
     ensure_email_retag_columns()
     ensure_mom_meeting_records_table()
+    ensure_user_activity_columns()
+    ensure_user_login_events_table()
+    ensure_retag_approval_requests_table()
+    backfill_user_login_events_from_users()

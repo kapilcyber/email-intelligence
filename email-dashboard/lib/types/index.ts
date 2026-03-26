@@ -320,6 +320,40 @@ export interface RetaggedResponse {
   pageSize: number;
 }
 
+export interface RetagActionResponse {
+  ok: boolean;
+  emailId: string;
+  assignedTeam?: string | null;
+  requestedTeam?: string | null;
+  status?: "pending" | "approved" | "rejected";
+  mode?: "applied" | "request";
+  requestId?: string;
+  message?: string;
+}
+
+export interface RetagApprovalOut {
+  id: string;
+  emailId: string;
+  mailboxOwnerEmail: string;
+  requestedByEmail: string;
+  requestedTeam: string;
+  status: "pending" | "approved" | "rejected";
+  requestedAt: string;
+  reviewedAt?: string | null;
+  reviewedByEmail?: string | null;
+  reviewNote?: string | null;
+  emailSubject?: string | null;
+  sender?: string | null;
+  receivedAt?: string | null;
+}
+
+export interface MyRetagRequestsResponse {
+  requests: RetagApprovalOut[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 // Phase 4 — Admin (teams, users, workflow)
 export interface TeamOut {
   id: string;
@@ -358,6 +392,10 @@ export interface UserOut {
   managerId: string | null;
   isTeamLead: boolean;
   reportCount: number;
+  /** Last successful /api/me sync (ISO). */
+  lastLoginAt?: string | null;
+  /** Account created in app DB (ISO). */
+  createdAt?: string | null;
 }
 
 export interface WorkflowNode {
@@ -474,6 +512,13 @@ export interface ReviewProjectTrackerUser {
   hasSentTracker: boolean;
 }
 
+/** Shown after an admin assigns Manager or Admin until the user dismisses it. */
+export interface RolePromotionPayload {
+  show: boolean;
+  role: string;
+  promotedAt: string | null;
+}
+
 export interface MeResponse {
   userId?: string;
   email: string;
@@ -483,4 +528,37 @@ export interface MeResponse {
   reportingManager?: { displayName: string | null; email: string } | null;
   /** Department/team name the user belongs to. */
   department?: string | null;
+  rolePromotion?: RolePromotionPayload | null;
+}
+
+export interface RecentSignInOut {
+  userId: string;
+  email: string;
+  displayName: string | null;
+  role: string;
+  lastLoginAt: string | null;
+  createdAt: string | null;
+}
+
+/** Single row from persistent login timeline (past + future visits). */
+export interface LoginEventOut {
+  id: string;
+  userId: string;
+  email: string;
+  displayName: string | null;
+  occurredAt: string;
+  /** oauth = Microsoft sign-in; session = in-app activity (throttled). */
+  source: string;
+}
+
+export interface LoginSyncStatusOut {
+  totalUsers: number;
+  usersWithLastLoginAt: number;
+  usersMissingLastLoginAt: number;
+  totalLoginEvents: number;
+  oauthEvents24h: number;
+  sessionEvents24h: number;
+  lastOauthEventAt: string | null;
+  lastAnyEventAt: string | null;
+  syncHealth: "healthy" | "warning" | "error" | string;
 }

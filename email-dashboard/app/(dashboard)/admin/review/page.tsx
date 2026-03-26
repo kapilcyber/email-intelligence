@@ -64,9 +64,6 @@ export default function AdminReviewPage() {
           <ClipboardCheck className="h-7 w-7 shrink-0 opacity-80" />
           Review
         </h1>
-        <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
-          Review team performance using parameters. You can add more parameters in this section later.
-        </p>
       </div>
 
       <Card>
@@ -91,7 +88,6 @@ export default function AdminReviewPage() {
               );
             })}
           </div>
-          <p className="text-sm text-neutral-500 dark:text-neutral-400">{activeMeta.description}</p>
           <div className="flex flex-wrap gap-2">
             {[7, 30, 90].map((d) => (
               <Button key={d} type="button" size="sm" variant={days === d ? "default" : "outline"} onClick={() => setDays(d as 7 | 30 | 90)}>

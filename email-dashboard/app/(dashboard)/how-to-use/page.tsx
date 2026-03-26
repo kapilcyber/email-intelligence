@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { BookOpen, ShieldCheck, Users, UserCircle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,8 +15,143 @@ const TABS: Array<{ id: RoleTab; label: string; icon: typeof UserCircle }> = [
   { id: "admin", label: "Admin guide", icon: ShieldCheck },
 ];
 
+type TourStep = {
+  id: string;
+  title: string;
+  description: string;
+  href: string;
+  role: RoleTab | "all";
+};
+
+const TOUR_STEPS: TourStep[] = [
+  {
+    id: "dashboard",
+    title: "Dashboard",
+    description: "Start here every day. You can see summary cards, meetings, projects, and your role updates.",
+    href: "/dashboard?tour=1",
+    role: "all",
+  },
+  {
+    id: "history",
+    title: "History",
+    description: "Open all synced emails with filters. Use this when you need detailed mail-level review.",
+    href: "/emails",
+    role: "all",
+  },
+  {
+    id: "threads",
+    title: "Threads",
+    description: "Track complete conversations and reply flow by thread to avoid missing context.",
+    href: "/threads",
+    role: "all",
+  },
+  {
+    id: "departments",
+    title: "Departments toggle",
+    description: "Expand Departments in the sidebar to inspect emails by team/category like Sales, Tech, Accounts, and more.",
+    href: "/departments/all",
+    role: "all",
+  },
+  {
+    id: "escalations",
+    title: "Escalations",
+    description: "Check urgent messages that need action first.",
+    href: "/escalations",
+    role: "all",
+  },
+  {
+    id: "leads",
+    title: "Leads",
+    description: "Review potential business leads and their priority labels.",
+    href: "/leads",
+    role: "all",
+  },
+  {
+    id: "retag",
+    title: "ReTag",
+    description: "Move wrongly tagged escalation/lead mails into the correct department.",
+    href: "/retag",
+    role: "all",
+  },
+  {
+    id: "mom",
+    title: "MOM",
+    description: "Manage meeting follow-up and pending MOM actions.",
+    href: "/mom",
+    role: "all",
+  },
+  {
+    id: "followup",
+    title: "Follow UP",
+    description: "Track project follow-up email compliance by day and project.",
+    href: "/follow-up",
+    role: "all",
+  },
+  {
+    id: "team-leaders",
+    title: "Admin: Team leaders",
+    description: "Manage users, role assignment, and login history.",
+    href: "/admin/team-leaders",
+    role: "admin",
+  },
+  {
+    id: "projects",
+    title: "Admin: Projects",
+    description: "Create and manage team projects and assignees.",
+    href: "/admin/team-projects",
+    role: "admin",
+  },
+  {
+    id: "tracker",
+    title: "Admin: Tracker",
+    description: "Set expected tracker days and monitor project-level tracker behavior.",
+    href: "/admin/tracker",
+    role: "admin",
+  },
+  {
+    id: "review",
+    title: "Admin: Review",
+    description: "Audit team response performance and tracker quality metrics.",
+    href: "/admin/review",
+    role: "admin",
+  },
+];
+
 export default function HowToUsePage() {
   const [active, setActive] = useState<RoleTab>("user");
+  const [tourOpen, setTourOpen] = useState(false);
+  const [tourIndex, setTourIndex] = useState(0);
+
+  const visibleSteps = useMemo(
+    () => TOUR_STEPS.filter((s) => s.role === "all" || s.role === active),
+    [active]
+  );
+
+  useEffect(() => {
+    // Auto-open once for first-time users so guide explains each feature by default.
+    if (typeof window === "undefined") return;
+    const key = "how_to_use_tour_seen_v1";
+    const seen = window.localStorage.getItem(key);
+    if (!seen) {
+      setTourOpen(true);
+      setTourIndex(0);
+      window.localStorage.setItem(key, "1");
+    }
+  }, []);
+
+  useEffect(() => {
+    // When switching role tab, restart from first relevant step.
+    setTourIndex(0);
+  }, [active]);
+
+  const currentStep = visibleSteps[tourIndex] ?? null;
+  const isFirst = tourIndex === 0;
+  const isLast = tourIndex >= visibleSteps.length - 1;
+
+  const startTour = () => {
+    setTourOpen(true);
+    setTourIndex(0);
+  };
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 p-6">
@@ -24,9 +160,16 @@ export default function HowToUsePage() {
           <BookOpen className="h-7 w-7 shrink-0 opacity-80" />
           How to use
         </h1>
-        <p className="mt-1 max-w-3xl text-sm text-neutral-600 dark:text-neutral-400">
-          Platform usage manual by role. Choose User, Manager, or Admin instructions.
-        </p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button type="button" onClick={startTour}>
+            Replay guided tour
+          </Button>
+          {tourOpen && (
+            <Button type="button" variant="outline" onClick={() => setTourOpen(false)}>
+              Hide tour panel
+            </Button>
+          )}
+        </div>
       </div>
 
       <Card>
@@ -56,21 +199,46 @@ export default function HowToUsePage() {
         </CardContent>
       </Card>
 
-      {active === "user" && (
-        <Card>
+      {tourOpen && currentStep && (
+        <Card className="border-indigo-200 bg-indigo-50/60 dark:border-indigo-900/60 dark:bg-indigo-950/20">
           <CardHeader>
-            <CardTitle>User manual</CardTitle>
+            <CardTitle className="text-base">
+              Guided walkthrough ({tourIndex + 1}/{visibleSteps.length})
+            </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3 text-sm text-neutral-700 dark:text-neutral-300">
-            <p className="font-medium text-neutral-900 dark:text-neutral-100">1) Daily monitoring</p>
-            <p>Use Dashboard for summary, then open History/Threads for details and replies.</p>
-            <p className="font-medium text-neutral-900 dark:text-neutral-100">2) Follow UP (tracker)</p>
-            <p>
-              Open <span className="font-medium">Follow UP</span> to check whether you sent project tracker mails for expected days.
-              Expand project history to verify past sends.
+          <CardContent className="space-y-3 text-sm">
+            <p className="font-semibold text-neutral-900 dark:text-neutral-100">{currentStep.title}</p>
+            <p className="text-neutral-700 dark:text-neutral-300">{currentStep.description}</p>
+            <p className="text-xs text-neutral-600 dark:text-neutral-400">
+              Open this toggle/page to see it in action.
             </p>
-            <p className="font-medium text-neutral-900 dark:text-neutral-100">3) MOM and actions</p>
-            <p>Respond to MOM prompt after meetings and use Escalations/Leads/ReTag views as needed.</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <Link href={currentStep.href}>
+                <Button type="button" size="sm">
+                  Open {currentStep.title}
+                </Button>
+              </Link>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={isFirst}
+                onClick={() => setTourIndex((i) => Math.max(0, i - 1))}
+              >
+                Previous
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={isLast ? "default" : "outline"}
+                onClick={() => {
+                  if (isLast) setTourIndex(0);
+                  else setTourIndex((i) => Math.min(visibleSteps.length - 1, i + 1));
+                }}
+              >
+                {isLast ? "Restart tour" : "Next feature"}
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}

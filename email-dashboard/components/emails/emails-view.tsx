@@ -94,14 +94,14 @@ export function EmailsView({ categoryFilter, title, description }: Props) {
   return (
     <div className="flex flex-col gap-6">
       <div className="space-y-6">
-        <div>
+        <div data-tour-id="emails-header">
           <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-50">{defaultTitle}</h1>
           {defaultDescription ? (
             <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">{defaultDescription}</p>
           ) : null}
         </div>
 
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div data-tour-id="emails-filters" className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:flex-wrap">
             <div className="relative min-w-0 flex-1 sm:w-64">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
@@ -154,15 +154,17 @@ export function EmailsView({ categoryFilter, title, description }: Props) {
           </div>
         )}
 
-        <EmailsTable
-          emails={emails}
-          isLoading={loading}
-          emptyMessage={category ? `No emails in ${category}.` : "No emails match your filters."}
-          getEmailLink={(e) => `/emails/${e.id}`}
-        />
+        <div data-tour-id="emails-table">
+          <EmailsTable
+            emails={emails}
+            isLoading={loading}
+            emptyMessage={category ? `No emails in ${category}.` : "No emails match your filters."}
+            getEmailLink={(e) => `/emails/${e.id}`}
+          />
+        </div>
 
         {totalPages > 1 && (
-          <div className="flex justify-between">
+          <div data-tour-id="emails-pagination" className="flex justify-between">
             <Button
               variant="outline"
               size="sm"

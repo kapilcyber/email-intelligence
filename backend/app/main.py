@@ -2,17 +2,19 @@
 import time
 time.clock = getattr(time, "perf_counter", time.time)
 
+from datetime import datetime, timedelta, timezone
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, Response
 
-from fastapi import Depends, Header
+from fastapi import Depends, Header, HTTPException
 
 from app.api import health, webhook, emails, dashboard, queue, settings as settings_api, system as system_api, phase3 as phase3_api, admin as admin_api, admin_tracker as admin_tracker_api, admin_review as admin_review_api, mom as mom_api
 from app.api.deps import get_current_user_email
 from app.config import get_settings
 from app.db.session import get_db
-from app.db.models import User, Team
+from app.db.models import User, Team, UserLoginEvent
 
 settings = get_settings()
 app = FastAPI(
@@ -56,24 +58,74 @@ def api_root():
     return {"name": "Email Intelligence API", "docs": "/docs", "health": "/api/health"}
 
 
-@app.get("/api/me")
-def api_me(
-    email: str = Depends(get_current_user_email),
-    db=Depends(get_db),
-    x_user_name: str | None = Header(None, alias="X-User-Name"),
-):
+def _record_login_event(db, user: User, login_source: str | None, newly_created: bool) -> None:
+    """Persist login timeline: every OAuth sign-in; first DB touch for new user; throttled session pings (6h)."""
+    now = datetime.now(timezone.utc)
+    src = (login_source or "").strip().lower()
+    oauth = src == "oauth"
+    if oauth:
+        should_log = True
+    elif newly_created:
+        should_log = True
+    else:
+        cutoff = now - timedelta(hours=6)
+        recent = (
+            db.query(UserLoginEvent)
+            .filter(UserLoginEvent.user_id == user.id, UserLoginEvent.occurred_at >= cutoff)
+            .first()
+        )
+        should_log = recent is None
+    if not should_log:
+        return
+    db.add(
+        UserLoginEvent(
+            user_id=user.id,
+            email=user.email,
+            occurred_at=now,
+            source="oauth" if oauth else "session",
+        )
+    )
+    db.commit()
+
+
+def _role_promotion_payload(user: User, role: str) -> dict | None:
+    """Non-dismissed role elevation banner for Manager/Admin."""
+    if role not in ("Admin", "Manager"):
+        return None
+    promoted_at = getattr(user, "role_promoted_at", None)
+    if promoted_at is None:
+        return None
+    dismissed_at = getattr(user, "role_promotion_dismissed_at", None)
+    if dismissed_at is not None and promoted_at <= dismissed_at:
+        return None
+    return {
+        "show": True,
+        "role": role,
+        "promotedAt": promoted_at.isoformat(),
+    }
+
+
+def _api_me_sync(
+    email: str,
+    db,
+    x_user_name: str | None,
+    x_login_source: str | None = None,
+) -> dict:
     """Return current user role and isAdmin. Ensures user exists in DB (create/update from session)."""
     settings = get_settings()
     admin_list = [e.strip().lower() for e in (settings.admin_emails or "").split(",") if e.strip()]
     is_admin = email.lower() in admin_list
-    role = "Member"
     display_name = (x_user_name or "").strip() or None
+    now = datetime.now(timezone.utc)
+    user_created = False
     user = db.query(User).filter(User.email == email).first()
     if not user:
+        user_created = True
         user = User(
             email=email,
             display_name=display_name or email.split("@")[0],
             role="Member",
+            last_login_at=now,
         )
         db.add(user)
         db.commit()
@@ -81,7 +133,10 @@ def api_me(
     else:
         if display_name and getattr(user, "display_name", None) != display_name:
             user.display_name = display_name
-            db.commit()
+        user.last_login_at = now
+        db.commit()
+        db.refresh(user)
+    _record_login_event(db, user, x_login_source, user_created)
     role = getattr(user, "role", "Member") or "Member"
     if role == "Admin":
         is_admin = True
@@ -98,6 +153,7 @@ def api_me(
         team = db.query(Team).filter(Team.id == user.team_id).first()
         if team:
             department = team.name
+    role_promotion = _role_promotion_payload(user, role)
     return {
         "userId": user.id,
         "email": email,
@@ -105,7 +161,43 @@ def api_me(
         "isAdmin": is_admin,
         "reportingManager": reporting_manager,
         "department": department,
+        "rolePromotion": role_promotion,
     }
+
+
+@app.get("/api/me")
+def api_me(
+    email: str = Depends(get_current_user_email),
+    db=Depends(get_db),
+    x_user_name: str | None = Header(None, alias="X-User-Name"),
+    x_login_source: str | None = Header(None, alias="X-Login-Source"),
+):
+    """Return current user; upsert user row and refresh last_login_at. Prefer POST from server-side callers (no GET caching)."""
+    return _api_me_sync(email, db, x_user_name, x_login_source)
+
+
+@app.post("/api/me")
+def api_me_post(
+    email: str = Depends(get_current_user_email),
+    db=Depends(get_db),
+    x_user_name: str | None = Header(None, alias="X-User-Name"),
+    x_login_source: str | None = Header(None, alias="X-Login-Source"),
+):
+    """Same as GET /api/me — use after OAuth so new users appear in admin lists even before the SPA loads."""
+    return _api_me_sync(email, db, x_user_name, x_login_source)
+
+
+@app.post("/api/me/dismiss-role-promotion")
+def api_me_dismiss_role_promotion(
+    email: str = Depends(get_current_user_email),
+    db=Depends(get_db),
+):
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.role_promotion_dismissed_at = datetime.now(timezone.utc)
+    db.commit()
+    return {"ok": True}
 
 
 @app.get("/health")

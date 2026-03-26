@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { getApi } from "@/lib/api/client";
@@ -28,6 +29,7 @@ import {
   Calendar,
   ExternalLink,
   Video,
+  X,
 } from "lucide-react";
 import {
   BarChart,
@@ -49,6 +51,11 @@ import {
 } from "recharts";
 
 type ChartPeriod = "daily" | "weekly" | "monthly" | "yearly";
+type DashboardTourStep = {
+  title: string;
+  description: string;
+  target: { current: HTMLDivElement | null };
+};
 
 function loadMetrics(
   api: ReturnType<typeof getApi>,
@@ -593,6 +600,7 @@ function DashboardAiCharts({
 
 export default function DashboardPage() {
   const { data: session, status } = useSession();
+  const searchParams = useSearchParams();
   const api = useMemo(
     () => getApi(session?.user?.email ?? null, session?.user?.name ?? null),
     [session?.user?.email, session?.user?.name]
@@ -608,7 +616,9 @@ export default function DashboardPage() {
     reportingManager?: { displayName: string | null; email: string } | null;
     department?: string | null;
     isAdmin?: boolean;
+    rolePromotion?: { show: boolean; role: string; promotedAt: string | null } | null;
   } | null>(null);
+  const [dismissingPromotion, setDismissingPromotion] = useState(false);
   const [teamMembers, setTeamMembers] = useState<UserOut[] | null>(null);
   const [teams, setTeams] = useState<TeamOut[] | null>(null);
   const [expandedDepartment, setExpandedDepartment] = useState<string | null>(null);
@@ -625,6 +635,14 @@ export default function DashboardPage() {
   const syncPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const syncStopRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const syncActionsRef = useRef<HTMLDivElement>(null);
+  const kpiCardsRef = useRef<HTMLDivElement>(null);
+  const activityMapRef = useRef<HTMLDivElement>(null);
+  const rightColumnRef = useRef<HTMLDivElement>(null);
+  const departmentsCardRef = useRef<HTMLDivElement>(null);
+  const meetingsCardRef = useRef<HTMLDivElement>(null);
+  const [dashboardTourOpen, setDashboardTourOpen] = useState(false);
+  const [dashboardTourStep, setDashboardTourStep] = useState(0);
 
   const loadCalendar = useCallback(() => {
     if (status !== "authenticated") return;
@@ -762,6 +780,7 @@ export default function DashboardPage() {
           reportingManager: r.reportingManager ?? null,
           department: r.department ?? null,
           isAdmin: r.isAdmin ?? false,
+          rolePromotion: r.rolePromotion?.show ? r.rolePromotion : null,
         })
       )
       .catch(() => setMe(null));
@@ -971,6 +990,57 @@ export default function DashboardPage() {
     { title: "Classified", value: loadingMetrics ? "—" : `${metrics?.totalClassified ?? 0} / ${metrics?.totalEmails ?? 0}`, subtitle: "Total emails" },
   ];
 
+  const dashboardTourSteps = useMemo<DashboardTourStep[]>(
+    () => [
+      {
+        title: "Sync action cards",
+        description: "These cards control inbox sync and AI classification. Start with Sync 1 day or Sync 7 days for routine use.",
+        target: syncActionsRef,
+      },
+      {
+        title: "KPI summary cards",
+        description: "These four cards show key status: emails today, queue size, active workers, and classification progress.",
+        target: kpiCardsRef,
+      },
+      {
+        title: "Time-Based Activity Map",
+        description: "Use daily/weekly/monthly/yearly toggles to inspect patterns and trends in email activity.",
+        target: activityMapRef,
+      },
+      {
+        title: "Departments and teams",
+        description: "Use this card to expand each department and see members, reporting structure, and team distribution.",
+        target: departmentsCardRef,
+      },
+      {
+        title: "Meetings and calendar",
+        description: "This calendar panel shows meeting invites. Use Refresh, month navigation, and date selection to review schedules.",
+        target: meetingsCardRef,
+      },
+    ],
+    []
+  );
+  const currentTour = dashboardTourSteps[dashboardTourStep] ?? null;
+  const isFirstTourStep = dashboardTourStep === 0;
+  const isLastTourStep = dashboardTourStep >= dashboardTourSteps.length - 1;
+  const isActiveTourSection = (idx: number) => dashboardTourOpen && dashboardTourStep === idx;
+  const isBlurredTourSection = (idx: number) => dashboardTourOpen && dashboardTourStep !== idx;
+
+  useEffect(() => {
+    if (status !== "authenticated") return;
+    if (searchParams.get("tour") === "1") {
+      setDashboardTourOpen(true);
+      setDashboardTourStep(0);
+    }
+  }, [status, searchParams]);
+
+  useEffect(() => {
+    if (!dashboardTourOpen) return;
+    const el = currentTour?.target.current;
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [dashboardTourOpen, dashboardTourStep, currentTour]);
+
   return (
     <div className="space-y-6">
       {(metricsError || emailsError) && (
@@ -981,6 +1051,97 @@ export default function DashboardPage() {
       {backfillStatus && (
         <p className="text-sm text-neutral-600 dark:text-neutral-400">{backfillStatus}</p>
       )}
+      {dashboardTourOpen && currentTour && (
+        <div className="sticky top-3 z-40 rounded-xl border border-neutral-700 bg-black/95 p-4 shadow-lg backdrop-blur">
+          <p className="text-xs font-semibold uppercase tracking-wide text-neutral-300">
+            Dashboard walkthrough ({dashboardTourStep + 1}/{dashboardTourSteps.length})
+          </p>
+          <p className="mt-1 text-sm font-semibold text-white">{currentTour.title}</p>
+          <p className="mt-1 text-sm text-neutral-200">{currentTour.description}</p>
+          <p className="mt-1 text-xs text-neutral-400">
+            Scroll to the highlighted section, then click next to continue.
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="border-neutral-600 bg-black text-white hover:bg-neutral-900"
+              disabled={isFirstTourStep}
+              onClick={() => setDashboardTourStep((s) => Math.max(0, s - 1))}
+            >
+              Previous
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={isLastTourStep ? "default" : "outline"}
+              className={cn(
+                isLastTourStep
+                  ? "bg-white text-black hover:bg-neutral-200"
+                  : "border-neutral-600 bg-black text-white hover:bg-neutral-900"
+              )}
+              onClick={() => {
+                if (isLastTourStep) setDashboardTourStep(0);
+                else setDashboardTourStep((s) => Math.min(dashboardTourSteps.length - 1, s + 1));
+              }}
+            >
+              {isLastTourStep ? "Restart" : "Next"}
+            </Button>
+            {isLastTourStep && (
+              <Link href="/emails?walkthrough=1">
+                <Button type="button" size="sm" className="bg-white text-black hover:bg-neutral-200">
+                  Open next toggle walkthrough
+                </Button>
+              </Link>
+            )}
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="text-neutral-200 hover:bg-neutral-900 hover:text-white"
+              onClick={() => setDashboardTourOpen(false)}
+            >
+              Close tour
+            </Button>
+          </div>
+        </div>
+      )}
+      {me?.rolePromotion?.show && (
+        <div className="flex flex-col gap-3 rounded-xl border border-indigo-200 bg-indigo-50 p-4 text-indigo-950 shadow-sm dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-100 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold">Your access was updated</p>
+            <p className="mt-1 text-sm text-indigo-900/90 dark:text-indigo-200/90">
+              {me.rolePromotion.role === "Admin" ? (
+                <>
+                  You now have <strong>Admin</strong> access. Open <strong>Admin</strong> in the sidebar for team leaders, projects, tracker, and review.
+                </>
+              ) : (
+                <>
+                  You were assigned the <strong>Manager</strong> role. Admin-only pages still require Admin access or your email on the admin allow list.
+                </>
+              )}
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="shrink-0 border-indigo-300 bg-white hover:bg-indigo-100 dark:border-indigo-700 dark:bg-indigo-950 dark:hover:bg-indigo-900"
+            disabled={dismissingPromotion}
+            onClick={() => {
+              setDismissingPromotion(true);
+              api
+                .dismissRolePromotion()
+                .then(() => refreshMe())
+                .finally(() => setDismissingPromotion(false));
+            }}
+          >
+            <X className="mr-1 h-4 w-4" />
+            Dismiss
+          </Button>
+        </div>
+      )}
       {!metricsError && !emailsError && emails.length === 0 && (metrics?.emailsIngestedToday ?? 0) === 0 && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
           <p className="font-medium">Why no emails?</p>
@@ -989,7 +1150,14 @@ export default function DashboardPage() {
       )}
 
       {/* Sync actions: full-width row of cards that grow to fill space */}
-      <section className="-mx-4 flex w-[calc(100%+2rem)] min-w-0 flex-col gap-3 md:-mx-6 md:w-[calc(100%+3rem)]">
+      <section
+        ref={syncActionsRef}
+        className={cn(
+          "-mx-4 flex w-[calc(100%+2rem)] min-w-0 flex-col gap-3 md:-mx-6 md:w-[calc(100%+3rem)]",
+          isActiveTourSection(0) && "rounded-xl ring-2 ring-indigo-400/70",
+          isBlurredTourSection(0) && "opacity-55"
+        )}
+      >
         <div className="flex w-full min-w-0 flex-wrap items-stretch gap-3 sm:gap-4 xl:flex-nowrap xl:gap-4">
           {actionCards.map(({ label, icon: Icon, onClick }) => {
             const title =
@@ -1052,13 +1220,17 @@ export default function DashboardPage() {
             </Button>
           </div>
         </div>
-        <p className="px-4 text-[11px] text-neutral-500 dark:text-neutral-400 md:px-6">
-          This sync is for mailbox emails (Inbox + Sent) between dates. Meetings are shown separately in the Meetings section.
-        </p>
       </section>
 
       {/* KPI cards */}
-      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <section
+        ref={kpiCardsRef}
+        className={cn(
+          "grid gap-4 sm:grid-cols-2 lg:grid-cols-4",
+          isActiveTourSection(1) && "rounded-xl ring-2 ring-indigo-400/70 p-1",
+          isBlurredTourSection(1) && "opacity-55"
+        )}
+      >
         {kpiCards.map(({ title, value, subtitle }) => (
           <div
             key={title}
@@ -1076,7 +1248,14 @@ export default function DashboardPage() {
 
       {/* Time-Based Activity Map + right column */}
       <div className="grid gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2">
+        <div
+          ref={activityMapRef}
+          className={cn(
+            "lg:col-span-2",
+            isActiveTourSection(2) && "rounded-xl ring-2 ring-indigo-400/70 p-1",
+            isBlurredTourSection(2) && "opacity-55"
+          )}
+        >
           <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm dark:border-neutral-700 dark:bg-neutral-900/50">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">Time-Based Activity Map</h2>
@@ -1109,7 +1288,13 @@ export default function DashboardPage() {
             />
           </section>
         </div>
-        <div className="space-y-4">
+        <div
+          ref={rightColumnRef}
+          className={cn(
+            "space-y-4",
+            dashboardTourOpen && ![3, 4].includes(dashboardTourStep) && "opacity-55"
+          )}
+        >
           {myProjects.length > 0 && (
             <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm dark:border-neutral-700 dark:bg-neutral-900/50">
               <div className="mb-4 flex items-center justify-between">
@@ -1146,7 +1331,14 @@ export default function DashboardPage() {
             </div>
           )}
           {me?.isAdmin ? (
-            <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm dark:border-neutral-700 dark:bg-neutral-900/50">
+            <div
+              ref={departmentsCardRef}
+              className={cn(
+                "rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm dark:border-neutral-700 dark:bg-neutral-900/50",
+                isActiveTourSection(3) && "ring-2 ring-indigo-400/70",
+                isBlurredTourSection(3) && "opacity-55"
+              )}
+            >
               <div className="mb-4 flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">Departments & Teams</h2>
                 <button type="button" className="rounded p-1 text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-700" aria-label="More">
@@ -1218,7 +1410,14 @@ export default function DashboardPage() {
               )}
             </div>
           ) : (
-            <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm dark:border-neutral-700 dark:bg-neutral-900/50">
+            <div
+              ref={departmentsCardRef}
+              className={cn(
+                "rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm dark:border-neutral-700 dark:bg-neutral-900/50",
+                isActiveTourSection(3) && "ring-2 ring-indigo-400/70",
+                isBlurredTourSection(3) && "opacity-55"
+              )}
+            >
               <div className="mb-4 flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">Reporting manager</h2>
                 <button type="button" className="rounded p-1 text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-700" aria-label="More">
@@ -1241,7 +1440,14 @@ export default function DashboardPage() {
               </div>
             </div>
           )}
-          <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm dark:border-neutral-700 dark:bg-neutral-900/50">
+          <div
+            ref={meetingsCardRef}
+            className={cn(
+              "rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm dark:border-neutral-700 dark:bg-neutral-900/50",
+              isActiveTourSection(4) && "ring-2 ring-indigo-400/70",
+              isBlurredTourSection(4) && "opacity-55"
+            )}
+          >
             <div className="mb-4 flex items-center justify-between">
               <div>
                 <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">Meetings</h2>

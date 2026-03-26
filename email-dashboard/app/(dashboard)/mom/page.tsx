@@ -81,13 +81,9 @@ export default function MomHistoryPage() {
     <div className="mx-auto max-w-4xl space-y-6">
       <div>
         <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-50">MOM history</h1>
-        <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-          Minutes of meeting: what you marked as sent, snoozed, or skipped. Stored in the database for mailbox{" "}
-          <span className="font-medium text-neutral-700 dark:text-neutral-300">{email}</span>.
-        </p>
       </div>
 
-      <div className="flex flex-wrap gap-2">
+      <div data-tour-id="mom-filters" className="flex flex-wrap gap-2">
         {(
           [
             ["all", "All"],
@@ -111,7 +107,7 @@ export default function MomHistoryPage() {
         ))}
       </div>
 
-      <Card className="rounded-2xl border-neutral-200 dark:border-neutral-800">
+      <Card data-tour-id="mom-meetings" className="rounded-2xl border-neutral-200 dark:border-neutral-800">
         <CardHeader>
           <CardTitle className="text-base">Meetings</CardTitle>
         </CardHeader>

@@ -75,12 +75,6 @@ export function ProjectMailboxThreads({ projectId, projectName }: { projectId: s
           <Inbox className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
           <h2 className="text-base font-semibold text-neutral-900 dark:text-neutral-100">Related mail (your mailbox)</h2>
         </div>
-        <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-          Only mail that contains your project name <strong>“{projectName}”</strong> in the <strong>subject</strong> or{" "}
-          <strong>body</strong> (case-insensitive). A thread appears if that text appears in at least one{" "}
-          <strong>Inbox</strong>, <strong>Spam</strong>, or <strong>Junk</strong> message. The list and opened thread show{" "}
-          <strong>only</strong> those messages—not the whole chain.
-        </p>
       </div>
 
       <div className="grid gap-0 md:grid-cols-[minmax(0,340px)_1fr] md:divide-x md:divide-neutral-200 dark:md:divide-neutral-800">

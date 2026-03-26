@@ -24,6 +24,9 @@ import type {
   WorkflowNode,
   TeamStatusOut,
   MeResponse,
+  RecentSignInOut,
+  LoginEventOut,
+  LoginSyncStatusOut,
   TeamProjectOut,
   ProjectAssignmentUpsert,
   RetaggedResponse,
@@ -32,6 +35,9 @@ import type {
   TrackerProjectEmailsResponse,
   ReviewEscalationUser,
   ReviewProjectTrackerUser,
+  RetagActionResponse,
+  RetagApprovalOut,
+  MyRetagRequestsResponse,
 } from "@/lib/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
@@ -298,7 +304,7 @@ function createApi(userEmail: string | null, userDisplayName?: string | null) {
       ),
     /** Retag: clear escalation/lead, assign department (mailbox owner only). */
     retagEmail: (emailId: string, assignedTeam: string) =>
-      withUser<{ ok: boolean; emailId: string; assignedTeam: string | null }>(`/api/emails/${emailId}/retag`, {
+      withUser<RetagActionResponse>(`/api/emails/${emailId}/retag`, {
         method: "PATCH",
         body: JSON.stringify({ assignedTeam }),
       }),
@@ -312,6 +318,13 @@ function createApi(userEmail: string | null, userDisplayName?: string | null) {
       if (params?.pageSize != null) searchParams.set("pageSize", String(params.pageSize));
       if (params?.from) searchParams.set("from", params.from);
       return withUser<RetaggedResponse>(`/api/retagged?${searchParams.toString()}`);
+    },
+    getMyRetagRequests: (params?: { page?: number; pageSize?: number }) => {
+      const searchParams = new URLSearchParams();
+      if (params?.page != null) searchParams.set("page", String(params.page));
+      if (params?.pageSize != null) searchParams.set("pageSize", String(params.pageSize));
+      const q = searchParams.toString();
+      return withUser<MyRetagRequestsResponse>(`/api/retag-requests/mine${q ? `?${q}` : ""}`);
     },
     /** Admin: retag mail in another user's mailbox */
     retagEmailAdmin: (emailId: string, mailbox: string, assignedTeam: string) =>
@@ -327,8 +340,32 @@ function createApi(userEmail: string | null, userDisplayName?: string | null) {
       if (params.from) searchParams.set("from", params.from);
       return withUser<RetaggedResponse>(`/api/admin/retagged?${searchParams.toString()}`);
     },
+    getRetagApprovals: (params?: { status?: "pending" | "approved" | "rejected"; page?: number; pageSize?: number }) => {
+      const searchParams = new URLSearchParams();
+      if (params?.status) searchParams.set("status", params.status);
+      if (params?.page != null) searchParams.set("page", String(params.page));
+      if (params?.pageSize != null) searchParams.set("pageSize", String(params.pageSize));
+      const q = searchParams.toString();
+      return withUser<RetagApprovalOut[]>(`/api/admin/retag-approvals${q ? `?${q}` : ""}`);
+    },
+    approveRetagRequest: (requestId: string) =>
+      withUser<{ ok: boolean; requestId: string; status: string }>(
+        `/api/admin/retag-approvals/${encodeURIComponent(requestId)}/approve`,
+        { method: "POST" }
+      ),
+    rejectRetagRequest: (requestId: string, reviewNote?: string) => {
+      const search = new URLSearchParams();
+      if (reviewNote?.trim()) search.set("reviewNote", reviewNote.trim());
+      const q = search.toString();
+      return withUser<{ ok: boolean; requestId: string; status: string }>(
+        `/api/admin/retag-approvals/${encodeURIComponent(requestId)}/reject${q ? `?${q}` : ""}`,
+        { method: "POST" }
+      );
+    },
     // Phase 4 — Admin (requires admin role)
     getMe: () => withUser<MeResponse>("/api/me"),
+    dismissRolePromotion: () =>
+      withUser<{ ok: boolean }>("/api/me/dismiss-role-promotion", { method: "POST" }),
     getTeams: () => withUser<TeamOut[]>("/api/admin/teams"),
     getTeam: (teamId: string) => withUser<TeamOut>(`/api/admin/teams/${teamId}`),
     getTeamStatus: (teamId: string) => withUser<TeamStatusOut>(`/api/admin/teams/${teamId}/status`),
@@ -339,6 +376,19 @@ function createApi(userEmail: string | null, userDisplayName?: string | null) {
       const q = searchParams.toString();
       return withUser<UserOut[]>(`/api/admin/users${q ? `?${q}` : ""}`);
     },
+    getRecentSignIns: (params?: { limit?: number }) => {
+      const searchParams = new URLSearchParams();
+      if (params?.limit != null) searchParams.set("limit", String(params.limit));
+      const q = searchParams.toString();
+      return withUser<RecentSignInOut[]>(`/api/admin/recent-sign-ins${q ? `?${q}` : ""}`);
+    },
+    getLoginEvents: (params?: { limit?: number }) => {
+      const searchParams = new URLSearchParams();
+      if (params?.limit != null) searchParams.set("limit", String(params.limit));
+      const q = searchParams.toString();
+      return withUser<LoginEventOut[]>(`/api/admin/login-events${q ? `?${q}` : ""}`);
+    },
+    getLoginSyncStatus: () => withUser<LoginSyncStatusOut>("/api/admin/login-sync-status"),
     getWorkflow: () => withUser<WorkflowNode[]>("/api/admin/workflow"),
     updateUser: (userId: string, data: { role?: string; teamId?: string; managerId?: string; isTeamLead?: boolean }) => {
       const searchParams = new URLSearchParams();

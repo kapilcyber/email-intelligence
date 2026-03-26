@@ -38,6 +38,7 @@ export function RetagMailControl({
   const [value, setValue] = useState<string>("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
 
   useEffect(() => {
     if (presetNames?.length) {
@@ -55,11 +56,17 @@ export function RetagMailControl({
     if (!value) return;
     setBusy(true);
     setErr(null);
+    setInfo(null);
     const p = adminMailbox?.trim()
       ? api.retagEmailAdmin(emailId, adminMailbox.trim(), value)
       : api.retagEmail(emailId, value);
-    p.then(() => {
+    p.then((res) => {
       setValue("");
+      if (res.mode === "request") {
+        setInfo(res.message || "Approval request sent to admin.");
+      } else {
+        setInfo("Mail moved to ReTag.");
+      }
       onDone();
     })
       .catch((e: Error) => setErr(e.message || "Retag failed"))
@@ -87,6 +94,7 @@ export function RetagMailControl({
         {busy ? "…" : "Retag"}
       </Button>
       {err && <span className="text-xs text-red-600 dark:text-red-400">{err}</span>}
+      {!err && info && <span className="text-xs text-emerald-600 dark:text-emerald-400">{info}</span>}
     </div>
   );
 }

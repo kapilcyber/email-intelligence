@@ -1,15 +1,15 @@
 """
 Phase 4: Admin APIs — teams, users, workflow (who leads whom), team status.
 """
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, Query, HTTPException, Body
-from sqlalchemy import exists, func, or_
+from sqlalchemy import exists, func, or_, desc
 from sqlalchemy.orm import Session, aliased
 from sqlalchemy.exc import OperationalError, ProgrammingError
 from pydantic import BaseModel, Field
 
 from app.db.session import get_db
-from app.db.models import Team, User, Email, Attachment, TeamProject, ProjectAssignment
+from app.db.models import Team, User, UserLoginEvent, Email, Attachment, TeamProject, ProjectAssignment, RetagApprovalRequest
 from app.api.deps import get_admin_user
 from app.api.phase3 import _email_to_item, RetagEmailBody, _perform_retag
 from app.api.emails import (
@@ -56,6 +56,8 @@ class UserOut(BaseModel):
     managerId: str | None = Field(None, alias="managerId")
     isTeamLead: bool = Field(False, alias="isTeamLead")
     reportCount: int = 0
+    lastLoginAt: datetime | None = None
+    createdAt: datetime | None = None
 
     model_config = {"from_attributes": True, "populate_by_name": True}
 
@@ -144,6 +146,60 @@ class UserLeadCountOut(BaseModel):
     readCount: int = Field(0, alias="readCount")
     unreadCount: int = Field(0, alias="unreadCount")
     repliedCount: int = Field(0, alias="repliedCount")
+
+    model_config = {"populate_by_name": True}
+
+
+class RecentSignInOut(BaseModel):
+    userId: str
+    email: str
+    displayName: str | None = None
+    role: str
+    lastLoginAt: datetime | None = None
+    createdAt: datetime | None = None
+
+    model_config = {"populate_by_name": True}
+
+
+class LoginEventOut(BaseModel):
+    id: str
+    userId: str
+    email: str
+    displayName: str | None = None
+    occurredAt: datetime
+    source: str
+
+    model_config = {"populate_by_name": True}
+
+
+class LoginSyncStatusOut(BaseModel):
+    totalUsers: int
+    usersWithLastLoginAt: int
+    usersMissingLastLoginAt: int
+    totalLoginEvents: int
+    oauthEvents24h: int
+    sessionEvents24h: int
+    lastOauthEventAt: datetime | None = None
+    lastAnyEventAt: datetime | None = None
+    syncHealth: str
+
+    model_config = {"populate_by_name": True}
+
+
+class RetagApprovalOut(BaseModel):
+    id: str
+    emailId: str
+    mailboxOwnerEmail: str
+    requestedByEmail: str
+    requestedTeam: str
+    status: str
+    requestedAt: datetime
+    reviewedAt: datetime | None = None
+    reviewedByEmail: str | None = None
+    reviewNote: str | None = None
+    emailSubject: str | None = None
+    sender: str | None = None
+    receivedAt: datetime | None = None
 
     model_config = {"populate_by_name": True}
 
@@ -366,9 +422,175 @@ def list_users(
                 managerId=u.manager_id,
                 isTeamLead=u.is_team_lead,
                 reportCount=report_count,
+                lastLoginAt=u.last_login_at,
+                createdAt=u.created_at,
             )
         )
     return result
+
+
+@router.get("/login-events", response_model=list[LoginEventOut])
+def list_login_events(
+    db: Session = Depends(get_db),
+    limit: int = Query(500, ge=1, le=2000),
+):
+    """Chronological platform access (OAuth sign-ins + throttled in-app activity)."""
+    try:
+        rows = (
+            db.query(UserLoginEvent, User)
+            .join(User, User.id == UserLoginEvent.user_id)
+            .order_by(desc(UserLoginEvent.occurred_at))
+            .limit(limit)
+            .all()
+        )
+    except (OperationalError, ProgrammingError):
+        return []
+    return [
+        LoginEventOut(
+            id=e.id,
+            userId=e.user_id,
+            email=e.email,
+            displayName=u.display_name,
+            occurredAt=e.occurred_at,
+            source=e.source,
+        )
+        for e, u in rows
+    ]
+
+
+@router.get("/login-sync-status", response_model=LoginSyncStatusOut)
+def login_sync_status(db: Session = Depends(get_db)):
+    """Quick diagnostics for auth->backend user sync health."""
+    now = datetime.now(timezone.utc)
+    cutoff = now.replace(microsecond=0) - timedelta(hours=24)
+    total_users = db.query(User).count()
+    users_with_last_login = db.query(User).filter(User.last_login_at.isnot(None)).count()
+    users_missing_last_login = max(0, total_users - users_with_last_login)
+    total_events = db.query(UserLoginEvent).count()
+    oauth_24h = db.query(UserLoginEvent).filter(
+        UserLoginEvent.source == "oauth",
+        UserLoginEvent.occurred_at >= cutoff,
+    ).count()
+    session_24h = db.query(UserLoginEvent).filter(
+        UserLoginEvent.source == "session",
+        UserLoginEvent.occurred_at >= cutoff,
+    ).count()
+    last_oauth = db.query(func.max(UserLoginEvent.occurred_at)).filter(UserLoginEvent.source == "oauth").scalar()
+    last_any = db.query(func.max(UserLoginEvent.occurred_at)).scalar()
+    health = "healthy"
+    if total_users > 0 and oauth_24h == 0:
+        health = "warning"
+    if total_users > 0 and users_with_last_login == 0:
+        health = "error"
+    return LoginSyncStatusOut(
+        totalUsers=total_users,
+        usersWithLastLoginAt=users_with_last_login,
+        usersMissingLastLoginAt=users_missing_last_login,
+        totalLoginEvents=total_events,
+        oauthEvents24h=oauth_24h,
+        sessionEvents24h=session_24h,
+        lastOauthEventAt=last_oauth,
+        lastAnyEventAt=last_any,
+        syncHealth=health,
+    )
+
+
+@router.get("/retag-approvals", response_model=list[RetagApprovalOut])
+def list_retag_approvals(
+    db: Session = Depends(get_db),
+    status: str = Query("pending"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200, alias="pageSize"),
+):
+    q = db.query(RetagApprovalRequest).order_by(RetagApprovalRequest.requested_at.desc())
+    status_v = (status or "").strip().lower()
+    if status_v in ("pending", "approved", "rejected"):
+        q = q.filter(RetagApprovalRequest.status == status_v)
+    rows = q.offset((page - 1) * page_size).limit(page_size).all()
+    out: list[RetagApprovalOut] = []
+    for r in rows:
+        email = db.query(Email).filter(Email.id == r.email_id).first()
+        out.append(
+            RetagApprovalOut(
+                id=r.id,
+                emailId=r.email_id,
+                mailboxOwnerEmail=r.mailbox_owner_email,
+                requestedByEmail=r.requested_by_email,
+                requestedTeam=r.requested_team,
+                status=r.status,
+                requestedAt=r.requested_at,
+                reviewedAt=r.reviewed_at,
+                reviewedByEmail=r.reviewed_by_email,
+                reviewNote=r.review_note,
+                emailSubject=getattr(email, "subject", None),
+                sender=getattr(email, "sender_email", None),
+                receivedAt=getattr(email, "received_at", None),
+            )
+        )
+    return out
+
+
+@router.post("/retag-approvals/{request_id}/approve")
+def approve_retag_request(
+    request_id: str,
+    db: Session = Depends(get_db),
+    admin_email: str = Depends(get_admin_user),
+):
+    req = db.query(RetagApprovalRequest).filter(RetagApprovalRequest.id == request_id).first()
+    if not req:
+        raise HTTPException(status_code=404, detail="Retag approval request not found")
+    if req.status != "pending":
+        raise HTTPException(status_code=400, detail="Request is already reviewed")
+    email = db.query(Email).filter(Email.id == req.email_id).first()
+    if not email:
+        raise HTTPException(status_code=404, detail="Email not found for this request")
+    _perform_retag(db, email, req.requested_team, admin_email)
+    req.status = "approved"
+    req.reviewed_at = datetime.now(timezone.utc)
+    req.reviewed_by_email = (admin_email or "").strip().lower() or None
+    db.commit()
+    return {"ok": True, "requestId": request_id, "status": "approved"}
+
+
+@router.post("/retag-approvals/{request_id}/reject")
+def reject_retag_request(
+    request_id: str,
+    review_note: str | None = Query(None, alias="reviewNote"),
+    db: Session = Depends(get_db),
+    admin_email: str = Depends(get_admin_user),
+):
+    req = db.query(RetagApprovalRequest).filter(RetagApprovalRequest.id == request_id).first()
+    if not req:
+        raise HTTPException(status_code=404, detail="Retag approval request not found")
+    if req.status != "pending":
+        raise HTTPException(status_code=400, detail="Request is already reviewed")
+    req.status = "rejected"
+    req.reviewed_at = datetime.now(timezone.utc)
+    req.reviewed_by_email = (admin_email or "").strip().lower() or None
+    req.review_note = (review_note or "").strip() or None
+    db.commit()
+    return {"ok": True, "requestId": request_id, "status": "rejected"}
+
+
+@router.get("/recent-sign-ins", response_model=list[RecentSignInOut])
+def recent_sign_ins(
+    db: Session = Depends(get_db),
+    limit: int = Query(30, ge=1, le=100),
+):
+    """Recent platform access for admins (last login or account created)."""
+    activity = func.coalesce(User.last_login_at, User.created_at)
+    rows = db.query(User).order_by(desc(activity)).limit(limit).all()
+    return [
+        RecentSignInOut(
+            userId=u.id,
+            email=u.email,
+            displayName=u.display_name,
+            role=u.role,
+            lastLoginAt=u.last_login_at,
+            createdAt=u.created_at,
+        )
+        for u in rows
+    ]
 
 
 @router.patch("/users/{user_id}")
@@ -384,8 +606,18 @@ def update_user(
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    old_role = user.role
     if role is not None and role.strip() in ("Admin", "Manager", "Member"):
-        user.role = role.strip()
+        new_role = role.strip()
+        user.role = new_role
+        elevated = new_role in ("Admin", "Manager")
+        was_elevated = old_role in ("Admin", "Manager")
+        if elevated and (not was_elevated or new_role != old_role):
+            user.role_promoted_at = datetime.now(timezone.utc)
+            user.role_promotion_dismissed_at = None
+        elif not elevated:
+            user.role_promoted_at = None
+            user.role_promotion_dismissed_at = None
     if team_id is not None:
         if team_id.strip():
             team = db.query(Team).filter(Team.id == team_id.strip()).first()
@@ -425,7 +657,11 @@ def create_user(
         raise HTTPException(status_code=409, detail="User already exists")
     if role not in ("Admin", "Manager", "Member"):
         role = "Member"
+    now = datetime.now(timezone.utc)
     user = User(email=email, display_name=display_name or email.split("@")[0], role=role)
+    if role in ("Admin", "Manager"):
+        user.role_promoted_at = now
+        user.role_promotion_dismissed_at = None
     if team_id and team_id.strip():
         team = db.query(Team).filter(Team.id == team_id.strip()).first()
         if team:

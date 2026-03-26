@@ -307,10 +307,6 @@ export default function AdminProjectWorkflowPage() {
                 <Network className="h-5 w-5" />
                 Project team (reporting on this project)
               </CardTitle>
-              <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                Chart and “reports to” use only fields you set on this project. Org roles (Manager/Member) and org team lead
-                are not shown here.
-              </p>
             </CardHeader>
             <CardContent>
               {project.assignedUsers.length === 0 ? (

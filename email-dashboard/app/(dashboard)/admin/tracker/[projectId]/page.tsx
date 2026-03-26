@@ -75,9 +75,6 @@ export default function AdminTrackerProjectHistoryPage() {
             Back to Tracker
           </Link>
           <h1 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-50">{projectName}</h1>
-          <p className="text-sm text-neutral-500 dark:text-neutral-400">
-            Matching tracker mails history. Showing last {days} days.
-          </p>
           {rangeText && <p className="text-xs text-neutral-400 dark:text-neutral-500">{rangeText}</p>}
         </div>
         <Button type="button" variant="outline" size="sm" onClick={() => setReloadTick((n) => n + 1)} disabled={loading}>

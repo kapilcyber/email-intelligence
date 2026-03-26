@@ -314,11 +314,6 @@ export default function AdminEscalationsPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-50">Escalations</h1>
-          <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-            {selectedUserEmail
-              ? `Escalation mails for ${selectedUser?.displayName ?? selectedUserEmail.split("@")[0]}. User counts are all-time; use the date filter below to narrow this list.`
-              : "All users. Click a user to see their escalation mails."}
-          </p>
         </div>
         {selectedUserEmail && (
           <div className="flex flex-wrap items-center gap-2">
@@ -426,9 +421,6 @@ export default function AdminEscalationsPage() {
               <Users className="h-5 w-5" />
               Users — escalation count
             </CardTitle>
-            <p className="text-sm font-normal text-neutral-500 dark:text-neutral-400">
-              Click a user to open their escalation mails table.
-            </p>
           </CardHeader>
           <CardContent>
             {userCountsLoading ? (

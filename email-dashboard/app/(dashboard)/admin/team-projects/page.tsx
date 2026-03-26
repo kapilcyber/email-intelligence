@@ -216,10 +216,6 @@ export default function AdminTeamProjectsPage() {
           <FolderKanban className="h-6 w-6" />
           Projects
         </h1>
-        <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-          Choose <strong>TL</strong> or <strong>Manager</strong> from the role dropdown, or <strong>Other</strong> and type any role.
-          Build who reports to whom on this project only using <strong>Reports to on this project</strong> (not org workflow).
-        </p>
       </div>
 
       {error && (

@@ -84,11 +84,7 @@ export default function EscalationsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-50">My Escalations</h1>
-        <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-          Escalation emails in your mailbox. Use <strong>Retag</strong> to move mail to a department and remove it from
-          escalations; find those under <strong>ReTag</strong>.
-        </p>
-        <div className="mt-3 inline-flex rounded-lg border border-neutral-200 bg-white p-0.5 dark:border-neutral-700 dark:bg-neutral-900">
+        <div data-tour-id="escalations-tabs" className="mt-3 inline-flex rounded-lg border border-neutral-200 bg-white p-0.5 dark:border-neutral-700 dark:bg-neutral-900">
           <button
             type="button"
             onClick={() => (setTab("escalations"), setPage(1))}
@@ -115,7 +111,7 @@ export default function EscalationsPage() {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div data-tour-id="escalations-filters" className="flex flex-wrap items-center gap-2">
         <input
           type="date"
           className="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
@@ -130,7 +126,7 @@ export default function EscalationsPage() {
         </div>
       )}
 
-      <Card className="rounded-2xl">
+      <Card data-tour-id="escalations-list" className="rounded-2xl">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             {tab === "escalations" ? (

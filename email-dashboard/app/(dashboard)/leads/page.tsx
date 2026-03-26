@@ -101,11 +101,7 @@ export default function LeadsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-50">My Leads</h1>
-        <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-          Lead emails in your mailbox. <strong>Retag</strong> removes the lead and routes to a department; see{" "}
-          <strong>ReTag</strong> for history.
-        </p>
-        <div className="mt-3 inline-flex rounded-lg border border-neutral-200 bg-white p-0.5 dark:border-neutral-700 dark:bg-neutral-900">
+        <div data-tour-id="leads-tabs" className="mt-3 inline-flex rounded-lg border border-neutral-200 bg-white p-0.5 dark:border-neutral-700 dark:bg-neutral-900">
           <button
             type="button"
             onClick={() => (setTab("leads"), setPage(1))}
@@ -130,7 +126,7 @@ export default function LeadsPage() {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div data-tour-id="leads-filters" className="flex flex-wrap items-center gap-2">
         <select
           value={labelFilter}
           onChange={(e) => (setLabelFilter(e.target.value), setPage(1))}
@@ -158,7 +154,7 @@ export default function LeadsPage() {
         </div>
       )}
 
-      <Card className="rounded-2xl">
+      <Card data-tour-id="leads-list" className="rounded-2xl">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             {tab === "leads" ? (

@@ -119,7 +119,7 @@ function ProjectTrackerCard({
             ))}
           </div>
         </div>
-        <div>
+        <div data-tour-id="followup-history">
           <button
             type="button"
             className="flex w-full items-center justify-between rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-left text-sm font-medium text-neutral-800 dark:border-neutral-700 dark:bg-neutral-800/50 dark:text-neutral-100"
@@ -195,17 +195,12 @@ export default function FollowUpPage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      <div data-tour-id="followup-header" className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-semibold text-neutral-900 dark:text-neutral-50">
             <BellRing className="h-7 w-7 shrink-0 opacity-80" aria-hidden />
             Follow UP
           </h1>
-          <p className="mt-1 max-w-2xl text-sm text-neutral-600 dark:text-neutral-400">
-            See whether <span className="font-medium">you</span> sent project trackers. Expected weekdays come from Admin → Tracker.
-            A send counts when you are the sender and the subject includes <span className="font-medium">tracker</span> and the{" "}
-            <span className="font-medium">project name</span>.
-          </p>
           {weekHint && <p className="mt-2 text-xs text-neutral-500">{weekHint}</p>}
         </div>
         <Button type="button" variant="outline" size="sm" onClick={() => load()} disabled={loading}>
@@ -221,7 +216,7 @@ export default function FollowUpPage() {
       )}
 
       {loading ? (
-        <div className="space-y-4">
+        <div data-tour-id="followup-projects" className="space-y-4">
           <Skeleton className="h-48 w-full rounded-xl" />
           <Skeleton className="h-48 w-full rounded-xl" />
         </div>

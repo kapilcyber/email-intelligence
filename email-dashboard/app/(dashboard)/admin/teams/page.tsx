@@ -57,9 +57,6 @@ export default function AdminTeamsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-50">Teams</h1>
-        <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-          Tech, Networking, Cybersecurity, Sales, Accounts, Data & AI. View members and team status.
-        </p>
       </div>
 
       {loading ? (

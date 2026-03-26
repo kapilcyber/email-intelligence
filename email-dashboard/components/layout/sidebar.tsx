@@ -25,6 +25,7 @@ import {
   ClipboardCheck,
   BellRing,
   BookOpen,
+  ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getApi } from "@/lib/api/client";
@@ -54,6 +55,7 @@ const adminNavItems = [
   { href: "/admin/workflow", label: "Workflow", icon: Network },
   { href: "/admin/escalations", label: "Escalations", icon: AlertCircle },
   { href: "/admin/leads", label: "Leads", icon: List },
+  { href: "/admin/approvals", label: "Approvals", icon: ShieldCheck },
 ];
 
 function DepartmentsNavSection({ collapsed }: { collapsed: boolean }) {

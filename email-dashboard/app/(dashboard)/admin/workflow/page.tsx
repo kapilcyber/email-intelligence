@@ -147,9 +147,6 @@ export default function AdminWorkflowPage() {
           <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-50">
             Workflow
           </h1>
-          <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-            Hierarchy chart and reporting structure. Assign managers to build the tree.
-          </p>
         </div>
         <div className="flex gap-2">
           <Button

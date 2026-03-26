@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { getApi } from "@/lib/api/client";
-import type { EscalationLeadItem } from "@/lib/types";
+import type { EscalationLeadItem, RetagApprovalOut } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -32,6 +32,8 @@ export default function RetagPage() {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [requests, setRequests] = useState<RetagApprovalOut[]>([]);
+  const [requestsLoading, setRequestsLoading] = useState(true);
 
   const load = () => {
     if (status !== "authenticated") return;
@@ -47,23 +49,33 @@ export default function RetagPage() {
       .finally(() => setLoading(false));
   };
 
+  const loadRequests = () => {
+    if (status !== "authenticated") return;
+    setRequestsLoading(true);
+    api
+      .getMyRetagRequests({ page: 1, pageSize: 50 })
+      .then((r) => setRequests(r.requests ?? []))
+      .catch(() => {})
+      .finally(() => setRequestsLoading(false));
+  };
+
   useEffect(() => {
     load();
   }, [status, api, page]);
+
+  useEffect(() => {
+    loadRequests();
+  }, [status, api]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
     <div className="space-y-6">
-      <div>
+      <div data-tour-id="retag-header">
         <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-50 flex items-center gap-2">
           <Tags className="h-6 w-6" />
           ReTag
         </h1>
-        <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-          Mail you moved out of <strong>Escalations</strong> or <strong>Leads</strong> into another department. These stay
-          out of escalation/lead even after re-classification.
-        </p>
       </div>
 
       {error && (
@@ -72,7 +84,7 @@ export default function RetagPage() {
         </div>
       )}
 
-      <Card className="rounded-2xl">
+      <Card data-tour-id="retag-list" className="rounded-2xl">
         <CardHeader>
           <CardTitle className="text-base">Your retagged mail ({total})</CardTitle>
         </CardHeader>
@@ -116,7 +128,7 @@ export default function RetagPage() {
             </ul>
           )}
           {totalPages > 1 && (
-            <div className="mt-4 flex items-center justify-between">
+            <div data-tour-id="retag-pagination" className="mt-4 flex items-center justify-between">
               <p className="text-sm text-neutral-500">Page {page} of {totalPages}</p>
               <div className="flex gap-2">
                 <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
@@ -127,6 +139,57 @@ export default function RetagPage() {
                 </Button>
               </div>
             </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="rounded-2xl">
+        <CardHeader>
+          <CardTitle className="text-base">Your approval requests</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {requestsLoading ? (
+            <Skeleton className="h-40 w-full rounded-lg" />
+          ) : requests.length === 0 ? (
+            <p className="text-sm text-neutral-500 dark:text-neutral-400">No retag approval requests yet.</p>
+          ) : (
+            <ul className="divide-y divide-neutral-200 dark:divide-neutral-700">
+              {requests.map((req) => (
+                <li key={req.id} className="py-3">
+                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-neutral-900 dark:text-neutral-50">
+                        {req.emailSubject || req.emailId}
+                      </p>
+                      <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                        Team: <span className="font-medium text-indigo-700 dark:text-indigo-300">{req.requestedTeam}</span> ·
+                        Requested {formatDate(req.requestedAt)}
+                      </p>
+                      {req.status === "rejected" && (
+                        <p className="text-xs text-red-600 dark:text-red-400">
+                          Request rejected{req.reviewedAt ? ` on ${formatDate(req.reviewedAt)}` : ""}.
+                        </p>
+                      )}
+                    </div>
+                    <span
+                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                        req.status === "pending"
+                          ? "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
+                          : req.status === "approved"
+                          ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300"
+                          : "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300"
+                      }`}
+                    >
+                      {req.status === "pending"
+                        ? "Approval pending"
+                        : req.status === "approved"
+                        ? "Approved"
+                        : "Rejected"}
+                    </span>
+                  </div>
+                </li>
+              ))}
+            </ul>
           )}
         </CardContent>
       </Card>

@@ -131,10 +131,49 @@ class User(Base):
     is_team_lead = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_login_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    role_promoted_at = Column(DateTime(timezone=True), nullable=True)
+    role_promotion_dismissed_at = Column(DateTime(timezone=True), nullable=True)
 
     team = relationship("Team", back_populates="members", foreign_keys=[team_id])
     manager = relationship("User", remote_side=[id], foreign_keys=[manager_id])
     reports = relationship("User", back_populates="manager", foreign_keys=[manager_id])
+    login_events = relationship("UserLoginEvent", back_populates="user", foreign_keys="UserLoginEvent.user_id")
+
+
+class UserLoginEvent(Base):
+    """Append-only platform access events (OAuth sign-in + throttled in-app session pings)."""
+    __tablename__ = "user_login_events"
+
+    id = Column(String(36), primary_key=True, default=uuid_gen)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    email = Column(String(512), nullable=False, index=True)
+    occurred_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    source = Column(String(32), nullable=False, index=True)  # oauth | session
+
+    user = relationship("User", back_populates="login_events", foreign_keys=[user_id])
+
+    __table_args__ = (Index("ix_user_login_events_user_occurred", "user_id", "occurred_at"),)
+
+
+class RetagApprovalRequest(Base):
+    """Non-admin retag request that requires admin approval before retag is applied."""
+    __tablename__ = "retag_approval_requests"
+
+    id = Column(String(36), primary_key=True, default=uuid_gen)
+    email_id = Column(String(36), ForeignKey("emails.id", ondelete="CASCADE"), nullable=False, index=True)
+    mailbox_owner_email = Column(String(512), nullable=False, index=True)
+    requested_by_email = Column(String(512), nullable=False, index=True)
+    requested_team = Column(String(64), nullable=False, index=True)
+    status = Column(String(32), nullable=False, default="pending", index=True)  # pending | approved | rejected
+    requested_at = Column(DateTime(timezone=True), default=datetime.utcnow, index=True)
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
+    reviewed_by_email = Column(String(512), nullable=True)
+    review_note = Column(Text, nullable=True)
+
+    __table_args__ = (
+        Index("ix_retag_req_pending_email", "email_id", "status"),
+    )
 
 
 class DailySummary(Base):

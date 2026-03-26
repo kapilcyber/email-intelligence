@@ -40,4 +40,39 @@ export const authOptions: NextAuthOptions = {
     signIn: "/signin",
   },
   trustHost: true,
+  events: {
+    /**
+     * Ensure backend `users` row exists on every successful sign-in.
+     * Relying only on the browser calling GET /api/me misses people when the first API call fails
+     * or they never hit a page that loads the sidebar before an admin checks Team leaders.
+     */
+    async signIn({ user }) {
+      const email = (user?.email ?? "").trim().toLowerCase();
+      if (!email.includes("@")) return;
+      const candidates = [
+        (process.env.BACKEND_API_URL ?? "").trim(),
+        (process.env.NEXT_PUBLIC_API_URL ?? "").trim(),
+      ]
+        .filter(Boolean)
+        .map((v) => v.replace(/\/$/, ""));
+      if (candidates.length === 0) return;
+      const name = (user?.name ?? "").trim();
+      for (const base of candidates) {
+        try {
+          const res = await fetch(`${base}/api/me`, {
+            method: "POST",
+            headers: {
+              "X-User-Email": email,
+              "X-Login-Source": "oauth",
+              ...(name ? { "X-User-Name": name } : {}),
+            },
+          });
+          if (res.ok) return;
+          console.warn("[auth] backend user sync:", base, res.status, await res.text().catch(() => ""));
+        } catch (e) {
+          console.warn("[auth] backend user sync failed:", base, e);
+        }
+      }
+    },
+  },
 };

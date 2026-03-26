@@ -29,7 +29,7 @@ export default function DepartmentSlugPage() {
             Mailbox emails classified as <strong>{categoryFilter}</strong>.
           </>
         ) : (
-          <>All ingested emails for your mailbox (no department filter).</>
+          null
         )
       }
     />

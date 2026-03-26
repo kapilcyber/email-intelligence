@@ -8,8 +8,9 @@ from sqlalchemy.exc import OperationalError
 from pydantic import BaseModel, Field
 
 from app.db.session import get_db
-from app.db.models import Email, EscalationThread, Team
+from app.db.models import Email, EscalationThread, Team, User, RetagApprovalRequest
 from app.api.deps import get_current_user_email_optional, get_current_user_email
+from app.config import get_settings
 
 router = APIRouter()
 
@@ -218,6 +219,31 @@ class RetagEmailBody(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class RetagRequestOut(BaseModel):
+    id: str
+    emailId: str = Field(alias="emailId")
+    mailboxOwnerEmail: str = Field(alias="mailboxOwnerEmail")
+    requestedByEmail: str = Field(alias="requestedByEmail")
+    requestedTeam: str = Field(alias="requestedTeam")
+    status: str
+    requestedAt: datetime = Field(alias="requestedAt")
+    reviewedAt: datetime | None = Field(None, alias="reviewedAt")
+    reviewedByEmail: str | None = Field(None, alias="reviewedByEmail")
+    reviewNote: str | None = Field(None, alias="reviewNote")
+
+    model_config = {"populate_by_name": True}
+
+
+def _is_admin_actor(db: Session, actor_email: str) -> bool:
+    settings = get_settings()
+    admin_list = [e.strip().lower() for e in (settings.admin_emails or "").split(",") if e.strip()]
+    email_l = (actor_email or "").strip().lower()
+    if email_l and email_l in admin_list:
+        return True
+    u = db.query(User).filter(User.email == email_l).first()
+    return bool(u and (u.role or "") == "Admin")
+
+
 def _perform_retag(
     db: Session,
     email: Email,
@@ -277,8 +303,90 @@ def retag_email_user_mailbox(
     owner = (getattr(email, "mailbox_owner_email", None) or "").strip().lower()
     if owner != (current_user_email or "").strip().lower():
         raise HTTPException(status_code=403, detail="You can only retag mail in your own mailbox")
-    _perform_retag(db, email, body.assigned_team, current_user_email)
-    return {"ok": True, "emailId": email_id, "assignedTeam": email.assigned_team}
+    actor = (current_user_email or "").strip().lower()
+    if _is_admin_actor(db, actor):
+        _perform_retag(db, email, body.assigned_team, actor)
+        return {"ok": True, "emailId": email_id, "assignedTeam": email.assigned_team, "mode": "applied"}
+
+    pending = (
+        db.query(RetagApprovalRequest)
+        .filter(
+            RetagApprovalRequest.email_id == email.id,
+            RetagApprovalRequest.status == "pending",
+        )
+        .first()
+    )
+    if pending:
+        pending.requested_team = (body.assigned_team or "").strip()
+        pending.requested_by_email = actor
+        pending.requested_at = datetime.now(timezone.utc)
+        db.commit()
+        return {
+            "ok": True,
+            "emailId": email_id,
+            "requestedTeam": pending.requested_team,
+            "status": "pending",
+            "mode": "request",
+            "requestId": pending.id,
+            "message": "Retag request updated and sent to admin approvals.",
+        }
+
+    req = RetagApprovalRequest(
+        email_id=email.id,
+        mailbox_owner_email=owner,
+        requested_by_email=actor,
+        requested_team=(body.assigned_team or "").strip(),
+        status="pending",
+        requested_at=datetime.now(timezone.utc),
+    )
+    db.add(req)
+    db.commit()
+    db.refresh(req)
+    return {
+        "ok": True,
+        "emailId": email_id,
+        "requestedTeam": req.requested_team,
+        "status": "pending",
+        "mode": "request",
+        "requestId": req.id,
+        "message": "Retag request sent to admin approvals.",
+    }
+
+
+@router.get("/retag-requests/mine")
+def list_my_retag_requests(
+    db: Session = Depends(get_db),
+    current_user_email: str = Depends(get_current_user_email),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100, alias="pageSize"),
+):
+    q = (
+        db.query(RetagApprovalRequest)
+        .filter(RetagApprovalRequest.requested_by_email == (current_user_email or "").strip().lower())
+        .order_by(RetagApprovalRequest.requested_at.desc())
+    )
+    total = q.count()
+    rows = q.offset((page - 1) * page_size).limit(page_size).all()
+    return {
+        "requests": [
+            RetagRequestOut(
+                id=r.id,
+                emailId=r.email_id,
+                mailboxOwnerEmail=r.mailbox_owner_email,
+                requestedByEmail=r.requested_by_email,
+                requestedTeam=r.requested_team,
+                status=r.status,
+                requestedAt=r.requested_at,
+                reviewedAt=r.reviewed_at,
+                reviewedByEmail=r.reviewed_by_email,
+                reviewNote=r.review_note,
+            )
+            for r in rows
+        ],
+        "total": total,
+        "page": page,
+        "pageSize": page_size,
+    }
 
 
 @router.get("/retag/department-options")
