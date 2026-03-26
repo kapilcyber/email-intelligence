@@ -46,6 +46,10 @@ export function MomPromptHost() {
   }, [loadCalendar]);
 
   useEffect(() => {
+    loadMomRecordsFromApi();
+  }, [loadMomRecordsFromApi]);
+
+  useEffect(() => {
     if (status !== "authenticated") return;
     const t = window.setInterval(loadCalendar, 120_000);
     return () => clearInterval(t);
@@ -76,10 +80,17 @@ export function MomPromptHost() {
       api
         .upsertMomRecord(record)
         .then(() => {
+          setMomRecords((prev) => {
+            const next = new Map(prev);
+            next.set(record.eventKey, record);
+            return next;
+          });
           loadMomRecordsFromApi();
           window.dispatchEvent(new CustomEvent("mom-records-changed"));
         })
-        .catch(() => {});
+        .catch(() => {
+          console.warn("[MOM] Failed to save prompt state; check network and auth.");
+        });
     },
     [api, email, loadMomRecordsFromApi]
   );

@@ -171,6 +171,8 @@ class TeamProject(Base):
     team_id = Column(String(36), ForeignKey("teams.id", ondelete="SET NULL"), nullable=True, index=True)
     status = Column(String(32), nullable=False, default="running", index=True)  # running | new | planned | completed
     structure = Column(JSONB, nullable=True)  # {"phases": [...], "notes": "..."}
+    # Admin Tracker: expected send days per week, e.g. ["mon","wed","fri"] (lowercase short keys).
+    tracker_schedule_days = Column(JSONB, nullable=True)
     created_by_user_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     # Optional project-only lead (not org team lead). Must be among assigned users.
     project_lead_user_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)

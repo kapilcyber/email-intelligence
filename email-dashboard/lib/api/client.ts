@@ -5,6 +5,9 @@ import type {
   CalendarEventsResponse,
   NotificationsResponse,
   MyProjectsResponse,
+  FollowUpTrackerResponse,
+  FollowUpRemindersResponse,
+  FollowUpTrackerHistoryResponse,
   EmailsResponse,
   EmailDetail,
   ConversationsResponse,
@@ -24,6 +27,11 @@ import type {
   TeamProjectOut,
   ProjectAssignmentUpsert,
   RetaggedResponse,
+  TrackerDashboardResponse,
+  ProjectTrackerRow,
+  TrackerProjectEmailsResponse,
+  ReviewEscalationUser,
+  ReviewProjectTrackerUser,
 } from "@/lib/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
@@ -145,6 +153,13 @@ function createApi(userEmail: string | null, userDisplayName?: string | null) {
     },
     getNotifications: () => withUser<NotificationsResponse>("/api/dashboard/notifications"),
     getMyProjects: () => withUser<MyProjectsResponse>("/api/dashboard/my-projects"),
+    getFollowUpTracker: () => withUser<FollowUpTrackerResponse>("/api/dashboard/follow-up/tracker"),
+    getFollowUpReminders: () => withUser<FollowUpRemindersResponse>("/api/dashboard/follow-up/reminders"),
+    getFollowUpTrackerHistory: (projectId: string, days?: number) => {
+      const search = new URLSearchParams({ projectId });
+      if (days != null) search.set("days", String(days));
+      return withUser<FollowUpTrackerHistoryResponse>(`/api/dashboard/follow-up/tracker/history?${search.toString()}`);
+    },
     getEmails: (params?: {
       page?: number;
       pageSize?: number;
@@ -399,6 +414,25 @@ function createApi(userEmail: string | null, userDisplayName?: string | null) {
         method: "PATCH",
         body: JSON.stringify(body),
       }),
+    getAdminTracker: () => withUser<TrackerDashboardResponse>("/api/admin/tracker"),
+    patchAdminTrackerSchedule: (projectId: string, scheduleDays: string[]) =>
+      withUser<ProjectTrackerRow>(`/api/admin/tracker/${encodeURIComponent(projectId)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ scheduleDays }),
+      }),
+    getAdminTrackerProjectEmails: (projectId: string, params?: { days?: number; limit?: number }) => {
+      const search = new URLSearchParams();
+      if (params?.days != null) search.set("days", String(params.days));
+      if (params?.limit != null) search.set("limit", String(params.limit));
+      const q = search.toString();
+      return withUser<TrackerProjectEmailsResponse>(
+        `/api/admin/tracker/${encodeURIComponent(projectId)}/emails${q ? `?${q}` : ""}`
+      );
+    },
+    getAdminReviewEscalationReplies: (days = 30) =>
+      withUser<ReviewEscalationUser[]>(`/api/admin/review/escalation-replies?days=${encodeURIComponent(String(days))}`),
+    getAdminReviewProjectTracker: (days = 30) =>
+      withUser<ReviewProjectTrackerUser[]>(`/api/admin/review/project-tracker?days=${encodeURIComponent(String(days))}`),
   };
 }
 

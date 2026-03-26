@@ -5,7 +5,7 @@ import re
 import httpx
 from fastapi import APIRouter, Depends, Query, Header
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import and_, func
 from sqlalchemy.exc import OperationalError
 from app.db.session import get_db
 from app.db.models import Email, DailySummary, User, TeamProject, ProjectAssignment, Team
@@ -861,3 +861,294 @@ def dashboard_my_projects(
         return {"projects": projects}
     except (OperationalError, Exception):
         return {"projects": []}
+
+
+# --- Follow UP (user): own tracker sends vs admin-set expected weekdays ---
+
+_FU_TRACKER_SUB = "tracker"
+_FU_DAY_KEYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+_FU_DAY_LABELS = {
+    "mon": "Monday",
+    "tue": "Tuesday",
+    "wed": "Wednesday",
+    "thu": "Thursday",
+    "fri": "Friday",
+    "sat": "Saturday",
+    "sun": "Sunday",
+}
+_FU_ISO_TO_KEY = {1: "mon", 2: "tue", 3: "wed", 4: "thu", 5: "fri", 6: "sat", 7: "sun"}
+
+
+def _fu_week_bounds_utc(now: datetime | None = None) -> tuple[datetime, datetime]:
+    n = now or datetime.now(timezone.utc)
+    if n.tzinfo is None:
+        n = n.replace(tzinfo=timezone.utc)
+    else:
+        n = n.astimezone(timezone.utc)
+    monday = (n - timedelta(days=n.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+    sunday_end = monday + timedelta(days=7) - timedelta(microseconds=1)
+    return monday, sunday_end
+
+
+def _fu_utc_day_bounds(d) -> tuple[datetime, datetime]:
+    start = datetime(d.year, d.month, d.day, tzinfo=timezone.utc)
+    end = start + timedelta(days=1) - timedelta(microseconds=1)
+    return start, end
+
+
+def _fu_normalize_schedule_days(raw) -> list[str]:
+    if not raw or not isinstance(raw, list):
+        return []
+    out: list[str] = []
+    for x in raw:
+        if not isinstance(x, str):
+            continue
+        k = x.strip().lower()
+        if k in _FU_DAY_KEYS and k not in out:
+            out.append(k)
+    return out
+
+
+def _fu_like_pat(name: str) -> str:
+    s = (name or "").strip()
+    if not s:
+        return ""
+    return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _fu_user_tracker_rows_week(
+    db: Session,
+    user_email_lower: str,
+    week_start: datetime,
+    week_end: datetime,
+):
+    return (
+        db.query(Email.received_at, Email.subject)
+        .filter(
+            and_(
+                func.lower(Email.sender_email) == user_email_lower,
+                Email.received_at >= week_start,
+                Email.received_at <= week_end,
+                Email.subject.isnot(None),
+                func.lower(Email.subject).like(f"%{_FU_TRACKER_SUB}%", escape="\\"),
+            )
+        )
+        .all()
+    )
+
+
+def _fu_sent_dates_by_project(
+    projects: list[TeamProject],
+    rows: list,
+) -> dict[str, set]:
+    """Map project_id -> set of UTC dates user sent a matching tracker."""
+    out: dict[str, set] = {p.id: set() for p in projects}
+    pnames = [(p.id, (p.name or "").strip().lower()) for p in projects if (p.name or "").strip()]
+    for received_at, subject in rows:
+        if not received_at:
+            continue
+        dt = received_at
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        else:
+            dt = dt.astimezone(timezone.utc)
+        d = dt.date()
+        sl = (subject or "").lower()
+        for pid, pn in pnames:
+            if pn and pn in sl:
+                out.setdefault(pid, set()).add(d)
+    return out
+
+
+@router.get("/follow-up/tracker")
+def dashboard_follow_up_tracker(
+    current_user_email: str = Depends(get_current_user_email),
+    db: Session = Depends(get_db),
+):
+    """Per assigned project: expected tracker weekdays (admin) vs whether this user sent (From = user)."""
+    email = (current_user_email or "").strip().lower()
+    week_start, week_end = _fu_week_bounds_utc()
+    try:
+        user = db.query(User).filter(func.lower(User.email) == email).first()
+        if not user:
+            return {
+                "weekStartISO": week_start.isoformat().replace("+00:00", "Z"),
+                "weekEndISO": week_end.isoformat().replace("+00:00", "Z"),
+                "projects": [],
+            }
+
+        rows = (
+            db.query(ProjectAssignment, TeamProject, Team)
+            .join(TeamProject, TeamProject.id == ProjectAssignment.project_id)
+            .outerjoin(Team, Team.id == TeamProject.team_id)
+            .filter(ProjectAssignment.user_id == user.id)
+            .order_by(TeamProject.updated_at.desc())
+            .all()
+        )
+        projects: list[TeamProject] = [p for _, p, _ in rows]
+        teams = {p.id: t for _, p, t in rows}
+
+        tracker_rows = _fu_user_tracker_rows_week(db, email, week_start, week_end)
+        sent_by_proj = _fu_sent_dates_by_project(projects, tracker_rows)
+
+        out_projects: list[dict] = []
+        for _, p, _ in rows:
+            schedule = _fu_normalize_schedule_days(getattr(p, "tracker_schedule_days", None))
+            sent_dates = sent_by_proj.get(p.id, set())
+            days_payload: list[dict] = []
+            for di, key in enumerate(_FU_DAY_KEYS):
+                d = (week_start + timedelta(days=di)).date()
+                days_payload.append(
+                    {
+                        "key": key,
+                        "label": _FU_DAY_LABELS[key],
+                        "expected": key in schedule,
+                        "sentByMe": d in sent_dates,
+                    }
+                )
+            t = teams.get(p.id)
+            out_projects.append(
+                {
+                    "projectId": p.id,
+                    "projectName": p.name,
+                    "teamName": (t.name if t else None),
+                    "scheduleDays": schedule,
+                    "weekStartISO": week_start.isoformat().replace("+00:00", "Z"),
+                    "weekEndISO": week_end.isoformat().replace("+00:00", "Z"),
+                    "days": days_payload,
+                }
+            )
+
+        return {
+            "weekStartISO": week_start.isoformat().replace("+00:00", "Z"),
+            "weekEndISO": week_end.isoformat().replace("+00:00", "Z"),
+            "projects": out_projects,
+        }
+    except (OperationalError, Exception):
+        return {
+            "weekStartISO": week_start.isoformat().replace("+00:00", "Z"),
+            "weekEndISO": week_end.isoformat().replace("+00:00", "Z"),
+            "projects": [],
+        }
+
+
+@router.get("/follow-up/reminders")
+def dashboard_follow_up_reminders(
+    current_user_email: str = Depends(get_current_user_email),
+    db: Session = Depends(get_db),
+):
+    """Projects where today (UTC) is an expected tracker day and this user has not sent yet."""
+    email = (current_user_email or "").strip().lower()
+    now = datetime.now(timezone.utc)
+    today = now.date()
+    today_key = _FU_ISO_TO_KEY.get(now.isoweekday(), "mon")
+    today_start, today_end = _fu_utc_day_bounds(today)
+    reminders: list[dict] = []
+    try:
+        user = db.query(User).filter(func.lower(User.email) == email).first()
+        if not user:
+            return {"reminders": [], "todayKey": today_key}
+
+        rows = (
+            db.query(ProjectAssignment, TeamProject)
+            .join(TeamProject, TeamProject.id == ProjectAssignment.project_id)
+            .filter(ProjectAssignment.user_id == user.id)
+            .all()
+        )
+        due_projects: list[TeamProject] = []
+        for _, p in rows:
+            sched = _fu_normalize_schedule_days(getattr(p, "tracker_schedule_days", None))
+            if not sched or today_key not in sched:
+                continue
+            due_projects.append(p)
+
+        if not due_projects:
+            return {"reminders": [], "todayKey": today_key}
+
+        tracker_today = (
+            db.query(Email.subject)
+            .filter(
+                and_(
+                    func.lower(Email.sender_email) == email,
+                    Email.received_at >= today_start,
+                    Email.received_at <= today_end,
+                    Email.subject.isnot(None),
+                    func.lower(Email.subject).like(f"%{_FU_TRACKER_SUB}%", escape="\\"),
+                )
+            )
+            .all()
+        )
+        subjects = " ".join((s[0] or "").lower() for s in tracker_today if s and s[0])
+
+        for p in due_projects:
+            pn = (p.name or "").strip().lower()
+            if not pn:
+                continue
+            if pn not in subjects:
+                reminders.append({"projectId": p.id, "projectName": p.name})
+
+        return {"reminders": reminders, "todayKey": today_key}
+    except (OperationalError, Exception):
+        return {"reminders": [], "todayKey": today_key}
+
+
+@router.get("/follow-up/tracker/history")
+def dashboard_follow_up_tracker_history(
+    project_id: str = Query(..., alias="projectId", description="Team project id"),
+    days: int = Query(90, ge=1, le=365),
+    current_user_email: str = Depends(get_current_user_email),
+    db: Session = Depends(get_db),
+):
+    """This user's sent tracker-like messages for an assigned project (newest first)."""
+    email = (current_user_email or "").strip().lower()
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    try:
+        user = db.query(User).filter(func.lower(User.email) == email).first()
+        if not user:
+            return {"projectId": project_id, "projectName": "", "emails": []}
+
+        assigned = (
+            db.query(ProjectAssignment)
+            .filter(ProjectAssignment.user_id == user.id, ProjectAssignment.project_id == project_id)
+            .first()
+        )
+        if not assigned:
+            return {"projectId": project_id, "projectName": "", "emails": []}
+
+        p = db.query(TeamProject).filter(TeamProject.id == project_id).first()
+        if not p:
+            return {"projectId": project_id, "projectName": "", "emails": []}
+
+        name_pat = _fu_like_pat(p.name)
+        if not name_pat:
+            return {"projectId": p.id, "projectName": p.name, "emails": []}
+
+        q = (
+            db.query(Email.id, Email.subject, Email.received_at)
+            .filter(
+                and_(
+                    func.lower(Email.sender_email) == email,
+                    Email.received_at >= since,
+                    Email.subject.isnot(None),
+                    func.lower(Email.subject).like(f"%{_FU_TRACKER_SUB}%", escape="\\"),
+                    func.lower(Email.subject).like(f"%{name_pat.lower()}%", escape="\\"),
+                )
+            )
+            .order_by(Email.received_at.desc())
+            .limit(200)
+            .all()
+        )
+        emails = []
+        for eid, subj, ra in q:
+            if not ra:
+                continue
+            emails.append(
+                {
+                    "emailId": eid,
+                    "subject": subj,
+                    "receivedAt": ra.isoformat().replace("+00:00", "Z"),
+                }
+            )
+        return {"projectId": p.id, "projectName": p.name, "emails": emails}
+    except (OperationalError, Exception):
+        return {"projectId": project_id, "projectName": "", "emails": []}

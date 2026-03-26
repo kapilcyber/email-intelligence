@@ -22,21 +22,49 @@ const pathToLabel: Record<string, string> = {
   "/webhook": "Webhook",
   "/threads": "Threads",
   "/admin/team-projects": "Projects",
+  "/admin": "Admin",
+  "/admin/tracker": "Tracker",
+  "/admin/review": "Review",
+  "/follow-up": "Follow UP",
+  "/how-to-use": "How to use",
 };
 
-function getPageLabel(pathname: string): string {
+function prettifySegment(seg: string): string {
+  if (!seg) return "";
+  const v = decodeURIComponent(seg).replace(/[-_]/g, " ").trim();
+  if (!v) return "";
+  return v.charAt(0).toUpperCase() + v.slice(1);
+}
+
+function buildBreadcrumbs(pathname: string, trackerProjectLabel: string | null): string[] {
+  if (!pathname || pathname === "/") return ["Dashboard"];
+
   const deptMatch = pathname.match(/^\/departments\/([^/]+)\/?$/);
   if (deptMatch) {
     const seg = deptMatch[1];
-    if (seg.toLowerCase() === "all") return "Departments · All";
-    const pretty = seg.charAt(0).toUpperCase() + seg.slice(1).toLowerCase();
-    return `Departments · ${pretty}`;
+    if (seg.toLowerCase() === "all") return ["Departments", "All"];
+    return ["Departments", prettifySegment(seg)];
   }
-  if (pathname === "/departments") return "Departments";
-  for (const [path, label] of Object.entries(pathToLabel)) {
-    if (pathname === path || (path !== "/dashboard" && pathname.startsWith(path))) return label;
+
+  const segments = pathname.split("/").filter(Boolean);
+  if (segments.length === 0) return ["Dashboard"];
+
+  const crumbs: string[] = [];
+  let acc = "";
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
+    acc += `/${seg}`;
+    let label = pathToLabel[acc];
+    if (!label) {
+      if (acc === pathname && pathname.startsWith("/admin/tracker/") && trackerProjectLabel) {
+        label = trackerProjectLabel;
+      } else {
+        label = prettifySegment(seg);
+      }
+    }
+    crumbs.push(label);
   }
-  return "Dashboard";
+  return crumbs;
 }
 
 export function Topbar({ environment = "Dev" }: { systemStatus?: SystemStatus; environment?: string }) {
@@ -47,10 +75,14 @@ export function Topbar({ environment = "Dev" }: { systemStatus?: SystemStatus; e
     () => getApi(session?.user?.email ?? null, session?.user?.name ?? null),
     [session?.user?.email, session?.user?.name]
   );
-  const pageLabel = getPageLabel(pathname);
+  const [trackerProjectLabel, setTrackerProjectLabel] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<NotificationItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const breadcrumbs = useMemo(
+    () => buildBreadcrumbs(pathname, trackerProjectLabel),
+    [pathname, trackerProjectLabel]
+  );
 
   const loadNotifications = () => {
     if (status !== "authenticated") return;
@@ -69,6 +101,23 @@ export function Topbar({ environment = "Dev" }: { systemStatus?: SystemStatus; e
     return () => window.clearInterval(id);
   }, [status, api]);
 
+  useEffect(() => {
+    if (status !== "authenticated") return;
+    const m = pathname.match(/^\/admin\/tracker\/([^/]+)$/);
+    if (!m) {
+      setTrackerProjectLabel(null);
+      return;
+    }
+    const projectId = decodeURIComponent(m[1]);
+    api
+      .getAdminTrackerProjectEmails(projectId, { days: 30, limit: 1 })
+      .then((r) => {
+        const name = (r.projectName || "").trim();
+        setTrackerProjectLabel(name || "Project");
+      })
+      .catch(() => setTrackerProjectLabel("Project"));
+  }, [pathname, status, api]);
+
   return (
     <header className="flex h-14 items-center justify-between gap-4 border-b border-neutral-200 bg-white px-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-950">
       {/* Breadcrumbs */}
@@ -76,8 +125,20 @@ export function Topbar({ environment = "Dev" }: { systemStatus?: SystemStatus; e
         <Calendar className="h-4 w-4 shrink-0 text-neutral-500 dark:text-neutral-400" />
         <nav className="flex items-center gap-1.5 text-sm">
           <span className="text-neutral-500 dark:text-neutral-400">Email Intelligence</span>
-          <span className="text-neutral-400 dark:text-neutral-500">&gt;</span>
-          <span className="font-medium text-neutral-900 dark:text-neutral-100">{pageLabel}</span>
+          {breadcrumbs.map((crumb, idx) => (
+            <span key={`${crumb}-${idx}`} className="contents">
+              <span className="text-neutral-400 dark:text-neutral-500">&gt;</span>
+              <span
+                className={
+                  idx === breadcrumbs.length - 1
+                    ? "font-medium text-neutral-900 dark:text-neutral-100"
+                    : "text-neutral-500 dark:text-neutral-400"
+                }
+              >
+                {crumb}
+              </span>
+            </span>
+          ))}
         </nav>
       </div>
 

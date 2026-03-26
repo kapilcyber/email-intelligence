@@ -78,6 +78,53 @@ export interface MyProjectsResponse {
   projects: MyProjectItem[];
 }
 
+export type FollowUpDayKey = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
+
+export interface FollowUpTrackerDay {
+  key: FollowUpDayKey;
+  label: string;
+  expected: boolean;
+  sentByMe: boolean;
+}
+
+export interface FollowUpTrackerProject {
+  projectId: string;
+  projectName: string;
+  teamName: string | null;
+  scheduleDays: string[];
+  weekStartISO: string;
+  weekEndISO: string;
+  days: FollowUpTrackerDay[];
+}
+
+export interface FollowUpTrackerResponse {
+  weekStartISO: string;
+  weekEndISO: string;
+  projects: FollowUpTrackerProject[];
+}
+
+export interface FollowUpReminderItem {
+  projectId: string;
+  projectName: string;
+}
+
+export interface FollowUpRemindersResponse {
+  reminders: FollowUpReminderItem[];
+  todayKey: string;
+}
+
+export interface FollowUpTrackerHistoryEmail {
+  emailId: string;
+  subject: string | null;
+  receivedAt: string;
+}
+
+export interface FollowUpTrackerHistoryResponse {
+  projectId: string;
+  projectName: string;
+  emails: FollowUpTrackerHistoryEmail[];
+}
+
 export type EmailStatus = "stored" | "failed";
 
 export type AiStatus = "pending" | "completed" | "failed";
@@ -370,6 +417,61 @@ export interface TeamProjectOut {
   assignedUsers: ProjectAssignmentOut[];
   createdAt: string;
   updatedAt: string;
+}
+
+/** Admin Tracker: weekday keys stored and returned by API (UTC week). */
+export type TrackerDayKey = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
+
+export interface TrackerDayState {
+  key: TrackerDayKey;
+  label: string;
+  expected: boolean;
+  sent: boolean;
+}
+
+export interface ProjectTrackerRow {
+  projectId: string;
+  projectName: string;
+  teamName: string | null;
+  scheduleDays: string[];
+  weekStartISO: string;
+  weekEndISO: string;
+  days: TrackerDayState[];
+}
+
+export interface TrackerDashboardResponse {
+  projects: ProjectTrackerRow[];
+}
+
+export interface TrackerEmailListItem {
+  emailId: string;
+  subject: string | null;
+  receivedAt: string;
+  senderEmail: string;
+  mailboxOwnerEmail: string | null;
+}
+
+export interface TrackerProjectEmailsResponse {
+  projectId: string;
+  projectName: string;
+  weekStartISO: string;
+  weekEndISO: string;
+  emails: TrackerEmailListItem[];
+}
+
+export interface ReviewEscalationUser {
+  email: string;
+  displayName: string | null;
+  escalationCount: number;
+  repliedCount: number;
+  pendingCount: number;
+}
+
+export interface ReviewProjectTrackerUser {
+  email: string;
+  displayName: string | null;
+  trackerCount: number;
+  hasSentTracker: boolean;
 }
 
 export interface MeResponse {

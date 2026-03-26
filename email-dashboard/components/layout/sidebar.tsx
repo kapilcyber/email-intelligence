@@ -21,12 +21,14 @@ import {
   Tags,
   ClipboardList,
   ChevronRight,
-  Building2,
+  CalendarRange,
+  ClipboardCheck,
+  BellRing,
+  BookOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getApi } from "@/lib/api/client";
 import { DEPARTMENT_CATEGORIES } from "@/lib/departments";
-import { teamNameToSlug } from "@/lib/team-routes";
 import type { TeamOut } from "@/lib/types";
 
 const navItemsTop = [
@@ -40,11 +42,15 @@ const navItemsAfterDepartments = [
   { href: "/leads", label: "Leads", icon: List },
   { href: "/retag", label: "ReTag", icon: Tags },
   { href: "/mom", label: "MOM", icon: ClipboardList },
+  { href: "/follow-up", label: "Follow UP", icon: BellRing },
+  { href: "/how-to-use", label: "How to use", icon: BookOpen },
 ];
 
 const adminNavItems = [
   { href: "/admin/team-leaders", label: "Team leaders", icon: UserCircle },
   { href: "/admin/team-projects", label: "Projects", icon: FolderKanban },
+  { href: "/admin/tracker", label: "Tracker", icon: CalendarRange },
+  { href: "/admin/review", label: "Review", icon: ClipboardCheck },
   { href: "/admin/workflow", label: "Workflow", icon: Network },
   { href: "/admin/escalations", label: "Escalations", icon: AlertCircle },
   { href: "/admin/leads", label: "Leads", icon: List },
@@ -203,191 +209,6 @@ function DepartmentsNavSection({ collapsed }: { collapsed: boolean }) {
                 >
                   <span className="truncate">{label}</span>
                   <span className="shrink-0 tabular-nums text-xs opacity-80">{count}</span>
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-function TeamsNavSection({ collapsed }: { collapsed: boolean }) {
-  const pathname = usePathname();
-  const { data: session, status } = useSession();
-  const api = useMemo(
-    () => getApi(session?.user?.email ?? null, session?.user?.name ?? null),
-    [session?.user?.email, session?.user?.name]
-  );
-  const underTeams = pathname.startsWith("/teams");
-  const [accordionOpen, setAccordionOpen] = useState(underTeams);
-  const [flyoutOpen, setFlyoutOpen] = useState(false);
-  const [teamNames, setTeamNames] = useState<string[]>([]);
-  const flyoutRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (underTeams) setAccordionOpen(true);
-  }, [underTeams]);
-
-  useEffect(() => {
-    if (status !== "authenticated") return;
-    api
-      .getRetagDepartmentOptions()
-      .then((r) => setTeamNames(r.departments ?? []))
-      .catch(() => setTeamNames([]));
-  }, [status, api]);
-
-  useEffect(() => {
-    if (!flyoutOpen) return;
-    const onDoc = (e: MouseEvent) => {
-      if (flyoutRef.current?.contains(e.target as Node)) return;
-      setFlyoutOpen(false);
-    };
-    const tid = window.setTimeout(() => document.addEventListener("mousedown", onDoc), 0);
-    return () => {
-      clearTimeout(tid);
-      document.removeEventListener("mousedown", onDoc);
-    };
-  }, [flyoutOpen]);
-
-  const sortedTeams = useMemo(
-    () => [...teamNames].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })),
-    [teamNames]
-  );
-
-  const rowActive = underTeams;
-
-  if (collapsed) {
-    return (
-      <div className="relative flex justify-center px-1" ref={flyoutRef}>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            setFlyoutOpen((o) => !o);
-          }}
-          className={cn(
-            "flex w-full items-center justify-center rounded-lg p-2.5 transition-colors",
-            rowActive || flyoutOpen
-              ? "bg-[#1E1E1E] text-white dark:bg-neutral-700 dark:text-white"
-              : "text-neutral-600 hover:bg-neutral-200 dark:text-neutral-400 dark:hover:bg-neutral-700"
-          )}
-          aria-expanded={flyoutOpen}
-          aria-haspopup="true"
-          title="Teams"
-        >
-          <Building2 className="h-5 w-5 shrink-0" />
-        </button>
-        {flyoutOpen && (
-          <div
-            className="absolute left-full top-0 z-50 ml-1 min-w-[11rem] max-w-[16rem] rounded-xl border border-neutral-200 bg-white py-1 shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
-            role="menu"
-          >
-            <p className="border-b border-neutral-100 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:border-neutral-800 dark:text-neutral-400">
-              Teams
-            </p>
-            <ul className="max-h-[70vh] overflow-y-auto py-1">
-              <li>
-                <Link
-                  href="/teams/all"
-                  role="menuitem"
-                  onClick={() => setFlyoutOpen(false)}
-                  className={cn(
-                    "block px-3 py-2 text-sm",
-                    pathname === "/teams/all"
-                      ? "bg-neutral-100 font-medium text-neutral-900 dark:bg-neutral-800 dark:text-white"
-                      : "text-neutral-700 hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-800/80"
-                  )}
-                >
-                  All
-                </Link>
-              </li>
-              {sortedTeams.map((name) => {
-                const slug = teamNameToSlug(name);
-                const href = `/teams/${slug}`;
-                const active = pathname === href;
-                return (
-                  <li key={name}>
-                    <Link
-                      href={href}
-                      role="menuitem"
-                      onClick={() => setFlyoutOpen(false)}
-                      className={cn(
-                        "block truncate px-3 py-2 text-sm",
-                        active
-                          ? "bg-neutral-100 font-medium text-neutral-900 dark:bg-neutral-800 dark:text-white"
-                          : "text-neutral-700 hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-800/80"
-                      )}
-                      title={name}
-                    >
-                      {name}
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-0.5">
-      <button
-        type="button"
-        onClick={() => setAccordionOpen((o) => !o)}
-        className={cn(
-          "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors",
-          rowActive
-            ? "bg-[#1E1E1E] text-white dark:bg-neutral-700 dark:text-white"
-            : "text-neutral-600 hover:bg-neutral-200 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-700 dark:hover:text-neutral-100"
-        )}
-        aria-expanded={accordionOpen}
-      >
-        <Building2 className="h-5 w-5 shrink-0" />
-        <span className="min-w-0 flex-1">Teams</span>
-        <ChevronRight
-          className={cn("h-4 w-4 shrink-0 transition-transform duration-200", accordionOpen && "rotate-90")}
-          aria-hidden
-        />
-      </button>
-      {accordionOpen && (
-        <ul
-          className="ml-2 space-y-0.5 border-l border-neutral-200 py-0.5 pl-2 dark:border-neutral-600"
-          role="list"
-        >
-          <li>
-            <Link
-              href="/teams/all"
-              className={cn(
-                "block truncate rounded-md px-2 py-2 text-sm transition-colors",
-                pathname === "/teams/all"
-                  ? "bg-neutral-900 font-medium text-white dark:bg-neutral-600 dark:text-white"
-                  : "text-neutral-600 hover:bg-neutral-200 dark:text-neutral-400 dark:hover:bg-neutral-800"
-              )}
-            >
-              All
-            </Link>
-          </li>
-          {sortedTeams.map((name) => {
-            const slug = teamNameToSlug(name);
-            const href = `/teams/${slug}`;
-            const active = pathname === href;
-            return (
-              <li key={name}>
-                <Link
-                  href={href}
-                  className={cn(
-                    "block truncate rounded-md px-2 py-2 text-sm transition-colors",
-                    active
-                      ? "bg-neutral-900 font-medium text-white dark:bg-neutral-600 dark:text-white"
-                      : "text-neutral-600 hover:bg-neutral-200 dark:text-neutral-400 dark:hover:bg-neutral-800"
-                  )}
-                  title={name}
-                >
-                  {name}
                 </Link>
               </li>
             );
@@ -667,7 +488,6 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
       <nav className="flex-1 space-y-0.5 overflow-auto px-3 py-2">
         {navItemsTop.map(({ href, label, icon }) => renderNavLink(href, label, icon))}
         <DepartmentsNavSection collapsed={collapsed} />
-        <TeamsNavSection collapsed={collapsed} />
         {navItemsAfterDepartments.map(({ href, label, icon }) => renderNavLink(href, label, icon))}
         {isAdmin && (
           <>

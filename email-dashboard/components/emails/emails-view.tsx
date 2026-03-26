@@ -89,16 +89,16 @@ export function EmailsView({ categoryFilter, title, description }: Props) {
       <>
         Showing <strong>{category}</strong> only · {total} email{total !== 1 ? "s" : ""}
       </>
-    ) : (
-      "Ingested messages with AI summary and priority."
-    ));
+    ) : null);
 
   return (
     <div className="flex flex-col gap-6">
       <div className="space-y-6">
         <div>
           <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-50">{defaultTitle}</h1>
-          <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">{defaultDescription}</p>
+          {defaultDescription ? (
+            <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">{defaultDescription}</p>
+          ) : null}
         </div>
 
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

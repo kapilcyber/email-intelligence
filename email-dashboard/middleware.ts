@@ -24,5 +24,11 @@ export const config = {
     "/retag",
     "/mom",
     "/mom/:path*",
+    "/follow-up",
+    "/follow-up/:path*",
+    "/how-to-use",
+    "/how-to-use/:path*",
+    "/admin",
+    "/admin/:path*",
   ],
 };

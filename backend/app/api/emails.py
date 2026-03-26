@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import OperationalError
 from pydantic import BaseModel, Field
 from app.db.session import get_db
-from app.db.models import Email, Attachment
+from app.db.models import Email, Attachment, User
 from app.workers.tasks import (
     backfill_emails_task,
     backfill_classify_emails_task,
@@ -21,6 +21,23 @@ from app.api.deps import get_current_user_email
 from app.http_client import httpx_client
 
 router = APIRouter()
+
+
+def _is_admin_actor(email_addr: str, db: Session) -> bool:
+    """True if address is in ADMIN_EMAILS or has User.role Admin (same gate as admin APIs)."""
+    s = get_settings()
+    admin_list = [e.strip().lower() for e in (s.admin_emails or "").split(",") if e.strip()]
+    if admin_list and email_addr.strip().lower() in admin_list:
+        return True
+    u = db.query(User).filter(User.email == email_addr.strip().lower()).first()
+    return bool(u and getattr(u, "role", None) == "Admin")
+
+
+def _can_read_email_mailbox(email: Email, current_user_email: str, db: Session) -> bool:
+    owner = (email.mailbox_owner_email or "").strip().lower()
+    if owner and owner == current_user_email.strip().lower():
+        return True
+    return _is_admin_actor(current_user_email, db)
 
 
 def _parse_graph_recipient_list(recipients: list | None) -> list[dict]:
@@ -609,7 +626,7 @@ def get_email(
         email = db.query(Email).filter(Email.id == email_id).first()
         if not email:
             raise HTTPException(status_code=404, detail="Email not found")
-        if email.mailbox_owner_email != current_user_email:
+        if not _can_read_email_mailbox(email, current_user_email, db):
             raise HTTPException(status_code=404, detail="Email not found")
         atts = db.query(Attachment).filter(Attachment.email_id == email_id).all()
         return EmailDetailOut(
@@ -660,7 +677,7 @@ def get_attachment(
     email = db.query(Email).filter(Email.id == email_id).first()
     if not email:
         raise HTTPException(status_code=404, detail="Email not found")
-    if email.mailbox_owner_email != current_user_email:
+    if not _can_read_email_mailbox(email, current_user_email, db):
         raise HTTPException(status_code=404, detail="Email not found")
     att = db.query(Attachment).filter(Attachment.id == attachment_id, Attachment.email_id == email_id).first()
     if not att:
