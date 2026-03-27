@@ -6,6 +6,7 @@ from fastapi import APIRouter
 from app.config import get_settings
 from app.graph.webhook import get_subscription_status
 from app.workers.tasks import get_queue_stats, get_ai_latency_avg_seconds
+from app.api.health import get_service_health_snapshot
 import redis
 
 router = APIRouter()
@@ -52,6 +53,7 @@ def system_health():
 
     queue_stats = get_queue_stats()
     ai_latency_avg = get_ai_latency_avg_seconds()
+    health_snapshot = get_service_health_snapshot(include_graph=True)
 
     return {
         "webhookStatus": webhook_status_val,
@@ -59,5 +61,8 @@ def system_health():
         "aiLatencyAvgSeconds": round(ai_latency_avg, 2) if ai_latency_avg is not None else None,
         "queueBacklog": queue_stats.get("pending", 0),
         "queueActive": queue_stats.get("active", 0),
+        "services": health_snapshot.get("services"),
+        "checks": health_snapshot.get("checks"),
+        "status": health_snapshot.get("status"),
         "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     }

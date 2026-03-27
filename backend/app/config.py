@@ -34,8 +34,17 @@ class Settings(BaseSettings):
 
     # App
     environment: str = "development"
+    cors_origins: str = ""  # Comma-separated frontend origins (required in production)
+    strict_dependency_checks: bool = False  # If true, startup fails when required integrations are unavailable
     # Optional: only needed for Graph webhook subscriptions
     webhook_base_url: str | None = None
+
+    # DB pool/connect reliability knobs
+    database_pool_size: int = 5
+    database_max_overflow: int = 10
+    database_pool_timeout_seconds: int = 30
+    database_pool_recycle_seconds: int = 1800
+    database_connect_timeout_seconds: int = 10
 
     # Phase 2 — Ollama (primary) + OpenAI (fallback)
     ollama_base_url: str = "http://localhost:11434"
@@ -83,6 +92,23 @@ class Settings(BaseSettings):
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
         )
         return self.model_copy(update={"database_url": url})
+
+    def is_production(self) -> bool:
+        return (self.environment or "").strip().lower() in {"prod", "production"}
+
+    def cors_origin_list(self) -> list[str]:
+        raw = (self.cors_origins or "").strip()
+        if raw:
+            return [x.strip() for x in raw.split(",") if x.strip()]
+        if self.is_production():
+            return []
+        # Local developer defaults
+        return [
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            "http://localhost:3001",
+            "http://127.0.0.1:3001",
+        ]
 
 
 @lru_cache

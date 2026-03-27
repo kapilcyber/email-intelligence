@@ -23,9 +23,34 @@ app = FastAPI(
     version="1.0.0",
 )
 
+
+def _validate_startup_configuration() -> None:
+    """Fail fast in production (or strict mode) when critical config is missing."""
+    strict = settings.is_production() or settings.strict_dependency_checks
+    if not strict:
+        return
+
+    missing: list[str] = []
+    if not settings.database_url:
+        missing.append("DATABASE_URL")
+    if not settings.redis_url:
+        missing.append("REDIS_URL")
+    if not settings.azure_tenant_id:
+        missing.append("AZURE_TENANT_ID")
+    if not settings.azure_client_id:
+        missing.append("AZURE_CLIENT_ID")
+    if not settings.azure_client_secret:
+        missing.append("AZURE_CLIENT_SECRET")
+    if not settings.cors_origin_list():
+        missing.append("CORS_ORIGINS")
+    if missing:
+        raise RuntimeError(
+            "Missing required environment configuration: " + ", ".join(sorted(missing))
+        )
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.cors_origin_list(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -217,6 +242,7 @@ def startup():
     import logging
     logger = logging.getLogger("uvicorn.error")
     try:
+        _validate_startup_configuration()
         from app.db import init_db
         init_db()
         logger.info(

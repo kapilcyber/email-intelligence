@@ -56,6 +56,7 @@ FastAPI backend for email ingestion (Phase 1) and AI classification (Phase 2): M
    ```bash
    cp .env.example .env
    # Edit .env: AZURE_*, MAILBOX_EMAIL, DB/Redis URLs. For Phase 2 AI classification set OLLAMA_BASE_URL (and optionally OLLAMA_MODEL) for local Ollama, and/or OPENAI_API_KEY (and OPENAI_MODEL) as fallback when Ollama is unavailable.
+   # For production hardening set CORS_ORIGINS to allowed dashboard origins and optionally STRICT_DEPENDENCY_CHECKS=true.
    # If you already have the DB from Phase 1, run: python scripts/add_phase2_columns.py to add AI columns.
    ```
 
@@ -135,7 +136,7 @@ Indexes: `processing_status`, `ai_status` (and existing `message_id`, `received_
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | /api/health | Health + DB/Redis status |
+| GET | /api/health | Health + DB/Redis/Graph status with latency/error details |
 | GET | /api/emails | List emails (page, pageSize, search, from, to) |
 | **POST** | **/api/emails/backfill** | Enqueue sync of existing mail from Graph (body: `user_id`, optional `folder_id`, `days`) |
 | GET | /api/dashboard/metrics | KPIs for dashboard |
@@ -168,3 +169,12 @@ In the Next.js dashboard, set:
 NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 and point the API client to it so it calls the real backend instead of mock routes.
+
+## Production hardening notes
+
+- Set `ENVIRONMENT=production` and configure `CORS_ORIGINS` as a comma-separated allowlist.
+- In strict environments (`ENVIRONMENT=production` or `STRICT_DEPENDENCY_CHECKS=true`), startup fails fast when critical env config is missing.
+- Health endpoints now perform real checks:
+  - `database`: live query + migration table visibility
+  - `redis`: ping + latency
+  - `graph`: token acquisition check (or `unknown` if Graph creds are intentionally not configured)
