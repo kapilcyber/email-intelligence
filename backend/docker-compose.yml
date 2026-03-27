@@ -1,0 +1,13 @@
+# Local Redis for Celery broker/backend. Requires Docker Desktop running.
+# Usage: docker compose up -d
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: ["redis-server", "--appendonly", "yes"]
+
+volumes:
+  redis-data:
