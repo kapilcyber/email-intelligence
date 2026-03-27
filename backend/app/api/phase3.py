@@ -69,6 +69,9 @@ def _email_to_item(r: Email, include_lead_label: bool = False, include_escalatio
             prev = rm.get("previousAssignedTeam")
             if prev:
                 parts.append(f"from team {prev}")
+            prev_cat = rm.get("previousAiCategory")
+            if prev_cat and not prev:
+                parts.append(f"from category {prev_cat}")
             item["retagPreviousSummary"] = "; ".join(parts) if parts else None
     return item
 
@@ -261,21 +264,22 @@ def _perform_retag(
             status_code=400,
             detail=f"Invalid team. Allowed: {', '.join(sorted(allowed))}",
         )
-    if not email.is_escalation and not (email.lead_label or "").strip():
-        raise HTTPException(
-            status_code=400,
-            detail="Email is not an escalation or lead; nothing to retag.",
-        )
+    is_esc = bool(email.is_escalation)
+    is_lead = bool((email.lead_label or "").strip())
+    prev_team = email.assigned_team
+    prev_ai_cat = getattr(email, "ai_category", None)
     meta = {
-        "wasEscalation": bool(email.is_escalation),
-        "wasLead": bool((email.lead_label or "").strip()),
+        "wasEscalation": is_esc,
+        "wasLead": is_lead,
         "previousLeadLabel": email.lead_label,
-        "previousAssignedTeam": email.assigned_team,
+        "previousAssignedTeam": prev_team,
+        "previousAiCategory": prev_ai_cat,
     }
-    email.is_escalation = False
-    email.escalation_metadata = None
-    email.lead_label = None
-    email.lead_metadata = None
+    if is_esc or is_lead:
+        email.is_escalation = False
+        email.escalation_metadata = None
+        email.lead_label = None
+        email.lead_metadata = None
     email.assigned_team = team_val
     if hasattr(Email, "ai_category"):
         email.ai_category = team_val
@@ -294,8 +298,8 @@ def retag_email_user_mailbox(
     current_user_email: str = Depends(get_current_user_email),
 ):
     """
-    Remove escalation/lead flags, assign to chosen department. Mail appears under ReTag for this mailbox.
-    Only the mailbox owner can retag their mail.
+    Assign mail to another department (ReTag). Escalation/lead flags are cleared when present.
+    Mailbox owners who are not admins create a pending admin approval request instead of an immediate apply.
     """
     email = db.query(Email).filter(Email.id == email_id).first()
     if not email:

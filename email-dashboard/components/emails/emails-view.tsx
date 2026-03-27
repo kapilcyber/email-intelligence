@@ -20,9 +20,11 @@ type Props = {
   title?: string;
   /** Optional subtitle under title. */
   description?: ReactNode;
+  /** Show per-row Retag (non-admin → admin approval; admin → immediate). */
+  showRetag?: boolean;
 };
 
-export function EmailsView({ categoryFilter, title, description }: Props) {
+export function EmailsView({ categoryFilter, title, description, showRetag = false }: Props) {
   const category = useMemo(() => {
     if (!categoryFilter) return "";
     return DEPARTMENT_CATEGORIES.includes(categoryFilter as (typeof DEPARTMENT_CATEGORIES)[number])
@@ -160,6 +162,8 @@ export function EmailsView({ categoryFilter, title, description }: Props) {
             isLoading={loading}
             emptyMessage={category ? `No emails in ${category}.` : "No emails match your filters."}
             getEmailLink={(e) => `/emails/${e.id}`}
+            showRetag={showRetag}
+            onRetagDone={load}
           />
         </div>
 

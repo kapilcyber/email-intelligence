@@ -12,7 +12,7 @@ function EmailsFromQuery() {
     [searchParams]
   );
 
-  return <EmailsView categoryFilter={category} />;
+  return <EmailsView categoryFilter={category} showRetag />;
 }
 
 export default function EmailsPage() {

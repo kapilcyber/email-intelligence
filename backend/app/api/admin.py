@@ -1295,7 +1295,7 @@ def admin_retag_email(
     db: Session = Depends(get_db),
     admin_email: str = Depends(get_admin_user),
 ):
-    """Retag escalation/lead mail in another user's mailbox. Admin only."""
+    """Retag mail in another user's mailbox (immediate apply). Admin only."""
     email = db.query(Email).filter(Email.id == email_id).first()
     if not email:
         raise HTTPException(status_code=404, detail="Email not found")

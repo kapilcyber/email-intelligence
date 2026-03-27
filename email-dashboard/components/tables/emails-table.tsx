@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { StatusBadge } from "@/components/status/status-badge";
 import { PriorityBadge } from "@/components/status/priority-badge";
+import { RetagMailControl } from "@/components/escalations/retag-mail-control";
 import type { EmailRecord } from "@/lib/types";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -29,9 +30,20 @@ interface EmailsTableProps {
   className?: string;
   /** When set, rows are clickable and navigate to this path with email id */
   getEmailLink?: (email: EmailRecord) => string;
+  /** History / inbox list: department retag (non-admin → approval request). */
+  showRetag?: boolean;
+  onRetagDone?: () => void;
 }
 
-export function EmailsTable({ emails, isLoading, emptyMessage = "No emails found.", className, getEmailLink }: EmailsTableProps) {
+export function EmailsTable({
+  emails,
+  isLoading,
+  emptyMessage = "No emails found.",
+  className,
+  getEmailLink,
+  showRetag,
+  onRetagDone,
+}: EmailsTableProps) {
   const router = useRouter();
 
   if (isLoading) {
@@ -48,6 +60,9 @@ export function EmailsTable({ emails, isLoading, emptyMessage = "No emails found
               <th className="px-4 py-3 text-left font-medium text-neutral-600 dark:text-neutral-400">Received</th>
               <th className="px-4 py-3 text-left font-medium text-neutral-600 dark:text-neutral-400">Folder</th>
               <th className="px-4 py-3 text-left font-medium text-neutral-600 dark:text-neutral-400">Status</th>
+              {showRetag ? (
+                <th className="min-w-[200px] px-4 py-3 text-left font-medium text-neutral-600 dark:text-neutral-400">Retag</th>
+              ) : null}
             </tr>
           </thead>
           <tbody>
@@ -61,6 +76,9 @@ export function EmailsTable({ emails, isLoading, emptyMessage = "No emails found
                 <td className="px-4 py-3"><Skeleton className="h-4 w-20" /></td>
                 <td className="px-4 py-3"><Skeleton className="h-4 w-16" /></td>
                 <td className="px-4 py-3"><Skeleton className="h-5 w-14" /></td>
+                {showRetag ? (
+                  <td className="px-4 py-3"><Skeleton className="h-8 w-[180px]" /></td>
+                ) : null}
               </tr>
             ))}
           </tbody>
@@ -95,6 +113,9 @@ export function EmailsTable({ emails, isLoading, emptyMessage = "No emails found
               <th className="px-4 py-3 text-left font-medium text-neutral-600 dark:text-neutral-400">Received</th>
               <th className="px-4 py-3 text-left font-medium text-neutral-600 dark:text-neutral-400">Folder</th>
               <th className="px-4 py-3 text-left font-medium text-neutral-600 dark:text-neutral-400">Status</th>
+              {showRetag ? (
+                <th className="min-w-[200px] px-4 py-3 text-left font-medium text-neutral-600 dark:text-neutral-400">Retag</th>
+              ) : null}
             </tr>
           </thead>
           <tbody>
@@ -150,6 +171,15 @@ export function EmailsTable({ emails, isLoading, emptyMessage = "No emails found
                   <td className="px-4 py-3">
                     <StatusBadge status={email.status} />
                   </td>
+                  {showRetag ? (
+                    <td
+                      className="min-w-[200px] px-4 py-3 align-middle"
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => e.stopPropagation()}
+                    >
+                      <RetagMailControl emailId={email.id} onDone={onRetagDone ?? (() => {})} compact />
+                    </td>
+                  ) : null}
                 </tr>
               );
             })}
