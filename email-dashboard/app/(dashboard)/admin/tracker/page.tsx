@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import { CalendarRange, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 
 const DAY_ORDER: TrackerDayKey[] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 const SHORT_LABEL: Record<TrackerDayKey, string> = {
@@ -78,13 +78,10 @@ export default function AdminTrackerPage() {
   };
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 p-6">
+    <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="flex items-center gap-2 text-2xl font-semibold text-neutral-900 dark:text-neutral-50">
-            <CalendarRange className="h-7 w-7 shrink-0 opacity-80" aria-hidden />
-            Tracker
-          </h1>
+          <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-50">Tracker</h1>
           {weekHint && (
             <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-500">Showing week: {weekHint}</p>
           )}

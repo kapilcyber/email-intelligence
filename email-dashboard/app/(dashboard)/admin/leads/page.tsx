@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Download, Info, Table2, Tags, Users } from "lucide-react";
+import { Download, Info, Table2, Tags, Users } from "lucide-react";
 import { RetagMailControl } from "@/components/escalations/retag-mail-control";
 import {
   LineChart,
@@ -308,24 +308,10 @@ export default function AdminLeadsPage() {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-50">Leads</h1>
+          <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-50">Leads</h1>
         </div>
         {selectedUserEmail && (
           <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => (
-                setSelectedUserEmail(null),
-                setPage(1),
-                setPageSize(DEFAULT_PAGE_SIZE),
-                setMailKindTab("leads")
-              )}
-              className="gap-2"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Back to users
-            </Button>
             <div className="flex rounded-lg border border-neutral-200 bg-white p-0.5 dark:border-neutral-700 dark:bg-neutral-900">
               <button
                 type="button"

@@ -36,6 +36,19 @@ export default function AdminTeamLeadersPage() {
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [loginEvents, setLoginEvents] = useState<LoginEventOut[]>([]);
   const [syncStatus, setSyncStatus] = useState<LoginSyncStatusOut | null>(null);
+  const loginRows = useMemo(() => {
+    return [...loginEvents]
+      .sort((a, b) => activityTimestampMs(b.loginAt) - activityTimestampMs(a.loginAt))
+      .map((ev) => ({
+        key: ev.id ?? `${ev.email}-${ev.loginAt}`,
+        email: ev.email ?? "—",
+        displayName: ev.displayName ?? ev.email ?? "—",
+        loginAt: ev.loginAt ?? null,
+        logoutAt: ev.logoutAt ?? null,
+        isOnline: ev.isLoggedIn === true,
+        loginSource: ev.loginSource ?? "—",
+      }));
+  }, [loginEvents]);
 
   const sortedAllUsers = useMemo(() => {
     const score = (u: UserOut) => activityTimestampMs(u.lastLoginAt) || activityTimestampMs(u.createdAt);
@@ -81,7 +94,7 @@ export default function AdminTeamLeadersPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-50">Team leaders</h1>
+        <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-50">Team leaders</h1>
       </div>
 
       {error && (
@@ -120,8 +133,8 @@ export default function AdminTeamLeadersPage() {
                 {syncStatus.usersMissingLastLoginAt}
               </p>
               <p className="text-neutral-600 dark:text-neutral-300">
-                Events (24h): oauth {syncStatus.oauthEvents24h} · session {syncStatus.sessionEvents24h} · total stored{" "}
-                {syncStatus.totalLoginEvents}
+                Active sessions: {syncStatus.activeSessions ?? 0} · Events (24h): oauth {syncStatus.oauthEvents24h} · session{" "}
+                {syncStatus.sessionEvents24h} · total rows {syncStatus.totalLoginEvents}
               </p>
               <p className="text-neutral-500 dark:text-neutral-400">
                 Last oauth event: {formatActivity(syncStatus.lastOauthEventAt)} · Last any event: {formatActivity(syncStatus.lastAnyEventAt)}
@@ -135,43 +148,75 @@ export default function AdminTeamLeadersPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <LogIn className="h-5 w-5" />
-            Login history (chronological)
+            Login history
           </CardTitle>
         </CardHeader>
         <CardContent>
           {loading ? (
             <Skeleton className="h-32 w-full rounded-lg" />
-          ) : loginEvents.length === 0 ? (
+          ) : loginRows.length === 0 ? (
             <p className="py-4 text-center text-sm text-neutral-500 dark:text-neutral-400">
-              No login events yet. Restart the API once so the database can create the login table, then have users sign in again.
+              No login events yet. Users will appear here after sign-in.
             </p>
           ) : (
-            <ul className="max-h-[min(70vh,520px)] divide-y divide-neutral-200 overflow-y-auto dark:divide-neutral-700">
-              {loginEvents.map((row) => (
-                <li key={row.id} className="flex flex-col gap-1 py-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <p className="font-medium text-neutral-900 dark:text-neutral-50">{row.displayName ?? row.email}</p>
-                    <p className="text-xs text-neutral-500 dark:text-neutral-400">{row.email}</p>
-                    <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-300">
-                      <span
-                        className={
-                          row.source === "oauth"
-                            ? "rounded-md bg-emerald-100 px-1.5 py-0.5 text-emerald-900 dark:bg-emerald-900/40 dark:text-emerald-200"
-                            : "rounded-md bg-slate-200 px-1.5 py-0.5 text-slate-800 dark:bg-slate-700 dark:text-slate-200"
-                        }
-                      >
-                        {row.source}
-                      </span>
-                    </p>
-                  </div>
-                  <div className="text-left text-xs text-neutral-500 dark:text-neutral-400 sm:text-right">
-                    <p>
-                      <span className="text-neutral-800 dark:text-neutral-200">{formatActivity(row.occurredAt)}</span>
-                    </p>
-                  </div>
-                </li>
-              ))}
-            </ul>
+            <div className="overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-700">
+              <table className="w-full text-left text-sm">
+                <thead className="border-b border-neutral-200 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800/50">
+                  <tr>
+                    <th className="px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">User</th>
+                    <th className="px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">Login source</th>
+                    <th className="px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">Login time</th>
+                    <th className="px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">Logout time</th>
+                    <th className="px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-200 dark:divide-neutral-700">
+                  {loginRows.map((row) => (
+                    <tr
+                      key={row.key}
+                      className={
+                        row.isOnline
+                          ? "bg-emerald-50/70 dark:bg-emerald-950/20"
+                          : "bg-white dark:bg-transparent"
+                      }
+                    >
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-neutral-900 dark:text-neutral-50">{row.displayName}</p>
+                        <p className="text-xs text-neutral-500 dark:text-neutral-400">{row.email}</p>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={
+                            row.loginSource === "oauth"
+                              ? "rounded-md bg-emerald-100 px-1.5 py-0.5 text-xs text-emerald-900 dark:bg-emerald-900/40 dark:text-emerald-200"
+                              : "rounded-md bg-slate-200 px-1.5 py-0.5 text-xs text-slate-800 dark:bg-slate-700 dark:text-slate-200"
+                          }
+                        >
+                          {row.loginSource}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-neutral-800 dark:text-neutral-200">
+                        {formatActivity(row.loginAt)}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-neutral-800 dark:text-neutral-200">
+                        {row.logoutAt ? formatActivity(row.logoutAt) : "—"}
+                      </td>
+                      <td className="px-4 py-3">
+                        {row.isOnline ? (
+                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">
+                            Logged in
+                          </span>
+                        ) : (
+                          <span className="rounded-full bg-neutral-200 px-2 py-0.5 text-xs font-medium text-neutral-700 dark:bg-neutral-700 dark:text-neutral-200">
+                            Logged out
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </CardContent>
       </Card>

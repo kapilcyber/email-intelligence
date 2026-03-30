@@ -7,7 +7,6 @@ import type { RetagApprovalOut } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ShieldCheck } from "lucide-react";
 
 function formatDate(s?: string | null) {
   if (!s) return "—";
@@ -54,10 +53,7 @@ export default function AdminApprovalsPage() {
   return (
     <div className="space-y-6" data-tour-id="approvals-header">
       <div>
-        <h1 className="flex items-center gap-2 text-xl font-semibold text-neutral-900 dark:text-neutral-50">
-          <ShieldCheck className="h-6 w-6" />
-          Approvals
-        </h1>
+        <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-50">Approvals</h1>
       </div>
 
       {error && (

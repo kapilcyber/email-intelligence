@@ -48,36 +48,38 @@ export function EmailsTable({
 
   if (isLoading) {
     return (
-      <div className={cn("overflow-hidden rounded-2xl border border-neutral-200 dark:border-neutral-800", className)}>
+      <div className={cn("glass-surface overflow-hidden rounded-2xl", className)}>
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-900/50">
-              <th className="px-4 py-3 text-left font-medium text-neutral-600 dark:text-neutral-400">Subject</th>
-              <th className="px-4 py-3 text-left font-medium text-neutral-600 dark:text-neutral-400">Sender</th>
-              <th className="px-4 py-3 text-left font-medium text-neutral-600 dark:text-neutral-400">Department</th>
-              <th className="px-4 py-3 text-left font-medium text-neutral-600 dark:text-neutral-400">Priority</th>
-              <th className="px-4 py-3 text-left font-medium text-neutral-600 dark:text-neutral-400">AI Status</th>
-              <th className="px-4 py-3 text-left font-medium text-neutral-600 dark:text-neutral-400">Received</th>
-              <th className="px-4 py-3 text-left font-medium text-neutral-600 dark:text-neutral-400">Folder</th>
-              <th className="px-4 py-3 text-left font-medium text-neutral-600 dark:text-neutral-400">Status</th>
+            <tr className="border-b border-border bg-panel-elevated/70">
+              <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Subject</th>
+              <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Sender</th>
+              <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Department</th>
+              <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Priority</th>
+              <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">AI Status</th>
+              <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Received</th>
+              <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Folder</th>
+              <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Status</th>
               {showRetag ? (
-                <th className="min-w-[200px] px-4 py-3 text-left font-medium text-neutral-600 dark:text-neutral-400">Retag</th>
+                <th className="min-w-0 whitespace-nowrap px-2 py-2 text-left text-xs font-medium text-muted-foreground">
+                  Retag
+                </th>
               ) : null}
             </tr>
           </thead>
           <tbody>
             {Array.from({ length: 5 }).map((_, i) => (
-              <tr key={i} className="border-b border-neutral-100 dark:border-neutral-800/50">
-                <td className="px-4 py-3"><Skeleton className="h-4 w-48" /></td>
-                <td className="px-4 py-3"><Skeleton className="h-4 w-32" /></td>
-                <td className="px-4 py-3"><Skeleton className="h-4 w-20" /></td>
-                <td className="px-4 py-3"><Skeleton className="h-5 w-14" /></td>
-                <td className="px-4 py-3"><Skeleton className="h-5 w-16" /></td>
-                <td className="px-4 py-3"><Skeleton className="h-4 w-20" /></td>
-                <td className="px-4 py-3"><Skeleton className="h-4 w-16" /></td>
-                <td className="px-4 py-3"><Skeleton className="h-5 w-14" /></td>
+              <tr key={i} className="border-b border-border/60">
+                <td className="px-2 py-2"><Skeleton className="h-4 w-48" /></td>
+                <td className="px-2 py-2"><Skeleton className="h-4 w-32" /></td>
+                <td className="px-2 py-2"><Skeleton className="h-4 w-20" /></td>
+                <td className="px-2 py-2"><Skeleton className="h-5 w-14" /></td>
+                <td className="px-2 py-2"><Skeleton className="h-5 w-16" /></td>
+                <td className="px-2 py-2"><Skeleton className="h-4 w-20" /></td>
+                <td className="px-2 py-2"><Skeleton className="h-4 w-16" /></td>
+                <td className="px-2 py-2"><Skeleton className="h-5 w-14" /></td>
                 {showRetag ? (
-                  <td className="px-4 py-3"><Skeleton className="h-8 w-[180px]" /></td>
+                  <td className="px-2 py-2"><Skeleton className="h-8 w-[180px]" /></td>
                 ) : null}
               </tr>
             ))}
@@ -89,38 +91,40 @@ export function EmailsTable({
 
   if (emails.length === 0) {
     const emptyClassName = cn(
-      "flex flex-col items-center justify-center rounded-2xl border border-neutral-200 bg-neutral-50/50 py-12 dark:border-neutral-800 dark:bg-neutral-900/30",
+      "glass-surface flex flex-col items-center justify-center rounded-2xl py-12",
       className
     );
     return (
       <div className={emptyClassName}>
-        <p className="text-sm text-neutral-500 dark:text-neutral-400">{emptyMessage}</p>
+        <p className="text-sm text-muted-foreground">{emptyMessage}</p>
       </div>
     );
   }
 
   return (
-    <div className={cn("overflow-hidden rounded-2xl border border-neutral-200 dark:border-neutral-800", className)}>
+    <div className={cn("glass-surface overflow-hidden rounded-2xl", className)}>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-900/50">
-              <th className="px-4 py-3 text-left font-medium text-neutral-600 dark:text-neutral-400">Subject</th>
-              <th className="px-4 py-3 text-left font-medium text-neutral-600 dark:text-neutral-400">Sender</th>
-              <th className="px-4 py-3 text-left font-medium text-neutral-600 dark:text-neutral-400">Department</th>
-              <th className="px-4 py-3 text-left font-medium text-neutral-600 dark:text-neutral-400">Priority</th>
-              <th className="px-4 py-3 text-left font-medium text-neutral-600 dark:text-neutral-400">AI Status</th>
-              <th className="px-4 py-3 text-left font-medium text-neutral-600 dark:text-neutral-400">Received</th>
-              <th className="px-4 py-3 text-left font-medium text-neutral-600 dark:text-neutral-400">Folder</th>
-              <th className="px-4 py-3 text-left font-medium text-neutral-600 dark:text-neutral-400">Status</th>
+            <tr className="border-b border-border bg-panel-elevated/70">
+              <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Subject</th>
+              <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Sender</th>
+              <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Department</th>
+              <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Priority</th>
+              <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">AI Status</th>
+              <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Received</th>
+              <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Folder</th>
+              <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Status</th>
               {showRetag ? (
-                <th className="min-w-[200px] px-4 py-3 text-left font-medium text-neutral-600 dark:text-neutral-400">Retag</th>
+                <th className="min-w-0 whitespace-nowrap px-2 py-2 text-left text-xs font-medium text-muted-foreground">
+                  Retag
+                </th>
               ) : null}
             </tr>
           </thead>
           <tbody>
             {emails.map((email) => {
-              const rowClass = "border-b border-neutral-100 transition-colors hover:bg-neutral-50 dark:border-neutral-800/50 dark:hover:bg-neutral-800/30";
+              const rowClass = "border-b border-border/60 transition-colors hover:bg-muted/60";
               const isClickable = !!getEmailLink;
               const aiStatus = email.aiStatus ?? "pending";
               const aiStatusBadge =
@@ -147,33 +151,33 @@ export function EmailsTable({
                   role={isClickable ? "button" : undefined}
                   tabIndex={isClickable ? 0 : undefined}
                 >
-                  <td className="min-w-[120px] max-w-[320px] break-words px-4 py-3 font-medium text-neutral-900 dark:text-neutral-100" title={email.summary ?? undefined}>
+                  <td className="min-w-[100px] max-w-[280px] break-words px-2 py-2 font-medium text-foreground" title={email.summary ?? undefined}>
                     {email.subject ?? "—"}
                   </td>
-                  <td className="min-w-[120px] max-w-[240px] break-words px-4 py-3 text-neutral-600 dark:text-neutral-400">
+                  <td className="min-w-[100px] max-w-[200px] break-words px-2 py-2 text-muted-foreground">
                     {email.sender ?? "—"}
                   </td>
-                  <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400" title={!email.category ? "Same as Inbox department; run sync & classify to assign" : undefined}>
+                  <td className="px-2 py-2 text-muted-foreground" title={!email.category ? "Same as Inbox department; run sync & classify to assign" : undefined}>
                     {email.category ?? "—"}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-2 py-2">
                     <PriorityBadge label={email.priorityLabel} />
                   </td>
-                  <td className="px-4 py-3">
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${aiStatusBadge.className}`}>
+                  <td className="px-2 py-2">
+                    <span className={`rounded-full px-1.5 py-0.5 text-[11px] font-medium ${aiStatusBadge.className}`}>
                       {aiStatusBadge.label}
                     </span>
                   </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-neutral-500 dark:text-neutral-400">
+                  <td className="whitespace-nowrap px-2 py-2 text-muted-foreground">
                     {formatDate(email.receivedAt)}
                   </td>
-                  <td className="px-4 py-3 text-neutral-500 dark:text-neutral-400">{folderLabel(email.folder)}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-2 py-2 text-muted-foreground">{folderLabel(email.folder)}</td>
+                  <td className="px-2 py-2">
                     <StatusBadge status={email.status} />
                   </td>
                   {showRetag ? (
                     <td
-                      className="min-w-[200px] px-4 py-3 align-middle"
+                      className="w-[1%] whitespace-nowrap px-2 py-2 align-middle"
                       onClick={(e) => e.stopPropagation()}
                       onKeyDown={(e) => e.stopPropagation()}
                     >

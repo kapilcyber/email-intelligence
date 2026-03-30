@@ -11,8 +11,9 @@ function EmailsFromQuery() {
     () => normalizeCategoryQueryParam(searchParams.get("category")),
     [searchParams]
   );
+  const search = useMemo(() => (searchParams.get("search") ?? "").trim(), [searchParams]);
 
-  return <EmailsView categoryFilter={category} showRetag />;
+  return <EmailsView categoryFilter={category} initialSearch={search} showRetag title="History" />;
 }
 
 export default function EmailsPage() {

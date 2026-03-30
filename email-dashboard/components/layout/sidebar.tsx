@@ -11,7 +11,6 @@ import {
   List,
   PanelLeftClose,
   PanelLeft,
-  CreditCard,
   Users,
   Network,
   AlertCircle,
@@ -123,8 +122,8 @@ function DepartmentsNavSection({ collapsed }: { collapsed: boolean }) {
           className={cn(
             "flex w-full items-center justify-center rounded-lg p-2.5 transition-colors",
             rowActive || flyoutOpen
-              ? "bg-[#1E1E1E] text-white dark:bg-neutral-700 dark:text-white"
-              : "text-neutral-600 hover:bg-neutral-200 dark:text-neutral-400 dark:hover:bg-neutral-700"
+              ? "bg-black text-white"
+              : "text-muted-foreground hover:bg-muted hover:text-foreground"
           )}
           aria-expanded={flyoutOpen}
           aria-haspopup="true"
@@ -134,10 +133,10 @@ function DepartmentsNavSection({ collapsed }: { collapsed: boolean }) {
         </button>
         {flyoutOpen && (
           <div
-            className="absolute left-full top-0 z-50 ml-1 min-w-[11rem] rounded-xl border border-neutral-200 bg-white py-1 shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
+            className="absolute left-full top-0 z-50 ml-1 min-w-[11rem] rounded-xl border border-border bg-panel py-1 shadow-lg"
             role="menu"
           >
-            <p className="border-b border-neutral-100 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:border-neutral-800 dark:text-neutral-400">
+            <p className="border-b border-border px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Departments
             </p>
             <ul className="max-h-[70vh] overflow-y-auto py-1">
@@ -153,12 +152,12 @@ function DepartmentsNavSection({ collapsed }: { collapsed: boolean }) {
                       className={cn(
                         "flex items-center justify-between gap-3 px-3 py-2 text-sm",
                         active
-                          ? "bg-neutral-100 font-medium text-neutral-900 dark:bg-neutral-800 dark:text-white"
-                          : "text-neutral-700 hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-800/80"
+                          ? "bg-muted font-medium text-foreground"
+                          : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
                       )}
                     >
                       <span>{label}</span>
-                      <span className="tabular-nums text-xs text-neutral-500">{count}</span>
+                      <span className="tabular-nums text-xs text-muted-foreground">{count}</span>
                     </Link>
                   </li>
                 );
@@ -178,8 +177,8 @@ function DepartmentsNavSection({ collapsed }: { collapsed: boolean }) {
         className={cn(
           "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors",
           rowActive
-            ? "bg-[#1E1E1E] text-white dark:bg-neutral-700 dark:text-white"
-            : "text-neutral-600 hover:bg-neutral-200 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-700 dark:hover:text-neutral-100"
+            ? "bg-black text-white"
+            : "text-muted-foreground hover:bg-muted hover:text-foreground"
         )}
         aria-expanded={accordionOpen}
       >
@@ -192,7 +191,7 @@ function DepartmentsNavSection({ collapsed }: { collapsed: boolean }) {
       </button>
       {accordionOpen && (
         <ul
-          className="ml-2 space-y-0.5 border-l border-neutral-200 py-0.5 pl-2 dark:border-neutral-600"
+          className="ml-2 space-y-0.5 border-l border-border py-0.5 pl-2"
           role="list"
         >
           {subLinks.map(({ slug, label, count }) => {
@@ -204,9 +203,7 @@ function DepartmentsNavSection({ collapsed }: { collapsed: boolean }) {
                   href={href}
                   className={cn(
                     "flex items-center justify-between gap-2 rounded-md px-2 py-2 text-sm transition-colors",
-                    active
-                      ? "bg-neutral-900 font-medium text-white dark:bg-neutral-600 dark:text-white"
-                      : "text-neutral-600 hover:bg-neutral-200 dark:text-neutral-400 dark:hover:bg-neutral-800"
+                    active ? "bg-accent font-medium text-accent-foreground" : "text-muted-foreground hover:bg-muted"
                   )}
                 >
                   <span className="truncate">{label}</span>
@@ -276,8 +273,8 @@ function AdminTeamsNavSection({ collapsed }: { collapsed: boolean }) {
           className={cn(
             "flex w-full items-center justify-center rounded-lg p-2.5 transition-colors",
             rowActive || flyoutOpen
-              ? "bg-[#1E1E1E] text-white dark:bg-neutral-700 dark:text-white"
-              : "text-neutral-600 hover:bg-neutral-200 dark:text-neutral-400 dark:hover:bg-neutral-700"
+              ? "bg-black text-white"
+              : "text-muted-foreground hover:bg-muted hover:text-foreground"
           )}
           aria-expanded={flyoutOpen}
           aria-haspopup="true"
@@ -287,10 +284,10 @@ function AdminTeamsNavSection({ collapsed }: { collapsed: boolean }) {
         </button>
         {flyoutOpen && (
           <div
-            className="absolute left-full top-0 z-50 ml-1 min-w-[12rem] max-w-[18rem] rounded-xl border border-neutral-200 bg-white py-1 shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
+            className="absolute left-full top-0 z-50 ml-1 min-w-[12rem] max-w-[18rem] rounded-xl border border-border bg-panel py-1 shadow-lg"
             role="menu"
           >
-            <p className="border-b border-neutral-100 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:border-neutral-800 dark:text-neutral-400">
+            <p className="border-b border-border px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Teams
             </p>
             <ul className="max-h-[70vh] overflow-y-auto py-1">
@@ -302,8 +299,8 @@ function AdminTeamsNavSection({ collapsed }: { collapsed: boolean }) {
                   className={cn(
                     "flex items-center justify-between gap-3 px-3 py-2 text-sm",
                     pathname === "/admin/teams"
-                      ? "bg-neutral-100 font-medium text-neutral-900 dark:bg-neutral-800 dark:text-white"
-                      : "text-neutral-700 hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-800/80"
+                      ? "bg-muted font-medium text-foreground"
+                      : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
                   )}
                 >
                   <span>All teams</span>
@@ -321,13 +318,13 @@ function AdminTeamsNavSection({ collapsed }: { collapsed: boolean }) {
                       className={cn(
                         "flex items-center justify-between gap-3 px-3 py-2 text-sm",
                         active
-                          ? "bg-neutral-100 font-medium text-neutral-900 dark:bg-neutral-800 dark:text-white"
-                          : "text-neutral-700 hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-800/80"
+                          ? "bg-muted font-medium text-foreground"
+                          : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
                       )}
                       title={t.name}
                     >
                       <span className="truncate">{t.name}</span>
-                      <span className="shrink-0 tabular-nums text-xs text-neutral-500">{t.memberCount}</span>
+                      <span className="shrink-0 tabular-nums text-xs text-muted-foreground">{t.memberCount}</span>
                     </Link>
                   </li>
                 );
@@ -347,8 +344,8 @@ function AdminTeamsNavSection({ collapsed }: { collapsed: boolean }) {
         className={cn(
           "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors",
           rowActive
-            ? "bg-[#1E1E1E] text-white dark:bg-neutral-700 dark:text-white"
-            : "text-neutral-600 hover:bg-neutral-200 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-700 dark:hover:text-neutral-100"
+            ? "bg-black text-white"
+            : "text-muted-foreground hover:bg-muted hover:text-foreground"
         )}
         aria-expanded={accordionOpen}
       >
@@ -361,7 +358,7 @@ function AdminTeamsNavSection({ collapsed }: { collapsed: boolean }) {
       </button>
       {accordionOpen && (
         <ul
-          className="ml-2 space-y-0.5 border-l border-neutral-200 py-0.5 pl-2 dark:border-neutral-600"
+          className="ml-2 space-y-0.5 border-l border-border py-0.5 pl-2"
           role="list"
         >
           <li>
@@ -370,8 +367,8 @@ function AdminTeamsNavSection({ collapsed }: { collapsed: boolean }) {
               className={cn(
                 "flex items-center justify-between gap-2 rounded-md px-2 py-2 text-sm transition-colors",
                 pathname === "/admin/teams"
-                  ? "bg-neutral-900 font-medium text-white dark:bg-neutral-600 dark:text-white"
-                  : "text-neutral-600 hover:bg-neutral-200 dark:text-neutral-400 dark:hover:bg-neutral-800"
+                  ? "bg-accent font-medium text-accent-foreground"
+                  : "text-muted-foreground hover:bg-muted"
               )}
             >
               <span>All teams</span>
@@ -386,9 +383,7 @@ function AdminTeamsNavSection({ collapsed }: { collapsed: boolean }) {
                   href={href}
                   className={cn(
                     "flex items-center justify-between gap-2 rounded-md px-2 py-2 text-sm transition-colors",
-                    active
-                      ? "bg-neutral-900 font-medium text-white dark:bg-neutral-600 dark:text-white"
-                      : "text-neutral-600 hover:bg-neutral-200 dark:text-neutral-400 dark:hover:bg-neutral-800"
+                    active ? "bg-accent font-medium text-accent-foreground" : "text-muted-foreground hover:bg-muted"
                   )}
                   title={t.name}
                 >
@@ -425,7 +420,6 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
   }, [status, session?.user?.email, api, adminEmailsList]);
   const name = session?.user?.name ?? session?.user?.email ?? "User";
   const email = session?.user?.email ?? "";
-  const initial = name.charAt(0).toUpperCase();
 
   const renderNavLink = (href: string, label: string, Icon: typeof LayoutDashboard) => {
     let active = false;
@@ -440,8 +434,8 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
         className={cn(
           "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
           active
-            ? "bg-[#1E1E1E] text-white dark:bg-neutral-700 dark:text-white"
-            : "text-neutral-600 hover:bg-neutral-200 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-700 dark:hover:text-neutral-100",
+            ? "bg-black text-white"
+            : "text-muted-foreground hover:bg-muted hover:text-foreground",
           collapsed && "justify-center px-2"
         )}
         title={collapsed ? label : undefined}
@@ -455,34 +449,37 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
   return (
     <aside
       className={cn(
-        "flex flex-col border-r border-neutral-200 bg-[#F8F9FA] transition-[width] duration-200 dark:border-neutral-700 dark:bg-neutral-900/50",
+        "flex flex-col border-r border-border bg-panel-elevated/70 backdrop-blur transition-[width] duration-200",
         collapsed ? "w-[4rem]" : "w-64"
       )}
     >
-      <div className={cn("border-b border-neutral-200 dark:border-neutral-700", collapsed ? "p-2" : "p-4")}>
+      <div className={cn("border-b border-border", collapsed ? "p-2" : "p-4")}>
         {!collapsed && (
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#1E1E1E] text-sm font-medium text-white dark:bg-neutral-700">
-              {session?.user?.image ? (
-                <img src={session.user.image} alt="" className="h-full w-full rounded-full object-cover" />
-              ) : (
-                initial
-              )}
-            </div>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold text-neutral-900 dark:text-neutral-100">{name}</p>
-              <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">{email}</p>
+              <p className="truncate text-sm font-semibold text-foreground">{name}</p>
+              <p className="truncate text-xs text-muted-foreground">{email}</p>
             </div>
-            <button type="button" className="shrink-0 rounded p-1 text-neutral-400 hover:bg-neutral-200 hover:text-neutral-600 dark:hover:bg-neutral-700 dark:hover:text-neutral-300" aria-label="Profile">
-              <CreditCard className="h-5 w-5" />
+            <button
+              type="button"
+              onClick={onToggle}
+              className="shrink-0 rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+              aria-label="Collapse sidebar"
+            >
+              <PanelLeftClose className="h-5 w-5" />
             </button>
           </div>
         )}
         {collapsed && (
-          <div className="flex justify-center">
-            <div className="h-9 w-9 rounded-full bg-[#1E1E1E] flex items-center justify-center text-sm font-medium text-white">
-              {initial}
-            </div>
+          <div className="flex flex-col items-center gap-2">
+            <button
+              type="button"
+              onClick={onToggle}
+              className="flex w-full items-center justify-center rounded-lg py-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+              aria-label="Expand sidebar"
+            >
+              <PanelLeft className="h-5 w-5" />
+            </button>
           </div>
         )}
       </div>
@@ -494,7 +491,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
         {isAdmin && (
           <>
             {!collapsed && (
-              <p className="mt-3 mb-1 px-3 text-xs font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
+              <p className="mt-3 mb-1 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Admin
               </p>
             )}
@@ -508,8 +505,8 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
                   className={cn(
                     "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
                     isActive
-                      ? "bg-[#1E1E1E] text-white dark:bg-neutral-700 dark:text-white"
-                      : "text-neutral-600 hover:bg-neutral-200 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-700 dark:hover:text-neutral-100",
+                      ? "bg-black text-white"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground",
                     collapsed && "justify-center px-2"
                   )}
                   title={collapsed ? label : undefined}
@@ -522,17 +519,6 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
           </>
         )}
       </nav>
-
-      <div className="border-t border-neutral-200 p-3 dark:border-neutral-700">
-        <button
-          type="button"
-          onClick={onToggle}
-          className="mt-1 flex w-full items-center justify-center rounded-lg py-2 text-neutral-400 hover:bg-neutral-200 hover:text-neutral-600 dark:hover:bg-neutral-700 dark:hover:text-neutral-300"
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-        >
-          {collapsed ? <PanelLeft className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
-        </button>
-      </div>
     </aside>
   );
 }

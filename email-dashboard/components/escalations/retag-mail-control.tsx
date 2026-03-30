@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { getApi } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import {
   Select,
   SelectContent,
@@ -76,23 +77,38 @@ export function RetagMailControl({
   if (status !== "authenticated") return null;
 
   return (
-    <div className={compact ? "flex flex-wrap items-center gap-1" : "flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2"}>
-      <Select value={value || "__pick__"} onValueChange={(v) => setValue(v === "__pick__" ? "" : v)}>
-        <SelectTrigger className={compact ? "h-8 w-[130px] text-xs" : "h-9 w-[160px] text-xs"}>
-          <SelectValue placeholder="Department" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="__pick__">Choose…</SelectItem>
-          {departments.map((d) => (
-            <SelectItem key={d} value={d}>
-              {d}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <Button type="button" size="sm" variant="secondary" className="text-xs" disabled={!value || busy} onClick={run}>
-        {busy ? "…" : "Retag"}
-      </Button>
+    <div className={compact ? "flex min-w-0 flex-col gap-1" : "flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2"}>
+      <div
+        className={
+          compact
+            ? "flex shrink-0 flex-nowrap items-center gap-1.5"
+            : "flex flex-wrap items-center gap-2 sm:flex-nowrap"
+        }
+      >
+        <Select value={value || "__pick__"} onValueChange={(v) => setValue(v === "__pick__" ? "" : v)}>
+          <SelectTrigger className={compact ? "h-8 w-[118px] shrink-0 text-xs" : "h-9 w-[160px] text-xs"}>
+            <SelectValue placeholder="Department" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__pick__">Choose…</SelectItem>
+            {departments.map((d) => (
+              <SelectItem key={d} value={d}>
+                {d}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          className={cn("shrink-0 text-xs", compact && "h-8 px-2.5")}
+          disabled={!value || busy}
+          onClick={run}
+        >
+          {busy ? "…" : "Retag"}
+        </Button>
+      </div>
       {err && <span className="text-xs text-red-600 dark:text-red-400">{err}</span>}
       {!err && info && <span className="text-xs text-emerald-600 dark:text-emerald-400">{info}</span>}
     </div>

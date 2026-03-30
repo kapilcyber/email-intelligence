@@ -8,7 +8,7 @@ import type { ConversationItem, EmailDetail } from "@/lib/types";
 import { stripQuotedContentForThread } from "@/lib/email-body-strip-quotes";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Mail, MessageSquare, Calendar, ChevronRight, Download } from "lucide-react";
+import { Mail, Calendar, ChevronRight, Download } from "lucide-react";
 
 const PAGE_SIZE = 25;
 
@@ -246,16 +246,10 @@ export function ThreadsView({ basePath }: ThreadsViewProps) {
 
   return (
     <div className="flex h-[calc(100vh-4rem)] flex-col md:flex-row">
-      <aside className="flex w-full flex-col border-r border-neutral-200 bg-neutral-50/80 dark:border-neutral-700 dark:bg-neutral-900/30 md:w-96">
-        <div className="border-b border-neutral-200 p-4 dark:border-neutral-700">
+      <aside className="glass-surface-strong flex w-full flex-col md:w-96">
+        <div className="border-b border-border p-4">
           <div data-tour-id="threads-sidebar">
-            <div className="flex items-center gap-2">
-              <MessageSquare className="h-5 w-5 text-neutral-600 dark:text-neutral-400" />
-              <h1 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">Threads</h1>
-            </div>
-            <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-              Real reply chains only. Sync from History (Inbox + Sent) so your sent replies appear here.
-            </p>
+            <h1 className="text-2xl font-bold tracking-tight text-neutral-900 dark:text-neutral-100">Threads</h1>
             <div className="mt-3">
               <input
                 type="search"
@@ -265,16 +259,12 @@ export function ThreadsView({ basePath }: ThreadsViewProps) {
                   setSearch(e.target.value);
                   setPage(1);
                 }}
-                className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm placeholder:text-neutral-400 focus:border-neutral-400 focus:outline-none focus:ring-1 focus:ring-neutral-400 dark:border-neutral-600 dark:bg-neutral-800 dark:placeholder:text-neutral-500"
+                className="w-full rounded-lg border border-border bg-panel/80 px-3 py-2 text-sm placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
               />
             </div>
           </div>
-          <div data-tour-id="threads-export" className="mt-4 rounded-lg border border-neutral-200 bg-white p-3 dark:border-neutral-600 dark:bg-neutral-800/80">
+          <div data-tour-id="threads-export" className="mt-4 rounded-lg border border-border bg-panel/75 p-3">
             <p className="text-xs font-semibold text-neutral-800 dark:text-neutral-200">Download reply report (CSV)</p>
-            <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-              One row per reply in the range: response time vs previous message, thread / previous / reply subjects, From,
-              To, Cc, Bcc, previous sender. UTF-8 (opens in Excel).
-            </p>
             <div className="mt-2 flex flex-col gap-2">
               <div className="flex flex-wrap items-center gap-2">
                 <label className="flex flex-col gap-0.5 text-[10px] font-medium uppercase tracking-wide text-neutral-500">
@@ -410,10 +400,9 @@ export function ThreadsView({ basePath }: ThreadsViewProps) {
         )}
       </aside>
 
-      <main data-tour-id="threads-detail" className="flex flex-1 flex-col overflow-hidden bg-white dark:bg-neutral-950">
+      <main data-tour-id="threads-detail" className="glass-surface flex flex-1 flex-col overflow-hidden">
         {!selectedId && (
           <div className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center">
-            <MessageSquare className="h-12 w-12 text-neutral-300 dark:text-neutral-600" />
             <p className="text-sm font-medium text-neutral-600 dark:text-neutral-400">Select a conversation</p>
             <p className="text-xs text-neutral-500 dark:text-neutral-500">
               Choose a thread from the list to see the full back-and-forth.
@@ -423,18 +412,9 @@ export function ThreadsView({ basePath }: ThreadsViewProps) {
         {selectedId && (
           <>
             <div className="border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
-              <div className="flex items-center gap-2">
-                <Link href={basePath}>
-                  <Button variant="ghost" size="sm" className="gap-1">
-                    <ArrowLeft className="h-4 w-4" />
-                    Back
-                  </Button>
-                </Link>
-                <span className="text-sm text-neutral-500 dark:text-neutral-400">/</span>
-                <h2 className="truncate text-sm font-medium text-neutral-900 dark:text-neutral-100">
-                  {selectedConversation?.subject ?? "Thread"}
-                </h2>
-              </div>
+              <h2 className="truncate text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                {selectedConversation?.subject ?? "Thread"}
+              </h2>
             </div>
             <div className="flex-1 overflow-y-auto p-4">
               {threadLoading && (
@@ -448,7 +428,7 @@ export function ThreadsView({ basePath }: ThreadsViewProps) {
                 <p className="text-sm text-neutral-500">No messages in this thread.</p>
               )}
               {!threadLoading && threadEmails && threadEmails.length > 0 && (
-                <div className="mx-auto max-w-3xl space-y-3">
+                <div className="space-y-3">
                   <p className="text-xs font-medium uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
                     Conversation (reply chain)
                   </p>

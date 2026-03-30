@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { BookOpen, ShieldCheck, Users, UserCircle } from "lucide-react";
+import { ShieldCheck, Users, UserCircle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -154,12 +154,9 @@ export default function HowToUsePage() {
   };
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 p-6">
+    <div className="space-y-6">
       <div>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold text-neutral-900 dark:text-neutral-50">
-          <BookOpen className="h-7 w-7 shrink-0 opacity-80" />
-          How to use
-        </h1>
+        <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-50">How to use</h1>
         <div className="mt-3 flex flex-wrap gap-2">
           <Button type="button" onClick={startTour}>
             Replay guided tour

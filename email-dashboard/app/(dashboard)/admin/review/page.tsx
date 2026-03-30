@@ -7,7 +7,7 @@ import type { ReviewEscalationUser, ReviewProjectTrackerUser } from "@/lib/types
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ClipboardCheck, AlertCircle, CalendarRange } from "lucide-react";
+import { AlertCircle, CalendarRange } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type ReviewParam = "escalation" | "projectTracker";
@@ -58,12 +58,9 @@ export default function AdminReviewPage() {
   const activeMeta = PARAMS.find((p) => p.id === active) ?? PARAMS[0];
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 p-6">
+    <div className="space-y-6">
       <div>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold text-neutral-900 dark:text-neutral-50">
-          <ClipboardCheck className="h-7 w-7 shrink-0 opacity-80" />
-          Review
-        </h1>
+        <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-50">Review</h1>
       </div>
 
       <Card>

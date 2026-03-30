@@ -3,13 +3,11 @@
 import { useEffect, useState, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { useParams } from "next/navigation";
-import Link from "next/link";
 import { getApi } from "@/lib/api/client";
 import type { TeamOut, TeamStatusOut, UserOut } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Mail, AlertCircle, Users } from "lucide-react";
+import { Mail, AlertCircle, Users } from "lucide-react";
 
 export default function AdminTeamDetailPage() {
   const params = useParams();
@@ -46,9 +44,6 @@ export default function AdminTeamDetailPage() {
   if (error) {
     return (
       <div className="space-y-6">
-        <Link href="/admin/teams" className="inline-flex items-center gap-1 text-sm text-neutral-600 hover:underline dark:text-neutral-400">
-          <ArrowLeft className="h-4 w-4" /> Back to teams
-        </Link>
         <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400">
           {error}
         </div>
@@ -58,17 +53,12 @@ export default function AdminTeamDetailPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <Link href="/admin/teams" className="inline-flex items-center gap-1 text-sm text-neutral-600 hover:underline dark:text-neutral-400">
-          <ArrowLeft className="h-4 w-4" /> Back to teams
-        </Link>
-      </div>
       {loading ? (
         <Skeleton className="h-48 w-full rounded-2xl" />
       ) : team ? (
         <>
           <div>
-            <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-50">{team.name}</h1>
+            <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-50">{team.name}</h1>
             <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">{team.memberCount} members</p>
           </div>
           {teamStatus && (

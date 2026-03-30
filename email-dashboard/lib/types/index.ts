@@ -540,15 +540,17 @@ export interface RecentSignInOut {
   createdAt: string | null;
 }
 
-/** Single row from persistent login timeline (past + future visits). */
+/** One persisted session: created at login, closed at logout. */
 export interface LoginEventOut {
   id: string;
   userId: string;
   email: string;
   displayName: string | null;
-  occurredAt: string;
-  /** oauth = Microsoft sign-in; session = in-app activity (throttled). */
-  source: string;
+  loginAt: string;
+  logoutAt: string | null;
+  isLoggedIn: boolean;
+  /** oauth = Microsoft sign-in; session = opened from /api/me without oauth. */
+  loginSource: string;
 }
 
 export interface LoginSyncStatusOut {
@@ -556,6 +558,7 @@ export interface LoginSyncStatusOut {
   usersWithLastLoginAt: number;
   usersMissingLastLoginAt: number;
   totalLoginEvents: number;
+  activeSessions: number;
   oauthEvents24h: number;
   sessionEvents24h: number;
   lastOauthEventAt: string | null;

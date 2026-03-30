@@ -158,27 +158,83 @@ def ensure_user_activity_columns() -> None:
             conn.execute(text(step.strip()))
 
 
-_USER_LOGIN_EVENTS_DDL_STEPS = [
-    """
+_USER_LOGIN_EVENTS_CREATE_SQL = """
 CREATE TABLE IF NOT EXISTS user_login_events (
     id VARCHAR(36) PRIMARY KEY,
     user_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     email VARCHAR(512) NOT NULL,
-    occurred_at TIMESTAMP WITH TIME ZONE NOT NULL,
-    source VARCHAR(32) NOT NULL
+    login_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    logout_at TIMESTAMP WITH TIME ZONE NULL,
+    is_logged_in BOOLEAN NOT NULL DEFAULT true,
+    login_source VARCHAR(32) NOT NULL
 )
-""".strip(),
-    "CREATE INDEX IF NOT EXISTS ix_user_login_events_occurred_at ON user_login_events (occurred_at DESC)",
-    "CREATE INDEX IF NOT EXISTS ix_user_login_events_user_id ON user_login_events (user_id)",
-    "CREATE INDEX IF NOT EXISTS ix_user_login_events_email ON user_login_events (email)",
-    "CREATE INDEX IF NOT EXISTS ix_user_login_events_user_occurred ON user_login_events (user_id, occurred_at DESC)",
-]
+""".strip()
+
+
+def migrate_user_login_events_session_schema() -> None:
+    """Drop legacy append-only event columns (after truncating), ensure session columns + indexes."""
+    with engine.begin() as conn:
+        exists = conn.execute(
+            text(
+                "SELECT EXISTS (SELECT FROM information_schema.tables "
+                "WHERE table_schema = 'public' AND table_name = 'user_login_events')"
+            )
+        ).scalar()
+        if not exists:
+            return
+
+        legacy = conn.execute(
+            text(
+                "SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' "
+                "AND table_name = 'user_login_events' AND column_name = 'occurred_at' LIMIT 1"
+            )
+        ).fetchone()
+
+        if legacy:
+            conn.execute(text("TRUNCATE TABLE user_login_events"))
+            conn.execute(text("DROP INDEX IF EXISTS ix_user_login_events_occurred_at"))
+            conn.execute(text("DROP INDEX IF EXISTS ix_user_login_events_last_logout_at"))
+            conn.execute(text("DROP INDEX IF EXISTS ix_user_login_events_user_occurred"))
+            for col in ("occurred_at", "source", "last_logout_at"):
+                conn.execute(text(f"ALTER TABLE user_login_events DROP COLUMN IF EXISTS {col}"))
+
+        conn.execute(text("ALTER TABLE user_login_events ADD COLUMN IF NOT EXISTS login_at TIMESTAMP WITH TIME ZONE"))
+        conn.execute(text("ALTER TABLE user_login_events ADD COLUMN IF NOT EXISTS logout_at TIMESTAMP WITH TIME ZONE NULL"))
+        conn.execute(text("ALTER TABLE user_login_events ADD COLUMN IF NOT EXISTS is_logged_in BOOLEAN"))
+        conn.execute(text("ALTER TABLE user_login_events ADD COLUMN IF NOT EXISTS login_source VARCHAR(32)"))
+
+        conn.execute(
+            text("UPDATE user_login_events SET login_at = NOW() AT TIME ZONE 'utc' WHERE login_at IS NULL")
+        )
+        conn.execute(text("UPDATE user_login_events SET is_logged_in = true WHERE is_logged_in IS NULL"))
+        conn.execute(text("UPDATE user_login_events SET login_source = 'session' WHERE login_source IS NULL"))
+
+        conn.execute(text("ALTER TABLE user_login_events ALTER COLUMN login_at SET NOT NULL"))
+        conn.execute(text("ALTER TABLE user_login_events ALTER COLUMN is_logged_in SET NOT NULL"))
+        conn.execute(text("ALTER TABLE user_login_events ALTER COLUMN login_source SET NOT NULL"))
+        conn.execute(text("ALTER TABLE user_login_events ALTER COLUMN is_logged_in SET DEFAULT true"))
+
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_user_login_events_user_id ON user_login_events (user_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_user_login_events_email ON user_login_events (email)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_user_login_events_login_at ON user_login_events (login_at DESC)"))
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_user_login_events_user_login ON user_login_events (user_id, login_at DESC)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_user_login_events_active_user ON user_login_events (user_id) WHERE is_logged_in = true"
+            )
+        )
+
+        conn.execute(text("ALTER TABLE users DROP COLUMN IF EXISTS last_logout_at"))
 
 
 def ensure_user_login_events_table() -> None:
     with engine.begin() as conn:
-        for step in _USER_LOGIN_EVENTS_DDL_STEPS:
-            conn.execute(text(step.strip()))
+        conn.execute(text(_USER_LOGIN_EVENTS_CREATE_SQL))
+    migrate_user_login_events_session_schema()
 
 
 _RETAG_APPROVALS_DDL_STEPS = [
@@ -212,32 +268,6 @@ def ensure_retag_approval_requests_table() -> None:
             conn.execute(text(step.strip()))
 
 
-def backfill_user_login_events_from_users() -> None:
-    """One synthetic event per existing user so history lists aren't empty before new traffic."""
-    from app.db.models import User, UserLoginEvent
-
-    db = SessionLocal()
-    try:
-        for u in db.query(User).order_by(User.email).all():
-            has_any = db.query(UserLoginEvent.id).filter(UserLoginEvent.user_id == u.id).limit(1).first()
-            if has_any:
-                continue
-            ts = u.last_login_at or u.created_at
-            if not ts:
-                continue
-            db.add(
-                UserLoginEvent(
-                    user_id=u.id,
-                    email=u.email,
-                    occurred_at=ts,
-                    source="session",
-                )
-            )
-        db.commit()
-    finally:
-        db.close()
-
-
 def init_db():
     """Verify database connectivity; ensure optional tables that some envs skip via Alembic."""
     with engine.connect() as conn:
@@ -250,4 +280,3 @@ def init_db():
     ensure_user_activity_columns()
     ensure_user_login_events_table()
     ensure_retag_approval_requests_table()
-    backfill_user_login_events_from_users()

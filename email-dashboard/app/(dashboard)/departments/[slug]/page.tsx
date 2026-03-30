@@ -23,15 +23,7 @@ export default function DepartmentSlugPage() {
     <EmailsView
       categoryFilter={categoryFilter}
       title="Departments"
-      description={
-        categoryFilter ? (
-          <>
-            Mailbox emails classified as <strong>{categoryFilter}</strong>.
-          </>
-        ) : (
-          null
-        )
-      }
+      suppressSubtitle
     />
   );
 }

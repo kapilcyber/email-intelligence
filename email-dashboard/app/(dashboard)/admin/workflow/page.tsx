@@ -144,7 +144,7 @@ export default function AdminWorkflowPage() {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-50">
+          <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-50">
             Workflow
           </h1>
         </div>

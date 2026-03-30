@@ -142,18 +142,21 @@ class User(Base):
 
 
 class UserLoginEvent(Base):
-    """Append-only platform access events (OAuth sign-in + throttled in-app session pings)."""
+    """One row per browser/app session: opened on login, closed on logout."""
+
     __tablename__ = "user_login_events"
 
     id = Column(String(36), primary_key=True, default=uuid_gen)
     user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     email = Column(String(512), nullable=False, index=True)
-    occurred_at = Column(DateTime(timezone=True), nullable=False, index=True)
-    source = Column(String(32), nullable=False, index=True)  # oauth | session
+    login_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    logout_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    is_logged_in = Column(Boolean, nullable=False, default=True, index=True)
+    login_source = Column(String(32), nullable=False, index=True)  # oauth | session
 
     user = relationship("User", back_populates="login_events", foreign_keys=[user_id])
 
-    __table_args__ = (Index("ix_user_login_events_user_occurred", "user_id", "occurred_at"),)
+    __table_args__ = (Index("ix_user_login_events_user_login", "user_id", "login_at"),)
 
 
 class RetagApprovalRequest(Base):

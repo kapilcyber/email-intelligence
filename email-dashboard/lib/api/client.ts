@@ -364,6 +364,7 @@ function createApi(userEmail: string | null, userDisplayName?: string | null) {
     },
     // Phase 4 — Admin (requires admin role)
     getMe: () => withUser<MeResponse>("/api/me"),
+    recordLogout: () => withUser<{ ok: boolean }>("/api/me/logout", { method: "POST" }),
     dismissRolePromotion: () =>
       withUser<{ ok: boolean }>("/api/me/dismiss-role-promotion", { method: "POST" }),
     getTeams: () => withUser<TeamOut[]>("/api/admin/teams"),

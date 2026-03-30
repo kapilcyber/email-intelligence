@@ -166,8 +166,11 @@ class LoginEventOut(BaseModel):
     userId: str
     email: str
     displayName: str | None = None
-    occurredAt: datetime
-    source: str
+    loginAt: datetime
+    logoutAt: datetime | None = None
+    isLoggedIn: bool
+    # oauth = Microsoft sign-in callback; session = opened via /api/me without oauth header.
+    loginSource: str
 
     model_config = {"populate_by_name": True}
 
@@ -177,6 +180,7 @@ class LoginSyncStatusOut(BaseModel):
     usersWithLastLoginAt: int
     usersMissingLastLoginAt: int
     totalLoginEvents: int
+    activeSessions: int
     oauthEvents24h: int
     sessionEvents24h: int
     lastOauthEventAt: datetime | None = None
@@ -434,12 +438,12 @@ def list_login_events(
     db: Session = Depends(get_db),
     limit: int = Query(500, ge=1, le=2000),
 ):
-    """Chronological platform access (OAuth sign-ins + throttled in-app activity)."""
+    """Session rows (login → logout); newest first."""
     try:
         rows = (
             db.query(UserLoginEvent, User)
             .join(User, User.id == UserLoginEvent.user_id)
-            .order_by(desc(UserLoginEvent.occurred_at))
+            .order_by(desc(UserLoginEvent.login_at))
             .limit(limit)
             .all()
         )
@@ -451,8 +455,10 @@ def list_login_events(
             userId=e.user_id,
             email=e.email,
             displayName=u.display_name,
-            occurredAt=e.occurred_at,
-            source=e.source,
+            loginAt=e.login_at,
+            logoutAt=e.logout_at,
+            isLoggedIn=e.is_logged_in,
+            loginSource=e.login_source,
         )
         for e, u in rows
     ]
@@ -467,16 +473,17 @@ def login_sync_status(db: Session = Depends(get_db)):
     users_with_last_login = db.query(User).filter(User.last_login_at.isnot(None)).count()
     users_missing_last_login = max(0, total_users - users_with_last_login)
     total_events = db.query(UserLoginEvent).count()
+    active_sessions = db.query(UserLoginEvent).filter(UserLoginEvent.is_logged_in.is_(True)).count()
     oauth_24h = db.query(UserLoginEvent).filter(
-        UserLoginEvent.source == "oauth",
-        UserLoginEvent.occurred_at >= cutoff,
+        UserLoginEvent.login_source == "oauth",
+        UserLoginEvent.login_at >= cutoff,
     ).count()
     session_24h = db.query(UserLoginEvent).filter(
-        UserLoginEvent.source == "session",
-        UserLoginEvent.occurred_at >= cutoff,
+        UserLoginEvent.login_source == "session",
+        UserLoginEvent.login_at >= cutoff,
     ).count()
-    last_oauth = db.query(func.max(UserLoginEvent.occurred_at)).filter(UserLoginEvent.source == "oauth").scalar()
-    last_any = db.query(func.max(UserLoginEvent.occurred_at)).scalar()
+    last_oauth = db.query(func.max(UserLoginEvent.login_at)).filter(UserLoginEvent.login_source == "oauth").scalar()
+    last_any = db.query(func.max(UserLoginEvent.login_at)).scalar()
     health = "healthy"
     if total_users > 0 and oauth_24h == 0:
         health = "warning"
@@ -487,6 +494,7 @@ def login_sync_status(db: Session = Depends(get_db)):
         usersWithLastLoginAt=users_with_last_login,
         usersMissingLastLoginAt=users_missing_last_login,
         totalLoginEvents=total_events,
+        activeSessions=active_sessions,
         oauthEvents24h=oauth_24h,
         sessionEvents24h=session_24h,
         lastOauthEventAt=last_oauth,

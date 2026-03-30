@@ -41,13 +41,16 @@ import {
   ResponsiveContainer,
   Cell,
   ComposedChart,
+  LineChart,
   Line,
   Legend,
   AreaChart,
   Area,
-  RadialBarChart,
-  RadialBar,
-  Legend as RechartsLegend,
+  RadarChart,
+  Radar,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis,
 } from "recharts";
 
 type ChartPeriod = "daily" | "weekly" | "monthly" | "yearly";
@@ -207,13 +210,12 @@ function DashboardAiChartsEmpty({
           </Button>
           {classifyMessage && (
             <div
-              className={`mt-3 rounded-lg border px-3 py-2 text-sm ${
-                classifyMessage.startsWith("Classification started")
-                  ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200"
-                  : classifyMessage.startsWith("Failed")
-                    ? "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200"
-                    : "border-neutral-200 bg-neutral-100 text-neutral-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
-              }`}
+              className={`mt-3 rounded-lg border px-3 py-2 text-sm ${classifyMessage.startsWith("Classification started")
+                ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200"
+                : classifyMessage.startsWith("Failed")
+                  ? "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200"
+                  : "border-neutral-200 bg-neutral-100 text-neutral-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
+                }`}
               role="status"
             >
               {classifyMessage}
@@ -242,11 +244,8 @@ function DashboardAiCharts({
   const [leadCountsByUser, setLeadCountsByUser] = useState<UserLeadCountOut[] | null>(null);
 
   useEffect(() => {
-    if (!isAdmin) {
-      setEscalationByUser(null);
-      setLeadCountsByUser(null);
-      return;
-    }
+    setEscalationByUser(null);
+    setLeadCountsByUser(null);
     api
       .getEscalationCountsByUser()
       .then((rows) => setEscalationByUser(rows ?? []))
@@ -325,30 +324,15 @@ function DashboardAiCharts({
     return [...ordered, ...rest];
   }, [metrics?.priorityCounts]);
 
-  const streamPriorityData = useMemo(() => {
-    const counts = metrics?.priorityCounts ?? {};
-    const point: Record<string, number> = { x: 1 };
-    let hasAny = false;
-    for (const p of PRIORITY_ORDER) {
-      point[p] = counts[p] ?? 0;
-      if (point[p] > 0) hasAny = true;
-    }
-    for (const k of Object.keys(counts ?? {})) {
-      if (!PRIORITY_ORDER.includes(k)) {
-        point[k] = counts[k] ?? 0;
-        if (point[k] > 0) hasAny = true;
-      }
-    }
-    if (!hasAny) return [];
-    const zero: Record<string, number> = { x: 0 };
-    const end: Record<string, number> = { x: 2 };
-    for (const key of Object.keys(point)) {
-      if (key === "x") continue;
-      zero[key] = 0;
-      end[key] = 0;
-    }
-    return [zero, point, end];
-  }, [metrics?.priorityCounts]);
+  const prioritySeriesData = useMemo(() => {
+    const byName = new Map(priorityData.map((p) => [p.name, p.count]));
+    const ordered = PRIORITY_ORDER.map((name) => ({
+      name,
+      count: byName.get(name) ?? 0,
+    }));
+    const rest = priorityData.filter((p) => !PRIORITY_ORDER.includes(p.name));
+    return [...ordered, ...rest];
+  }, [priorityData]);
 
   const hasAny = categoryData.length > 0 || priorityData.length > 0;
 
@@ -375,9 +359,9 @@ function DashboardAiCharts({
         AI classification overview
       </h2>
       <div className="flex flex-col gap-6">
-        <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900/50">
+        <div className="rounded-3xl border border-sky-100 bg-gradient-to-br from-white via-sky-50 to-cyan-50 p-4 shadow-md shadow-sky-100/60 dark:border-neutral-800 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 dark:shadow-none">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <span className="rounded-full bg-neutral-100 px-3 py-1 text-xs text-neutral-600 dark:bg-neutral-700 dark:text-neutral-300">
+            <span className="rounded-full bg-white/80 px-3 py-1 text-xs text-neutral-600 ring-1 ring-sky-200 dark:bg-neutral-800 dark:text-neutral-300 dark:ring-neutral-700">
               By category
             </span>
             <h3 className="text-xs font-medium uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
@@ -421,6 +405,8 @@ function DashboardAiCharts({
                   name="Email count"
                   fill="#22d3ee"
                   radius={[2, 2, 0, 0]}
+                  isAnimationActive
+                  animationDuration={900}
                 />
                 <Line
                   yAxisId="right"
@@ -430,6 +416,8 @@ function DashboardAiCharts({
                   stroke="#1e3a8a"
                   strokeWidth={2}
                   dot={{ fill: "#1e3a8a", r: 3 }}
+                  isAnimationActive
+                  animationDuration={1100}
                 />
               </ComposedChart>
             </ResponsiveContainer>
@@ -438,42 +426,51 @@ function DashboardAiCharts({
             Showing {categoryKpiData.length} categor{categoryKpiData.length === 1 ? "y" : "ies"}.
           </p>
         </div>
-        <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900/50">
+        <div className="rounded-3xl border border-violet-100 bg-gradient-to-br from-white via-violet-50 to-fuchsia-50 p-4 shadow-md shadow-violet-100/60 dark:border-neutral-800 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 dark:shadow-none">
           <h3 className="mb-3 text-xs font-medium uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
             Emails by priority
           </h3>
-          {streamPriorityData.length > 0 ? (
+          {priorityData.length > 0 ? (
             <div className="h-80">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={streamPriorityData} margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
+                <AreaChart data={prioritySeriesData} margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
                   <defs>
-                    {PRIORITY_ORDER.map((_, i) => (
-                      <linearGradient key={i} id={`priority-fill-${i}`} x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor={BAR_COLORS[i % BAR_COLORS.length]} stopOpacity={0.8} />
-                        <stop offset="100%" stopColor={BAR_COLORS[i % BAR_COLORS.length]} stopOpacity={0.2} />
-                      </linearGradient>
-                    ))}
+                    <linearGradient id="priority-area-fill" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#8b5cf6" stopOpacity={0.45} />
+                      <stop offset="100%" stopColor="#8b5cf6" stopOpacity={0.08} />
+                    </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-neutral-200 dark:stroke-neutral-700" />
-                  <XAxis dataKey="x" hide />
-                  <YAxis type="number" tick={{ fontSize: 10 }} className="text-xs" />
+                  <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
                   <Tooltip
                     contentStyle={{ borderRadius: "8px" }}
-                    formatter={(value: number, name: string) => [value, name]}
-                    labelFormatter={() => "Emails"}
+                    formatter={(value: number, _name: string, props: { payload?: { name?: string } }) => [
+                      value,
+                      props.payload?.name ?? "Priority",
+                    ]}
                   />
                   <Legend />
-                  {PRIORITY_ORDER.map((name, i) => (
-                    <Area
-                      key={name}
-                      type="monotone"
-                      dataKey={name}
-                      stackId="1"
-                      stroke={BAR_COLORS[i % BAR_COLORS.length]}
-                      fill={`url(#priority-fill-${i})`}
-                      strokeWidth={1}
-                    />
-                  ))}
+                  <Area
+                    type="monotone"
+                    dataKey="count"
+                    name="Priority count"
+                    stroke="#7c3aed"
+                    strokeWidth={3}
+                    fill="url(#priority-area-fill)"
+                    isAnimationActive
+                    animationDuration={900}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="count"
+                    name="Priority trend"
+                    stroke="#4c1d95"
+                    strokeWidth={2}
+                    dot={{ r: 4, fill: "#4c1d95" }}
+                    isAnimationActive
+                    animationDuration={1100}
+                  />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -483,14 +480,13 @@ function DashboardAiCharts({
             </p>
           )}
         </div>
-        {isAdmin && (
-          <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900/50">
+        <div className="rounded-3xl border border-orange-100 bg-gradient-to-br from-white via-orange-50 to-amber-50 p-4 shadow-md shadow-orange-100/60 dark:border-neutral-800 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 dark:shadow-none">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-xs font-medium uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
                 Escalations by team member
               </h3>
               <Link
-                href="/admin/escalations"
+                href={isAdmin ? "/admin/escalations" : "/escalations"}
                 className="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400"
               >
                 Open Escalations →
@@ -505,7 +501,13 @@ function DashboardAiCharts({
             ) : (
               <div className="h-80">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={memberEscalationChartData} margin={{ top: 8, right: 8, left: 8, bottom: 56 }}>
+                  <LineChart data={memberEscalationChartData} margin={{ top: 8, right: 8, left: 8, bottom: 56 }}>
+                    <defs>
+                      <linearGradient id="esc-line-fill" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#f97316" stopOpacity={0.35} />
+                        <stop offset="100%" stopColor="#f97316" stopOpacity={0.05} />
+                      </linearGradient>
+                    </defs>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-neutral-200 dark:stroke-neutral-700" />
                     <XAxis
                       dataKey="name"
@@ -529,25 +531,38 @@ function DashboardAiCharts({
                         item.payload?.email ? `${item.payload.email}` : "Escalations",
                       ]}
                     />
-                    <Bar dataKey="count" radius={[4, 4, 0, 0]} name="Escalations">
-                      {memberEscalationChartData.map((_, i) => (
-                        <Cell key={i} fill={BAR_COLORS[i % BAR_COLORS.length]} />
-                      ))}
-                    </Bar>
-                  </BarChart>
+                    <Area
+                      type="monotone"
+                      dataKey="count"
+                      name="Escalations area"
+                      stroke="none"
+                      fill="url(#esc-line-fill)"
+                      isAnimationActive
+                      animationDuration={900}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="count"
+                      name="Escalations"
+                      stroke="#ea580c"
+                      strokeWidth={3}
+                      dot={{ r: 4, fill: "#ea580c" }}
+                      activeDot={{ r: 6 }}
+                      isAnimationActive
+                      animationDuration={1100}
+                    />
+                  </LineChart>
                 </ResponsiveContainer>
               </div>
             )}
           </div>
-        )}
-        {isAdmin && (
-          <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm dark:border-neutral-800 dark:bg-neutral-900/50">
+        <div className="rounded-3xl border border-indigo-100 bg-gradient-to-br from-white via-indigo-50 to-cyan-50 p-4 shadow-md shadow-indigo-100/60 dark:border-neutral-800 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 dark:shadow-none">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-xs font-medium uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
                 Leads by team member (Nightingale)
               </h3>
               <Link
-                href="/admin/leads"
+                href={isAdmin ? "/admin/leads" : "/leads"}
                 className="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400"
               >
                 Open Leads →
@@ -562,23 +577,10 @@ function DashboardAiCharts({
             ) : (
               <div className="h-80">
                 <ResponsiveContainer width="100%" height="100%">
-                  <RadialBarChart
-                    cx="50%"
-                    cy="50%"
-                    innerRadius="20%"
-                    outerRadius="90%"
-                    data={memberLeadChartData}
-                    startAngle={180}
-                    endAngle={-180}
-                  >
-                    <RadialBar
-                      background
-                      dataKey="value"
-                      nameKey="name"
-                      minAngle={5}
-                      cornerRadius={4}
-                      label={{ position: "insideStart", fontSize: 10 }}
-                    />
+                  <RadarChart data={memberLeadChartData} outerRadius="72%">
+                    <PolarGrid stroke="#dbeafe" />
+                    <PolarAngleAxis dataKey="name" tick={{ fontSize: 10 }} />
+                    <PolarRadiusAxis allowDecimals={false} tick={{ fontSize: 10 }} />
                     <Tooltip
                       contentStyle={{ borderRadius: "8px" }}
                       formatter={(_value: number, _n: string, item: { payload?: { count?: number; email?: string } }) => [
@@ -586,13 +588,20 @@ function DashboardAiCharts({
                         item.payload?.email ? `${item.payload.email}` : "Leads",
                       ]}
                     />
-                    <RechartsLegend />
-                  </RadialBarChart>
+                    <Radar
+                      name="Leads"
+                      dataKey="count"
+                      stroke="#4f46e5"
+                      fill="#6366f1"
+                      fillOpacity={0.45}
+                      isAnimationActive
+                      animationDuration={1100}
+                    />
+                  </RadarChart>
                 </ResponsiveContainer>
               </div>
             )}
           </div>
-        )}
       </div>
     </section>
   );
@@ -1042,7 +1051,11 @@ export default function DashboardPage() {
   }, [dashboardTourOpen, dashboardTourStep, currentTour]);
 
   return (
-    <div className="space-y-6">
+    <div className="flex w-full min-w-0 flex-col gap-6 md:gap-8">
+      <header className="">
+        <h1 className="text-2xl font-bold tracking-tight text-neutral-900 dark:text-neutral-100">Dashboard</h1>
+      </header>
+
       {(metricsError || emailsError) && (
         <p className="text-xs text-amber-600 dark:text-amber-400">
           {[metricsError, emailsError].filter(Boolean).join(" • ")} — Database or backend may be unavailable.
@@ -1153,12 +1166,12 @@ export default function DashboardPage() {
       <section
         ref={syncActionsRef}
         className={cn(
-          "-mx-4 flex w-[calc(100%+2rem)] min-w-0 flex-col gap-3 md:-mx-6 md:w-[calc(100%+3rem)]",
+          "flex min-w-0 flex-col gap-4",
           isActiveTourSection(0) && "rounded-xl ring-2 ring-indigo-400/70",
           isBlurredTourSection(0) && "opacity-55"
         )}
       >
-        <div className="flex w-full min-w-0 flex-wrap items-stretch gap-3 sm:gap-4 xl:flex-nowrap xl:gap-4">
+        <div className="flex w-full min-w-0 flex-wrap items-stretch gap-3 sm:gap-4 xl:flex-nowrap xl:gap-5">
           {actionCards.map(({ label, icon: Icon, onClick }) => {
             const title =
               label === "Sync for today"
@@ -1176,17 +1189,17 @@ export default function DashboardPage() {
                 type="button"
                 onClick={onClick}
                 disabled={disabled}
-                className="flex min-h-[118px] min-w-[140px] flex-1 basis-0 flex-col items-center justify-center gap-3 rounded-xl border border-neutral-200 bg-white px-4 py-5 text-center shadow-sm transition hover:border-neutral-300 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900/50 dark:hover:border-neutral-600"
+                className="flex min-h-[118px] min-w-[140px] flex-1 basis-0 flex-col items-center justify-center gap-3 rounded-2xl border border-white/70 bg-gradient-to-br from-white to-[#eef5ff] px-4 py-5 text-center shadow-md shadow-sky-100/60 transition duration-300 hover:-translate-y-0.5 hover:border-sky-200 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900/70 dark:from-neutral-900 dark:to-neutral-900 dark:hover:border-neutral-600 dark:hover:shadow-none"
               >
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400">
-                  <Icon className="h-6 w-6" />
+                <div className="flex h-20 w-20 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-sky-500 text-white shadow-sm dark:from-indigo-600 dark:to-sky-600">
+                  <Icon className="h-10 w-10" />
                 </div>
                 <span className="text-sm font-medium leading-snug text-neutral-800 dark:text-neutral-200">{title}</span>
               </button>
             );
           })}
 
-          <div className="flex min-h-[118px] min-w-[min(100%,260px)] flex-[1.35] basis-0 flex-col justify-center gap-3 rounded-xl border border-neutral-200 bg-white px-4 py-5 shadow-sm dark:border-neutral-700 dark:bg-neutral-900/50">
+          <div className="flex min-h-[118px] min-w-[min(100%,260px)] flex-[1.35] basis-0 flex-col justify-center gap-3 rounded-2xl border border-white/70 bg-gradient-to-br from-white to-[#edf8ff] px-4 py-5 shadow-md shadow-cyan-100/60 dark:border-neutral-700 dark:bg-neutral-900/70 dark:from-neutral-900 dark:to-neutral-900 dark:shadow-none">
             <div className="flex items-center gap-3">
               <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-sky-100 text-sky-600 dark:bg-sky-900/30 dark:text-sky-400">
                 <Calendar className="h-6 w-6" />
@@ -1194,29 +1207,48 @@ export default function DashboardPage() {
               <span className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">Sync mails by date range</span>
             </div>
             <div className="flex min-w-0 flex-wrap items-center gap-2 sm:flex-nowrap">
-              <input
-                type="date"
-                value={syncFromDate}
-                onChange={(e) => setSyncFromDate(e.target.value)}
-                className="h-10 min-w-0 flex-1 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100"
-                aria-label="Mail sync from date"
-              />
-              <input
-                type="date"
-                value={syncToDate}
-                onChange={(e) => setSyncToDate(e.target.value)}
-                className="h-10 min-w-0 flex-1 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100"
-                aria-label="Mail sync to date"
-              />
+              <div className="relative min-w-0 flex-1">
+                {!syncFromDate && (
+                  <span className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-sm text-neutral-500 dark:text-neutral-400">
+                    From
+                  </span>
+                )}
+                <input
+                  type="date"
+                  value={syncFromDate}
+                  onChange={(e) => setSyncFromDate(e.target.value)}
+                  className={cn(
+                    "h-10 min-w-0 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100",
+                    !syncFromDate && "text-transparent"
+                  )}
+                  aria-label="Mail sync from date"
+                />
+              </div>
+              <div className="relative min-w-0 flex-1">
+                {!syncToDate && (
+                  <span className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-sm text-neutral-500 dark:text-neutral-400">
+                    To
+                  </span>
+                )}
+                <input
+                  type="date"
+                  value={syncToDate}
+                  onChange={(e) => setSyncToDate(e.target.value)}
+                  className={cn(
+                    "h-10 min-w-0 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100",
+                    !syncToDate && "text-transparent"
+                  )}
+                  aria-label="Mail sync to date"
+                />
+              </div>
             </div>
             <Button
               type="button"
               onClick={onSyncByDateRange}
               disabled={syncRangeLoading || loadingMetrics}
-              variant="secondary"
-              className="h-10 w-full text-sm"
+              className="h-10 w-full bg-gradient-to-r from-indigo-600 to-sky-600 text-sm text-white hover:from-indigo-700 hover:to-sky-700"
             >
-              {syncRangeLoading ? "Syncing mails…" : "Run mail range sync"}
+              {syncRangeLoading ? "Syncing mails…" : "Run mail sync"}
             </Button>
           </div>
         </div>
@@ -1226,7 +1258,7 @@ export default function DashboardPage() {
       <section
         ref={kpiCardsRef}
         className={cn(
-          "grid gap-4 sm:grid-cols-2 lg:grid-cols-4",
+          "grid gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-4",
           isActiveTourSection(1) && "rounded-xl ring-2 ring-indigo-400/70 p-1",
           isBlurredTourSection(1) && "opacity-55"
         )}
@@ -1234,20 +1266,20 @@ export default function DashboardPage() {
         {kpiCards.map(({ title, value, subtitle }) => (
           <div
             key={title}
-            className="relative rounded-xl border border-neutral-200 bg-white p-5 shadow-sm dark:border-neutral-700 dark:bg-neutral-900/50"
+            className="relative rounded-2xl border border-white/80 bg-gradient-to-br from-[#1e3a8a] via-[#2563eb] to-[#0ea5e9] p-5 text-white shadow-lg shadow-blue-200/70 transition-transform duration-300 hover:-translate-y-0.5 dark:border-neutral-700 dark:bg-neutral-900/60 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-900 dark:shadow-none"
           >
-            <button type="button" className="absolute right-2 top-2 rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600 dark:hover:bg-neutral-700 dark:hover:text-neutral-300" aria-label="More">
+            <button type="button" className="absolute right-2 top-2 rounded p-1 text-white/70 hover:bg-white/15 hover:text-white dark:text-neutral-400 dark:hover:bg-neutral-700 dark:hover:text-neutral-300" aria-label="More">
               <MoreHorizontal className="h-4 w-4" />
             </button>
-            <p className="text-sm font-medium text-neutral-500 dark:text-neutral-400">{title}</p>
-            <p className="mt-1 text-2xl font-semibold text-neutral-900 dark:text-neutral-100">{value}</p>
-            <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">{subtitle}</p>
+            <p className="text-sm font-medium text-white/80 dark:text-neutral-400">{title}</p>
+            <p className="mt-1 text-3xl font-semibold text-white dark:text-neutral-100">{value}</p>
+            <p className="mt-0.5 text-xs text-white/75 dark:text-neutral-400">{subtitle}</p>
           </div>
         ))}
       </section>
 
       {/* Time-Based Activity Map + right column */}
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid gap-6 lg:grid-cols-3 lg:gap-8">
         <div
           ref={activityMapRef}
           className={cn(
@@ -1256,8 +1288,8 @@ export default function DashboardPage() {
             isBlurredTourSection(2) && "opacity-55"
           )}
         >
-          <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm dark:border-neutral-700 dark:bg-neutral-900/50">
-            <div className="mb-4 flex items-center justify-between">
+          <section className="rounded-3xl border border-slate-100 bg-gradient-to-br from-white to-[#f7fbff] p-5 shadow-md shadow-slate-100/70 dark:border-neutral-700 dark:from-neutral-900 dark:to-neutral-900 dark:shadow-none sm:p-6">
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
               <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">Time-Based Activity Map</h2>
               <div className="flex rounded-lg border border-neutral-200 dark:border-neutral-600">
                 {(["daily", "weekly", "monthly", "yearly"] as const).map((p) => (
@@ -1291,12 +1323,12 @@ export default function DashboardPage() {
         <div
           ref={rightColumnRef}
           className={cn(
-            "space-y-4",
+            "flex flex-col gap-6",
             dashboardTourOpen && ![3, 4].includes(dashboardTourStep) && "opacity-55"
           )}
         >
           {myProjects.length > 0 && (
-            <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm dark:border-neutral-700 dark:bg-neutral-900/50">
+            <div className="rounded-3xl border border-neutral-100 bg-gradient-to-br from-white to-[#f8fbff] p-5 shadow-md shadow-neutral-100/70 dark:border-neutral-700 dark:from-neutral-900 dark:to-neutral-900 dark:shadow-none">
               <div className="mb-4 flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">My projects</h2>
                 <button type="button" className="rounded p-1 text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-700" aria-label="More">
@@ -1334,14 +1366,20 @@ export default function DashboardPage() {
             <div
               ref={departmentsCardRef}
               className={cn(
-                "rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm dark:border-neutral-700 dark:bg-neutral-900/50",
+                "overflow-hidden rounded-3xl border border-indigo-100 bg-gradient-to-br from-white via-indigo-50/80 to-violet-50/90 p-5 shadow-md shadow-indigo-100/50 dark:border-neutral-700 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 dark:shadow-none",
                 isActiveTourSection(3) && "ring-2 ring-indigo-400/70",
                 isBlurredTourSection(3) && "opacity-55"
               )}
             >
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">Departments & Teams</h2>
-                <button type="button" className="rounded p-1 text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-700" aria-label="More">
+              <div className="mb-4 flex items-start justify-between gap-3 border-b border-indigo-100/90 pb-3 dark:border-neutral-700">
+                <div>
+                  <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">Departments & Teams</h2>
+                </div>
+                <button
+                  type="button"
+                  className="shrink-0 rounded-lg p-1.5 text-indigo-500 hover:bg-white/80 dark:text-neutral-300 dark:hover:bg-neutral-800"
+                  aria-label="More"
+                >
                   <MoreHorizontal className="h-4 w-4" />
                 </button>
               </div>
@@ -1360,7 +1398,7 @@ export default function DashboardPage() {
               ) : byDepartment.length === 0 ? (
                 <p className="py-4 text-center text-xs text-neutral-500 dark:text-neutral-400">No departments or team members loaded</p>
               ) : (
-                <ul className="space-y-1">
+                <ul className="space-y-2">
                   {byDepartment.map(({ department, teamName, users }) => {
                     const isExpanded = expandedDepartment === department;
                     return (
@@ -1368,19 +1406,24 @@ export default function DashboardPage() {
                         <button
                           type="button"
                           onClick={() => setExpandedDepartment(isExpanded ? null : department)}
-                          className="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm font-medium text-neutral-900 hover:bg-neutral-100 dark:text-neutral-100 dark:hover:bg-neutral-700/50"
+                          className={cn(
+                            "flex w-full items-center justify-between gap-2 rounded-xl border px-3 py-2.5 text-left text-sm font-medium transition",
+                            isExpanded
+                              ? "border-indigo-300 bg-white/90 text-indigo-950 shadow-sm dark:border-indigo-500/40 dark:bg-neutral-800/80 dark:text-neutral-100"
+                              : "border-indigo-100/80 bg-white/60 text-neutral-900 hover:border-indigo-200 hover:bg-white/90 dark:border-neutral-700 dark:bg-neutral-800/40 dark:text-neutral-100 dark:hover:border-neutral-600"
+                          )}
                         >
-                          <span>{department}</span>
-                          <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                          <span className="min-w-0 truncate">{department}</span>
+                          <span className="shrink-0 px-2 py-0.5 text-[10px] font-semibold text-neutral-600 dark:text-neutral-300">
                             {users.length} member{users.length !== 1 ? "s" : ""}
                           </span>
                         </button>
                         {isExpanded && (
-                          <div className="ml-2 mt-1 rounded-lg border border-neutral-200 bg-neutral-50/50 dark:border-neutral-700 dark:bg-neutral-800/30">
-                            <p className="border-b border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-600 dark:border-neutral-700 dark:text-neutral-400">
+                          <div className="ml-1 mt-2 rounded-xl border border-indigo-200/80 bg-gradient-to-b from-white/90 to-indigo-50/40 dark:border-neutral-600 dark:from-neutral-900 dark:to-neutral-900/80">
+                            <p className="border-b border-indigo-100/90 px-3 py-2 text-xs font-medium text-indigo-800 dark:border-neutral-700 dark:text-indigo-200">
                               Team: {teamName}
                             </p>
-                            <ul className="divide-y divide-neutral-200 dark:divide-neutral-700">
+                            <ul className="divide-y divide-indigo-100/70 dark:divide-neutral-700">
                               {users.length === 0 ? (
                                 <li className="px-3 py-2 text-xs text-neutral-500 dark:text-neutral-400">No members</li>
                               ) : (
@@ -1389,7 +1432,7 @@ export default function DashboardPage() {
                                   const initials = name.split(/[\s@]/).filter(Boolean).map((n) => n[0]).slice(0, 2).join("").toUpperCase() || "?";
                                   return (
                                     <li key={u.id} className="flex items-center gap-3 px-3 py-2">
-                                      <div className="h-8 w-8 shrink-0 rounded-full bg-neutral-200 dark:bg-neutral-600 flex items-center justify-center text-xs font-medium text-neutral-600 dark:text-neutral-300">
+                                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-sky-500 text-xs font-semibold text-white shadow-sm">
                                         {initials}
                                       </div>
                                       <div className="min-w-0 flex-1">
@@ -1413,29 +1456,36 @@ export default function DashboardPage() {
             <div
               ref={departmentsCardRef}
               className={cn(
-                "rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm dark:border-neutral-700 dark:bg-neutral-900/50",
+                "overflow-hidden rounded-3xl border border-indigo-100 bg-gradient-to-br from-white via-indigo-50/80 to-violet-50/90 p-5 shadow-md shadow-indigo-100/50 dark:border-neutral-700 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 dark:shadow-none",
                 isActiveTourSection(3) && "ring-2 ring-indigo-400/70",
                 isBlurredTourSection(3) && "opacity-55"
               )}
             >
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">Reporting manager</h2>
-                <button type="button" className="rounded p-1 text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-700" aria-label="More">
+              <div className="mb-4 flex items-start justify-between gap-3 border-b border-indigo-100/90 pb-3 dark:border-neutral-700">
+                <div>
+                  <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">Reporting manager</h2>
+                  <p className="mt-0.5 text-[11px] text-indigo-700/80 dark:text-neutral-300">Your org line and department.</p>
+                </div>
+                <button
+                  type="button"
+                  className="shrink-0 rounded-lg p-1.5 text-indigo-500 hover:bg-white/80 dark:text-neutral-300 dark:hover:bg-neutral-800"
+                  aria-label="More"
+                >
                   <MoreHorizontal className="h-4 w-4" />
                 </button>
               </div>
               <div className="space-y-3">
-                <div>
-                  <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">You report to</p>
-                  <p className="mt-0.5 text-sm text-neutral-900 dark:text-neutral-100">
+                <div className="rounded-xl border border-indigo-100/80 bg-white/70 px-3 py-2.5 dark:border-neutral-700 dark:bg-neutral-800/50">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-indigo-600 dark:text-neutral-400">You report to</p>
+                  <p className="mt-1 text-sm font-medium text-neutral-900 dark:text-neutral-100">
                     {me?.reportingManager
                       ? `${me.reportingManager.displayName ?? me.reportingManager.email} (${me.reportingManager.email})`
                       : "—"}
                   </p>
                 </div>
-                <div>
-                  <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">Department</p>
-                  <p className="mt-0.5 text-sm text-neutral-900 dark:text-neutral-100">{me?.department ?? "—"}</p>
+                <div className="rounded-xl border border-indigo-100/80 bg-white/70 px-3 py-2.5 dark:border-neutral-700 dark:bg-neutral-800/50">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-indigo-600 dark:text-neutral-400">Department</p>
+                  <p className="mt-1 text-sm font-medium text-neutral-900 dark:text-neutral-100">{me?.department ?? "—"}</p>
                 </div>
               </div>
             </div>
@@ -1443,21 +1493,18 @@ export default function DashboardPage() {
           <div
             ref={meetingsCardRef}
             className={cn(
-              "rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm dark:border-neutral-700 dark:bg-neutral-900/50",
-              isActiveTourSection(4) && "ring-2 ring-indigo-400/70",
+              "overflow-hidden rounded-3xl border border-sky-100 bg-gradient-to-br from-white via-sky-50 to-cyan-50 p-5 shadow-md shadow-sky-100/60 dark:border-neutral-700 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 dark:shadow-none",
+              isActiveTourSection(4) && "ring-2 ring-sky-400/70",
               isBlurredTourSection(4) && "opacity-55"
             )}
           >
-            <div className="mb-4 flex items-center justify-between">
-              <div>
+            <div className="mb-4 flex items-start justify-between gap-3 border-b border-sky-100/90 pb-3 dark:border-neutral-700">
+              <div className="min-w-0 flex-1">
                 <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">Meetings</h2>
-                <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
-                  Your mailbox ({session?.user?.email ?? "—"}): meeting invites synced from Mail — same list for every user and admins on their own login.
-                </p>
               </div>
               <button
                 type="button"
-                className="rounded p-1 text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-700"
+                className="shrink-0 rounded-lg border border-sky-200 bg-white/80 p-2 text-sky-600 shadow-sm transition hover:bg-sky-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
                 aria-label="Refresh calendar"
                 onClick={refreshMeetingsFromMailbox}
               >
@@ -1465,39 +1512,39 @@ export default function DashboardPage() {
               </button>
             </div>
             {calendarError && (
-              <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+              <p className="mb-3 rounded-xl border border-amber-200/90 bg-amber-50/90 px-3 py-2 text-[11px] text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
                 {calendarError}
               </p>
             )}
             {calendarLoading && calendarEvents.length === 0 && !calendarError && (
               <div className="space-y-2">
-                <div className="h-14 animate-pulse rounded-lg bg-neutral-200 dark:bg-neutral-700" />
-                <div className="h-10 animate-pulse rounded-lg bg-neutral-100 dark:bg-neutral-800" />
+                <div className="h-14 animate-pulse rounded-xl bg-sky-100/80 dark:bg-neutral-700" />
+                <div className="h-10 animate-pulse rounded-xl bg-sky-50 dark:bg-neutral-800" />
               </div>
             )}
             {!calendarLoading && !calendarError && displayedCalendarEvents.length === 0 && (
-              <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                No meeting invites found in synced mail for this window. Sync mail from History and ensure meeting messages are ingested.
+              <p className="rounded-xl border border-sky-100/80 bg-white/60 px-3 py-2.5 text-xs text-sky-900/80 dark:border-neutral-700 dark:bg-neutral-800/50 dark:text-neutral-300">
+                No meeting invites found for this window. Sync mail from History so invites can appear here.
               </p>
             )}
             {displayedCalendarEvents.length > 0 && (
               <div className="space-y-3">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                   <button
                     type="button"
-                    className="rounded border border-neutral-200 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+                    className="rounded-lg border border-sky-200 bg-white/80 px-2.5 py-1 text-xs font-medium text-sky-700 hover:bg-sky-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100 dark:hover:bg-neutral-700"
                     onClick={() =>
                       setCalendarMonthStart((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1))
                     }
                   >
                     Prev
                   </button>
-                  <p className="text-xs font-semibold text-neutral-700 dark:text-neutral-200">
+                  <p className="text-xs font-semibold text-sky-900 dark:text-neutral-100">
                     {calendarMonthStart.toLocaleDateString(undefined, { month: "long", year: "numeric" })}
                   </p>
                   <button
                     type="button"
-                    className="rounded border border-neutral-200 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+                    className="rounded-lg border border-sky-200 bg-white/80 px-2.5 py-1 text-xs font-medium text-sky-700 hover:bg-sky-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100 dark:hover:bg-neutral-700"
                     onClick={() =>
                       setCalendarMonthStart((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1))
                     }
@@ -1505,7 +1552,7 @@ export default function DashboardPage() {
                     Next
                   </button>
                 </div>
-                <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-medium text-neutral-500">
+                <div className="grid grid-cols-7 gap-1 rounded-lg bg-sky-100/70 px-1 py-1 text-center text-[10px] font-semibold uppercase tracking-wide text-sky-800 dark:border dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100">
                   {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((wd) => (
                     <div key={wd} className="py-1">{wd}</div>
                   ))}
@@ -1519,17 +1566,19 @@ export default function DashboardPage() {
                         key={d.key}
                         type="button"
                         onClick={() => setSelectedMeetingDateKey(d.key)}
-                        className={`relative min-h-[46px] rounded border px-1 py-1 text-left text-[11px] ${
-                          d.inMonth
-                            ? "border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900"
-                            : "border-neutral-100 bg-neutral-50 text-neutral-400 dark:border-neutral-800 dark:bg-neutral-900/50"
-                        } ${isSelected ? "ring-2 ring-indigo-500" : ""}`}
+                        className={`relative min-h-[46px] rounded-lg border px-1 py-1 text-left text-[11px] transition ${d.inMonth
+                          ? "border-sky-200 bg-white/90 text-neutral-800 shadow-[0_1px_0_rgba(14,165,233,0.08)] dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100"
+                          : "border-sky-100/90 bg-sky-50/60 text-sky-500 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-500"
+                          } ${isSelected
+                            ? "ring-2 ring-sky-500 ring-offset-1 ring-offset-white dark:border-sky-500/50 dark:bg-neutral-700 dark:ring-offset-neutral-900"
+                            : "hover:border-sky-300 hover:bg-sky-50/80 dark:hover:border-neutral-500 dark:hover:bg-neutral-700"
+                          }`}
                       >
-                        <span className={`${isToday ? "font-bold text-indigo-600 dark:text-indigo-400" : ""}`}>
+                        <span className={`${isToday ? "font-bold text-sky-700 dark:text-sky-300" : ""}`}>
                           {d.date.getDate()}
                         </span>
                         {d.count > 0 && (
-                          <span className="absolute bottom-1 right-1 rounded-full bg-indigo-600 px-1.5 text-[10px] font-medium text-white">
+                          <span className="absolute bottom-1 right-1 rounded-full bg-gradient-to-r from-sky-500 to-indigo-500 px-1.5 text-[10px] font-medium text-white shadow-sm">
                             {d.count}
                           </span>
                         )}
@@ -1538,7 +1587,7 @@ export default function DashboardPage() {
                   })}
                 </div>
                 <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-600 dark:text-neutral-300">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-sky-800 dark:text-neutral-200">
                     {selectedMeetings.length > 0
                       ? `Meetings on ${selectedMeetingDateKey}`
                       : `No meetings on ${selectedMeetingDateKey}`}
@@ -1546,20 +1595,18 @@ export default function DashboardPage() {
                   {selectedMeetings.map((ev) => (
                     <li
                       key={ev.id ?? `${ev.subject}-${ev.start?.dateTime}`}
-                      className={`list-none rounded-lg border border-neutral-200 bg-neutral-50/50 p-3 dark:border-neutral-700 dark:bg-neutral-800/50 ${
-                        ev.isCancelled ? "opacity-75" : ""
-                      }`}
+                      className={`list-none rounded-xl border border-sky-100/90 bg-white/75 p-3 shadow-sm dark:border-neutral-700 dark:bg-neutral-800/60 ${ev.isCancelled ? "opacity-75" : ""
+                        }`}
                     >
                       <div className="flex flex-wrap items-start justify-between gap-2">
                         <p
-                          className={`min-w-0 flex-1 text-sm font-medium text-neutral-900 dark:text-neutral-100 ${
-                            ev.isCancelled ? "line-through" : ""
-                          }`}
+                          className={`min-w-0 flex-1 text-sm font-medium text-neutral-900 dark:text-neutral-100 ${ev.isCancelled ? "line-through" : ""
+                            }`}
                         >
                           {ev.subject}
                         </p>
                         {!ev.isCancelled && (
-                          <span className="shrink-0 rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] font-medium text-neutral-700 dark:bg-neutral-700 dark:text-neutral-200">
+                          <span className="shrink-0 rounded-md bg-gradient-to-r from-sky-500 to-indigo-500 px-1.5 py-0.5 text-[10px] font-semibold text-white shadow-sm">
                             {formatMeetingTimeRange(ev)}
                           </span>
                         )}
@@ -1576,7 +1623,7 @@ export default function DashboardPage() {
                             href={ev.joinUrl}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 rounded-md bg-indigo-600 px-2 py-1 text-[11px] font-medium text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600"
+                            className="inline-flex items-center gap-1 rounded-md bg-gradient-to-r from-sky-600 to-indigo-600 px-2 py-1 text-[11px] font-semibold text-white shadow-sm hover:from-sky-700 hover:to-indigo-700 dark:from-sky-500 dark:to-indigo-500"
                           >
                             <Video className="h-3 w-3" />
                             {onlineMeetingLinkLabel(ev.joinUrl)}
@@ -1587,7 +1634,7 @@ export default function DashboardPage() {
                             href={ev.webLink}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-[11px] font-medium text-indigo-600 hover:underline dark:text-indigo-400"
+                            className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-700 hover:underline dark:text-neutral-200"
                           >
                             <ExternalLink className="h-3 w-3" />
                             Open in Outlook

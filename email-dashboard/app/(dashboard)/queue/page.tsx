@@ -46,7 +46,7 @@ export default function QueueMonitorPage() {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-50">Queue Monitor</h1>
+          <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-50">Queue Monitor</h1>
           <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
             Your mailbox backlog (not the whole deployment)
           </p>
@@ -66,7 +66,7 @@ export default function QueueMonitorPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-50">Queue Monitor</h1>
+        <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-50">Queue Monitor</h1>
         <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
           Redis & Celery workers
         </p>

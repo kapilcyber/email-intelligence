@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo, Fragment } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { getApi } from "@/lib/api/client";
@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, ChevronRight, GitBranch, Network, User } from "lucide-react";
+import { ChevronRight, GitBranch, Network, User } from "lucide-react";
 import { ProjectMailboxThreads } from "@/components/projects/project-mailbox-threads";
 
 /** Tree node: assignment row + nested children (project reporting only). */
@@ -150,7 +150,6 @@ function ProjectMemberChart({
 
 export default function AdminProjectWorkflowPage() {
   const params = useParams();
-  const router = useRouter();
   const id = typeof params.id === "string" ? params.id : "";
   const { data: session, status } = useSession();
   const api = useMemo(
@@ -199,25 +198,19 @@ export default function AdminProjectWorkflowPage() {
   if (!id) {
     return (
       <div className="p-6 text-sm text-neutral-500">
-        Invalid project.
-        <Button variant="link" onClick={() => router.push("/admin/team-projects")}>
-          Back to projects
-        </Button>
+        Invalid project.{" "}
+        <Link
+          href="/admin/team-projects"
+          className="text-indigo-600 underline hover:no-underline dark:text-indigo-400"
+        >
+          View all projects
+        </Link>
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center gap-3">
-        <Link href="/admin/team-projects">
-          <Button variant="ghost" size="sm" className="gap-1">
-            <ArrowLeft className="h-4 w-4" />
-            All projects
-          </Button>
-        </Link>
-      </div>
-
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400">
           {error}
@@ -235,7 +228,7 @@ export default function AdminProjectWorkflowPage() {
       {!loading && project && (
         <>
           <div>
-            <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-50">{project.name}</h1>
+            <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-50">{project.name}</h1>
             <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
               {project.teamName ?? "No team"} · <span className="capitalize">{project.status}</span>
             </p>

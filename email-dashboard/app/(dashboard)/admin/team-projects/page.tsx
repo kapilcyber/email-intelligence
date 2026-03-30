@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { FolderKanban, ChevronRight } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 
 /** How the project role is chosen in the form (stored as TL, Manager, or free text). */
 type ProjectRoleKind = "tl" | "manager" | "custom";
@@ -212,10 +212,7 @@ export default function AdminTeamProjectsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-50 flex items-center gap-2">
-          <FolderKanban className="h-6 w-6" />
-          Projects
-        </h1>
+        <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-50">Projects</h1>
       </div>
 
       {error && (

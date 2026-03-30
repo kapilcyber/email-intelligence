@@ -12,7 +12,7 @@ import type {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { BellRing, ChevronDown, ChevronUp, RefreshCw } from "lucide-react";
+import { ChevronDown, ChevronUp, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const SHORT: Record<string, string> = {
@@ -194,13 +194,10 @@ export default function FollowUpPage() {
   }, [load]);
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
+    <div className="space-y-6">
       <div data-tour-id="followup-header" className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="flex items-center gap-2 text-2xl font-semibold text-neutral-900 dark:text-neutral-50">
-            <BellRing className="h-7 w-7 shrink-0 opacity-80" aria-hidden />
-            Follow UP
-          </h1>
+          <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-50">Follow UP</h1>
           {weekHint && <p className="mt-2 text-xs text-neutral-500">{weekHint}</p>}
         </div>
         <Button type="button" variant="outline" size="sm" onClick={() => load()} disabled={loading}>

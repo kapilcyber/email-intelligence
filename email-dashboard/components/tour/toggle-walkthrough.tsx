@@ -55,7 +55,6 @@ const TOGGLE_GUIDES: ToggleGuide[] = [
     href: "/escalations",
     match: (p) => p === "/escalations" || p.startsWith("/escalations/"),
     steps: [
-      { targetId: "escalations-tabs", text: "Switch between Escalations and ReTag history tabs." },
       { targetId: "escalations-filters", text: "Use date filter to focus on recent or older critical items." },
       { targetId: "escalations-list", text: "Open a row for detail; use Retag action to reroute mail." },
     ],
@@ -66,7 +65,6 @@ const TOGGLE_GUIDES: ToggleGuide[] = [
     href: "/leads",
     match: (p) => p === "/leads" || p.startsWith("/leads/"),
     steps: [
-      { targetId: "leads-tabs", text: "Switch between Leads and ReTag history." },
       { targetId: "leads-filters", text: "Filter by lead label and date to prioritize pipeline review." },
       { targetId: "leads-list", text: "Open each lead to inspect summary, labels, and signals." },
     ],
@@ -189,7 +187,7 @@ export function ToggleWalkthrough() {
         {isLastStep && !next ? (
           <Link href="/how-to-use">
             <Button type="button" size="sm" className="bg-white text-black hover:bg-neutral-200">
-              Back to How to use
+              How to use
             </Button>
           </Link>
         ) : null}

@@ -20,11 +20,22 @@ type Props = {
   title?: string;
   /** Optional subtitle under title. */
   description?: ReactNode;
+  /** When true, hide the title subtitle and the default “Showing category only” line. */
+  suppressSubtitle?: boolean;
   /** Show per-row Retag (non-admin → admin approval; admin → immediate). */
   showRetag?: boolean;
+  /** Initial search query from URL/state. */
+  initialSearch?: string;
 };
 
-export function EmailsView({ categoryFilter, title, description, showRetag = false }: Props) {
+export function EmailsView({
+  categoryFilter,
+  title,
+  description,
+  suppressSubtitle = false,
+  showRetag = false,
+  initialSearch = "",
+}: Props) {
   const category = useMemo(() => {
     if (!categoryFilter) return "";
     return DEPARTMENT_CATEGORIES.includes(categoryFilter as (typeof DEPARTMENT_CATEGORIES)[number])
@@ -42,7 +53,7 @@ export function EmailsView({ categoryFilter, title, description, showRetag = fal
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(initialSearch);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [loading, setLoading] = useState(true);
@@ -79,31 +90,40 @@ export function EmailsView({ categoryFilter, title, description, showRetag = fal
   }, [category]);
 
   useEffect(() => {
+    setSearch(initialSearch);
+    setPage(1);
+  }, [initialSearch]);
+
+  useEffect(() => {
     load();
   }, [load]);
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const defaultTitle = title ?? "Emails";
-  const defaultDescription =
-    description ??
-    (category ? (
-      <>
-        Showing <strong>{category}</strong> only · {total} email{total !== 1 ? "s" : ""}
-      </>
-    ) : null);
+  const defaultDescription = suppressSubtitle
+    ? null
+    : (description ??
+      (category ? (
+        <>
+          Showing <strong>{category}</strong> only · {total} email{total !== 1 ? "s" : ""}
+        </>
+      ) : null));
 
   return (
     <div className="flex flex-col gap-6">
       <div className="space-y-6">
         <div data-tour-id="emails-header">
-          <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-50">{defaultTitle}</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-neutral-900 dark:text-neutral-100">{defaultTitle}</h1>
           {defaultDescription ? (
             <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">{defaultDescription}</p>
           ) : null}
         </div>
 
-        <div data-tour-id="emails-filters" className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div
+          data-tour-id="emails-filters"
+          className="glass-surface rounded-2xl p-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
+        >
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:flex-wrap">
             <div className="relative min-w-0 flex-1 sm:w-64">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
@@ -136,7 +156,7 @@ export function EmailsView({ categoryFilter, title, description, showRetag = fal
             </Button>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-sm text-neutral-500 dark:text-neutral-400">Show</span>
+            <span className="text-sm text-muted-foreground">Show</span>
             <Select value={String(pageSize)} onValueChange={handlePageSizeChange} className="w-20">
               {PAGE_SIZE_OPTIONS.map((n) => (
                 <SelectItem key={n} value={String(n)}>
@@ -144,7 +164,7 @@ export function EmailsView({ categoryFilter, title, description, showRetag = fal
                 </SelectItem>
               ))}
             </Select>
-            <span className="text-sm text-neutral-500 dark:text-neutral-400">
+            <span className="text-sm text-muted-foreground">
               per page · {total} total
             </span>
           </div>

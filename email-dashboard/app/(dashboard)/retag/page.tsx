@@ -8,7 +8,7 @@ import type { EscalationLeadItem, RetagApprovalOut } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tags, ChevronRight } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 
 const PAGE_SIZE = 20;
 
@@ -72,10 +72,7 @@ export default function RetagPage() {
   return (
     <div className="space-y-6">
       <div data-tour-id="retag-header">
-        <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-50 flex items-center gap-2">
-          <Tags className="h-6 w-6" />
-          ReTag
-        </h1>
+        <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-50">ReTag</h1>
       </div>
 
       {error && (
@@ -106,17 +103,7 @@ export default function RetagPage() {
                     >
                       {item.subject || "(No subject)"}
                     </Link>
-                    <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
-                      {item.sender} · {formatDate(item.receivedAt)} · Dept:{" "}
-                      <span className="font-medium text-indigo-700 dark:text-indigo-300">{item.assignedTeam ?? "—"}</span>
-                    </p>
-                    {item.retaggedAt && (
-                      <p className="mt-1 text-xs text-neutral-500">
-                        Retagged {formatDate(item.retaggedAt)}
-                        {item.retaggedBy ? ` by ${item.retaggedBy}` : ""}
-                        {item.retagPreviousSummary ? ` · ${item.retagPreviousSummary}` : ""}
-                      </p>
-                    )}
+                    <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">{item.sender}</p>
                   </div>
                   <Link href={`/emails/${item.id}`}>
                     <Button variant="ghost" size="icon">

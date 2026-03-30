@@ -87,26 +87,26 @@ export function Select({
         disabled={disabled}
         onClick={() => !disabled && setOpen(!open)}
         className={cn(
-          "flex h-9 w-full items-center justify-between rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm shadow-sm dark:border-neutral-800 dark:bg-neutral-950",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400",
+          "flex h-9 w-full items-center justify-between rounded-md border border-border bg-panel px-3 py-2 text-sm text-foreground shadow-sm",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
           "disabled:pointer-events-none disabled:opacity-50",
           compound && triggerClassName
         )}
       >
-        <span className={value ? "" : "text-neutral-500"}>{displayLabel}</span>
+        <span className={value ? "" : "text-muted-foreground"}>{displayLabel}</span>
         <svg className="h-4 w-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
         </svg>
       </button>
       {open && (
-        <div className="absolute z-50 mt-1 w-full rounded-md border border-neutral-200 bg-white py-1 shadow-md dark:border-neutral-800 dark:bg-neutral-900">
+        <div className="absolute z-50 mt-1 w-full rounded-md border border-border bg-panel py-1 shadow-md">
           {items.map((item) => (
             <div
               key={item.value}
               role="option"
               className={cn(
-                "cursor-pointer px-3 py-2 text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800",
-                value === item.value && "bg-neutral-100 dark:bg-neutral-800"
+                "cursor-pointer px-3 py-2 text-sm hover:bg-muted",
+                value === item.value && "bg-muted"
               )}
               onClick={() => {
                 onValueChange?.(item.value);

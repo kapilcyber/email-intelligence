@@ -9,7 +9,7 @@ import type { TrackerEmailListItem } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 function formatReceived(iso: string) {
@@ -67,14 +67,10 @@ export default function AdminTrackerProjectHistoryPage() {
   }, [api, projectId, status, days, reloadTick]);
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4 p-6">
+    <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="space-y-1">
-          <Link href="/admin/tracker" className="inline-flex items-center gap-1 text-sm text-neutral-500 hover:underline">
-            <ArrowLeft className="h-4 w-4" />
-            Back to Tracker
-          </Link>
-          <h1 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-50">{projectName}</h1>
+          <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-50">{projectName}</h1>
           {rangeText && <p className="text-xs text-neutral-400 dark:text-neutral-500">{rangeText}</p>}
         </div>
         <Button type="button" variant="outline" size="sm" onClick={() => setReloadTick((n) => n + 1)} disabled={loading}>
