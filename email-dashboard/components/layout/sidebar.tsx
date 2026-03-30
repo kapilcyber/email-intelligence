@@ -49,6 +49,7 @@ const navItemsAfterDepartments = [
 
 /** Shown to org Managers (and Admins). Excludes workflow, projects, approvals. */
 const managerAdminNavItems = [
+  { href: "/admin/my-projects", label: "Projects", icon: FolderKanban },
   { href: "/admin/team-leaders", label: "Team leaders", icon: UserCircle },
   { href: "/admin/tracker", label: "Tracker", icon: CalendarRange },
   { href: "/admin/review", label: "Review", icon: ClipboardCheck },
@@ -60,6 +61,8 @@ const managerAdminNavItems = [
 const adminNavItemsAll = [
   { href: "/admin/team-leaders", label: "Team leaders", icon: UserCircle },
   { href: "/admin/team-projects", label: "Projects", icon: FolderKanban },
+  { href: "/admin/archive-projects", label: "Archive Projects", icon: FolderOpen },
+  { href: "/admin/temporary-team", label: "Temporary team", icon: Users },
   { href: "/admin/tracker", label: "Tracker", icon: CalendarRange },
   { href: "/admin/review", label: "Review", icon: ClipboardCheck },
   { href: "/admin/workflow", label: "Workflow", icon: Network },
@@ -235,8 +238,8 @@ function DepartmentsNavSection({ collapsed }: { collapsed: boolean }) {
   );
 }
 
-/** Admin: expandable Teams (same pattern as Departments) — lists DB teams, links to overview + detail. */
-function AdminTeamsNavSection({ collapsed }: { collapsed: boolean }) {
+/** Admin/Manager: expandable Teams filtered by allowed department when provided. */
+function AdminTeamsNavSection({ collapsed, allowedDepartment }: { collapsed: boolean; allowedDepartment?: string | null }) {
   const pathname = usePathname();
   const { data: session, status } = useSession();
   const api = useMemo(
@@ -271,10 +274,11 @@ function AdminTeamsNavSection({ collapsed }: { collapsed: boolean }) {
     };
   }, [flyoutOpen]);
 
-  const sorted = useMemo(
-    () => [...teams].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" })),
-    [teams]
-  );
+  const sorted = useMemo(() => {
+    const dep = (allowedDepartment ?? "").trim();
+    const list = dep ? teams.filter((t) => (t.name ?? "").trim() === dep) : teams;
+    return [...list].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+  }, [teams, allowedDepartment]);
 
   const rowActive = underAdminTeams;
 
@@ -308,21 +312,23 @@ function AdminTeamsNavSection({ collapsed }: { collapsed: boolean }) {
               Teams
             </p>
             <ul className="max-h-[70vh] overflow-y-auto py-1">
-              <li>
-                <Link
-                  href="/admin/teams"
-                  role="menuitem"
-                  onClick={() => setFlyoutOpen(false)}
-                  className={cn(
-                    "flex items-center justify-between gap-3 px-3 py-2 text-sm",
-                    pathname === "/admin/teams"
-                      ? "bg-muted font-medium text-foreground"
-                      : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
-                  )}
-                >
-                  <span>All teams</span>
-                </Link>
-              </li>
+              {!allowedDepartment && (
+                <li>
+                  <Link
+                    href="/admin/teams"
+                    role="menuitem"
+                    onClick={() => setFlyoutOpen(false)}
+                    className={cn(
+                      "flex items-center justify-between gap-3 px-3 py-2 text-sm",
+                      pathname === "/admin/teams"
+                        ? "bg-muted font-medium text-foreground"
+                        : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+                    )}
+                  >
+                    <span>All teams</span>
+                  </Link>
+                </li>
+              )}
               {sorted.map((t) => {
                 const href = `/admin/teams/${t.id}`;
                 const active = pathname === href || pathname.startsWith(`${href}/`);
@@ -378,19 +384,21 @@ function AdminTeamsNavSection({ collapsed }: { collapsed: boolean }) {
           className="ml-2 space-y-0.5 border-l border-border py-0.5 pl-2"
           role="list"
         >
-          <li>
-            <Link
-              href="/admin/teams"
-              className={cn(
-                "flex items-center justify-between gap-2 rounded-md px-2 py-2 text-sm transition-colors",
-                pathname === "/admin/teams"
-                  ? "bg-accent font-medium text-accent-foreground"
-                  : "text-muted-foreground hover:bg-muted"
-              )}
-            >
-              <span>All teams</span>
-            </Link>
-          </li>
+          {!allowedDepartment && (
+            <li>
+              <Link
+                href="/admin/teams"
+                className={cn(
+                  "flex items-center justify-between gap-2 rounded-md px-2 py-2 text-sm transition-colors",
+                  pathname === "/admin/teams"
+                    ? "bg-accent font-medium text-accent-foreground"
+                    : "text-muted-foreground hover:bg-muted"
+                )}
+              >
+                <span>All teams</span>
+              </Link>
+            </li>
+          )}
           {sorted.map((t) => {
             const href = `/admin/teams/${t.id}`;
             const active = pathname === href || pathname.startsWith(`${href}/`);
@@ -425,12 +433,14 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
   );
   const [isAdmin, setIsAdmin] = useState(false);
   const [isManagerRole, setIsManagerRole] = useState(false);
+  const [managerDepartment, setManagerDepartment] = useState<string | null>(null);
   const adminEmailsEnv = typeof window !== "undefined" ? (process.env.NEXT_PUBLIC_ADMIN_EMAILS ?? "") : (process.env.NEXT_PUBLIC_ADMIN_EMAILS ?? "");
   const adminEmailsList = useMemo(() => adminEmailsEnv.split(",").map((e) => e.trim().toLowerCase()).filter(Boolean), [adminEmailsEnv]);
   useEffect(() => {
     if (status !== "authenticated" || !session?.user?.email) {
       setIsAdmin(false);
       setIsManagerRole(false);
+      setManagerDepartment(null);
       return;
     }
     const userEmail = (session.user.email ?? "").trim().toLowerCase();
@@ -442,10 +452,12 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
         .then((r) => {
           setIsAdmin(r.isAdmin || isInEnvList);
           setIsManagerRole((r.role ?? "").trim() === "Manager");
+          setManagerDepartment((r.department ?? "").trim() || null);
         })
         .catch(() => {
           setIsAdmin(isInEnvList);
           setIsManagerRole(false);
+          setManagerDepartment(null);
         });
     };
 
@@ -534,7 +546,10 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
                 {showManagerAdminNav ? "Management" : "Admin"}
               </p>
             )}
-            <AdminTeamsNavSection collapsed={collapsed} />
+            <AdminTeamsNavSection
+              collapsed={collapsed}
+              allowedDepartment={showManagerAdminNav ? managerDepartment : null}
+            />
             {(showFullAdminNav ? adminNavItemsAll : managerAdminNavItems)
               .filter((item) => showFullAdminNav || !ADMIN_ONLY_HREFS.has(item.href))
               .map(({ href, label, icon: Icon }) => {

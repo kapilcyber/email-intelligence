@@ -9,7 +9,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import exists, func, or_
 from sqlalchemy.orm import Session, aliased
 
-from app.api.deps import get_admin_or_manager_user
+from app.api.admin_access import actor_manager_scope_mailboxes, manager_actor_row
+from app.api.deps import get_admin_or_manager_user, get_current_user_email
 from app.config import get_settings
 from app.db.models import Email, TeamProject, User
 from app.db.session import get_db
@@ -84,10 +85,14 @@ class ReviewProjectTrackerUserOut(BaseModel):
 def review_escalation_replies(
     days: int = Query(30, ge=1, le=365),
     db: Session = Depends(get_db),
+    actor_email: str = Depends(get_current_user_email),
 ):
     since = _since(days)
     excluded = _excluded_mailboxes_for_user_lists()
     users = [u for u in db.query(User).order_by(User.email).all() if (u.email or "").strip().lower() not in excluded]
+    scope = actor_manager_scope_mailboxes(db, actor_email)
+    if scope is not None:
+        users = [u for u in users if (u.email or "").strip().lower() in scope]
 
     E2 = aliased(Email)
     out: list[ReviewEscalationUserOut] = []
@@ -139,11 +144,23 @@ def review_escalation_replies(
 def review_project_tracker(
     days: int = Query(30, ge=1, le=365),
     db: Session = Depends(get_db),
+    actor_email: str = Depends(get_current_user_email),
 ):
     since = _since(days)
     excluded = _excluded_mailboxes_for_user_lists()
     users = [u for u in db.query(User).order_by(User.email).all() if (u.email or "").strip().lower() not in excluded]
-    projects = [str(p.name).strip().lower() for p in db.query(TeamProject).all() if getattr(p, "name", None)]
+    scope = actor_manager_scope_mailboxes(db, actor_email)
+    if scope is not None:
+        users = [u for u in users if (u.email or "").strip().lower() in scope]
+    if scope is None:
+        project_rows = db.query(TeamProject).all()
+    else:
+        mgr = manager_actor_row(db, actor_email)
+        if not mgr or not mgr.team_id:
+            project_rows = []
+        else:
+            project_rows = db.query(TeamProject).filter(TeamProject.team_id == mgr.team_id).all()
+    projects = [str(p.name).strip().lower() for p in project_rows if getattr(p, "name", None)]
     projects = [p for p in projects if p]
     watch = _review_watch_emails(db)
 

@@ -7,7 +7,14 @@ import { getApi } from "@/lib/api/client";
 import { Skeleton } from "@/components/ui/skeleton";
 
 /** Admin-only areas; org Managers may not open these (sidebar hides them). */
-const ADMIN_ONLY_PATH_PREFIXES = ["/admin/team-projects", "/admin/workflow", "/admin/approvals"];
+const ADMIN_ONLY_PATH_PREFIXES = ["/admin/workflow", "/admin/approvals"];
+
+function isAdminOnlyPathForManager(pathname: string): boolean {
+  const p = pathname.replace(/\/$/, "") || "/";
+  if (p === "/admin/team-projects") return true;
+  if (ADMIN_ONLY_PATH_PREFIXES.some((prefix) => p.startsWith(prefix))) return true;
+  return false;
+}
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
@@ -42,7 +49,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         const isAdminEffective = me.isAdmin || isInEnvList;
         const isManager = (me.role ?? "").trim() === "Manager";
         const isManagerOnly = isManager && !isAdminEffective;
-        if (isManagerOnly && ADMIN_ONLY_PATH_PREFIXES.some((p) => pathname.startsWith(p))) {
+        if (isManagerOnly && isAdminOnlyPathForManager(pathname)) {
           router.replace("/dashboard");
           setAllowed(false);
           return;

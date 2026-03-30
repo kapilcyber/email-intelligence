@@ -10,7 +10,13 @@ from pydantic import BaseModel, Field
 
 from app.db.session import get_db
 from app.db.models import Team, User, UserLoginEvent, Email, Attachment, TeamProject, ProjectAssignment, RetagApprovalRequest
-from app.api.deps import get_admin_user, get_admin_or_manager_user
+from app.api.admin_access import (
+    actor_manager_scope_mailboxes,
+    assert_mailbox_in_manager_scope,
+    is_admin_actor as _is_admin_actor,
+    manager_actor_row as _manager_actor_row,
+)
+from app.api.deps import get_admin_user, get_admin_or_manager_user, get_current_user_email
 from app.api.phase3 import _email_to_item, RetagEmailBody, _perform_retag
 from app.api.emails import (
     ConversationOut,
@@ -340,6 +346,11 @@ def _email_contains_project_name(email: Email, project_name: str) -> bool:
 
 def _assert_project_mailbox_threads_access(project: TeamProject, admin_email: str, db: Session) -> None:
     """Only the creating admin may list mailbox threads (when creator is recorded)."""
+    if not _is_admin_actor(db, admin_email):
+        # Managers can view mailbox threads for projects in their scope (read-only pages).
+        if _can_view_project_for_actor(db, admin_email, project):
+            return
+        raise HTTPException(status_code=403, detail="You can only access projects from your scope")
     creator_id = project.created_by_user_id
     if not creator_id:
         return
@@ -353,14 +364,44 @@ def _assert_project_mailbox_threads_access(project: TeamProject, admin_email: st
         )
 
 
+def _can_view_project_for_actor(db: Session, actor_email: str, project: TeamProject) -> bool:
+    if _is_admin_actor(db, actor_email):
+        return True
+    mgr = _manager_actor_row(db, actor_email)
+    if not mgr:
+        return False
+    if mgr.team_id and project.team_id == mgr.team_id:
+        return True
+    scope = actor_manager_scope_mailboxes(db, actor_email) or set()
+    if not scope:
+        return False
+    assigned = (
+        db.query(User.email)
+        .join(ProjectAssignment, ProjectAssignment.user_id == User.id)
+        .filter(ProjectAssignment.project_id == project.id)
+        .all()
+    )
+    for (em,) in assigned:
+        if em and str(em).strip().lower() in scope:
+            return True
+    return False
+
+
 # --- Teams ---
 @router.get("/teams", response_model=list[TeamOut])
 def list_teams(
     db: Session = Depends(get_db),
     _auth: str = Depends(get_admin_or_manager_user),
+    actor_email: str = Depends(get_current_user_email),
 ):
     """List all teams with member count."""
     teams = db.query(Team).order_by(Team.name).all()
+    if not _is_admin_actor(db, actor_email):
+        mgr = _manager_actor_row(db, actor_email)
+        if mgr and mgr.team_id:
+            teams = [t for t in teams if t.id == mgr.team_id]
+        else:
+            teams = []
     result = []
     for t in teams:
         count = db.query(User).filter(User.team_id == t.id).count()
@@ -373,11 +414,16 @@ def get_team(
     team_id: str,
     db: Session = Depends(get_db),
     _auth: str = Depends(get_admin_or_manager_user),
+    actor_email: str = Depends(get_current_user_email),
 ):
     """Get team by id with member count."""
     team = db.query(Team).filter(Team.id == team_id).first()
     if not team:
         raise HTTPException(status_code=404, detail="Team not found")
+    if not _is_admin_actor(db, actor_email):
+        mgr = _manager_actor_row(db, actor_email)
+        if not mgr or not mgr.team_id or mgr.team_id != team.id:
+            raise HTTPException(status_code=403, detail="You can only access your assigned department")
     count = db.query(User).filter(User.team_id == team.id).count()
     return TeamOut(id=team.id, name=team.name, slug=team.slug, memberCount=count)
 
@@ -387,11 +433,16 @@ def get_team_status(
     team_id: str,
     db: Session = Depends(get_db),
     _auth: str = Depends(get_admin_or_manager_user),
+    actor_email: str = Depends(get_current_user_email),
 ):
     """Team status: counts of emails assigned, escalations, leads."""
     team = db.query(Team).filter(Team.id == team_id).first()
     if not team:
         raise HTTPException(status_code=404, detail="Team not found")
+    if not _is_admin_actor(db, actor_email):
+        mgr = _manager_actor_row(db, actor_email)
+        if not mgr or not mgr.team_id or mgr.team_id != team.id:
+            raise HTTPException(status_code=403, detail="You can only access your assigned department")
     emails_assigned = db.query(Email).filter(Email.assigned_team == team.name).count() if hasattr(Email, "assigned_team") else 0
     escalations = 0
     leads = 0
@@ -415,12 +466,20 @@ def list_users(
     role: str | None = Query(None, description="Filter by role: Admin, Manager, Member"),
     team_id: str | None = Query(None, alias="teamId"),
     _auth: str = Depends(get_admin_or_manager_user),
+    actor_email: str = Depends(get_current_user_email),
 ):
     """List users with role, team, manager. Optional filter by role or team."""
     q = db.query(User).order_by(User.email)
+    is_admin_actor = _is_admin_actor(db, actor_email)
+    manager_row = None if is_admin_actor else _manager_actor_row(db, actor_email)
+    if manager_row:
+        scope_parts = [User.id == manager_row.id, User.manager_id == manager_row.id]
+        if manager_row.team_id:
+            scope_parts.append(User.team_id == manager_row.team_id)
+        q = q.filter(or_(*scope_parts))
     if role and role.strip():
         q = q.filter(User.role == role.strip())
-    if team_id and team_id.strip():
+    if is_admin_actor and team_id and team_id.strip():
         q = q.filter(User.team_id == team_id.strip())
     users = q.all()
     result = []
@@ -450,16 +509,21 @@ def list_login_events(
     db: Session = Depends(get_db),
     limit: int = Query(500, ge=1, le=2000),
     _auth: str = Depends(get_admin_or_manager_user),
+    actor_email: str = Depends(get_current_user_email),
 ):
     """Session rows (login → logout); newest first."""
     try:
-        rows = (
-            db.query(UserLoginEvent, User)
-            .join(User, User.id == UserLoginEvent.user_id)
-            .order_by(desc(UserLoginEvent.login_at))
-            .limit(limit)
-            .all()
-        )
+        q = db.query(UserLoginEvent, User).join(User, User.id == UserLoginEvent.user_id)
+        if not _is_admin_actor(db, actor_email):
+            mgr = _manager_actor_row(db, actor_email)
+            if mgr:
+                scope = actor_manager_scope_mailboxes(db, actor_email) or set()
+                if not scope:
+                    return []
+                q = q.filter(User.email.in_(list(scope)))
+            else:
+                return []
+        rows = q.order_by(desc(UserLoginEvent.login_at)).limit(limit).all()
     except (OperationalError, ProgrammingError):
         return []
     return [
@@ -481,25 +545,60 @@ def list_login_events(
 def login_sync_status(
     db: Session = Depends(get_db),
     _auth: str = Depends(get_admin_or_manager_user),
+    actor_email: str = Depends(get_current_user_email),
 ):
     """Quick diagnostics for auth->backend user sync health."""
     now = datetime.now(timezone.utc)
     cutoff = now.replace(microsecond=0) - timedelta(hours=24)
-    total_users = db.query(User).count()
-    users_with_last_login = db.query(User).filter(User.last_login_at.isnot(None)).count()
+    user_q = db.query(User)
+    event_q = db.query(UserLoginEvent)
+    if not _is_admin_actor(db, actor_email):
+        mgr = _manager_actor_row(db, actor_email)
+        if mgr:
+            scope = actor_manager_scope_mailboxes(db, actor_email) or set()
+            if not scope:
+                return LoginSyncStatusOut(
+                    totalUsers=0,
+                    usersWithLastLoginAt=0,
+                    usersMissingLastLoginAt=0,
+                    totalLoginEvents=0,
+                    activeSessions=0,
+                    oauthEvents24h=0,
+                    sessionEvents24h=0,
+                    lastOauthEventAt=None,
+                    lastAnyEventAt=None,
+                    syncHealth="healthy",
+                )
+            user_q = user_q.filter(User.email.in_(list(scope)))
+            event_q = event_q.join(User, User.id == UserLoginEvent.user_id).filter(User.email.in_(list(scope)))
+        else:
+            return LoginSyncStatusOut(
+                totalUsers=0,
+                usersWithLastLoginAt=0,
+                usersMissingLastLoginAt=0,
+                totalLoginEvents=0,
+                activeSessions=0,
+                oauthEvents24h=0,
+                sessionEvents24h=0,
+                lastOauthEventAt=None,
+                lastAnyEventAt=None,
+                syncHealth="healthy",
+            )
+    total_users = user_q.count()
+    users_with_last_login = user_q.filter(User.last_login_at.isnot(None)).count()
     users_missing_last_login = max(0, total_users - users_with_last_login)
-    total_events = db.query(UserLoginEvent).count()
-    active_sessions = db.query(UserLoginEvent).filter(UserLoginEvent.is_logged_in.is_(True)).count()
-    oauth_24h = db.query(UserLoginEvent).filter(
+    total_events = event_q.count()
+    active_sessions = event_q.filter(UserLoginEvent.is_logged_in.is_(True)).count()
+    oauth_24h = event_q.filter(
         UserLoginEvent.login_source == "oauth",
         UserLoginEvent.login_at >= cutoff,
     ).count()
-    session_24h = db.query(UserLoginEvent).filter(
+    session_24h = event_q.filter(
         UserLoginEvent.login_source == "session",
         UserLoginEvent.login_at >= cutoff,
     ).count()
-    last_oauth = db.query(func.max(UserLoginEvent.login_at)).filter(UserLoginEvent.login_source == "oauth").scalar()
-    last_any = db.query(func.max(UserLoginEvent.login_at)).scalar()
+    last_oauth = event_q.with_entities(func.max(UserLoginEvent.login_at)).filter(UserLoginEvent.login_source == "oauth").scalar()
+    last_any = event_q.with_entities(func.max(UserLoginEvent.login_at)).scalar()
     health = "healthy"
     if total_users > 0 and oauth_24h == 0:
         health = "warning"
@@ -627,7 +726,7 @@ def update_user(
     manager_id: str | None = Query(None, alias="managerId"),
     is_team_lead: bool | None = Query(None, alias="isTeamLead"),
     db: Session = Depends(get_db),
-    _auth: str = Depends(get_admin_or_manager_user),
+    _auth: str = Depends(get_admin_user),
 ):
     """Update user role, team, manager, or is_team_lead."""
     user = db.query(User).filter(User.id == user_id).first()
@@ -706,15 +805,18 @@ def list_projects_workflow(
     db: Session = Depends(get_db),
     team_id: str | None = Query(None, alias="teamId"),
     status: str | None = Query(None),
-    _auth: str = Depends(get_admin_user),
+    _auth: str = Depends(get_admin_or_manager_user),
+    actor_email: str = Depends(get_current_user_email),
 ):
     try:
         q = db.query(TeamProject).order_by(TeamProject.updated_at.desc())
-        if team_id and team_id.strip():
+        if _is_admin_actor(db, actor_email) and team_id and team_id.strip():
             q = q.filter(TeamProject.team_id == team_id.strip())
         if status and status.strip():
             q = q.filter(TeamProject.status == status.strip().lower())
         projects = q.all()
+        if not _is_admin_actor(db, actor_email):
+            projects = [p for p in projects if _can_view_project_for_actor(db, actor_email, p)]
         return [_serialize_project(db, p) for p in projects]
     except (OperationalError, ProgrammingError) as e:
         raise HTTPException(
@@ -730,13 +832,16 @@ def list_projects_workflow(
 def get_project_workflow(
     project_id: str,
     db: Session = Depends(get_db),
-    _auth: str = Depends(get_admin_user),
+    _auth: str = Depends(get_admin_or_manager_user),
+    actor_email: str = Depends(get_current_user_email),
 ):
     """Single project for admin workflow detail view."""
     try:
         project = db.query(TeamProject).filter(TeamProject.id == project_id).first()
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
+        if not _can_view_project_for_actor(db, actor_email, project):
+            raise HTTPException(status_code=403, detail="You can only access projects from your scope")
         return _serialize_project(db, project)
     except HTTPException:
         raise
@@ -894,12 +999,12 @@ def update_project_workflow(
 def list_project_mailbox_threads(
     project_id: str,
     db: Session = Depends(get_db),
-    admin_email: str = Depends(get_admin_user),
+    admin_email: str = Depends(get_admin_or_manager_user),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100, alias="pageSize"),
 ):
     """
-    Threads in the creating admin's mailbox where at least one Inbox/Spam/Junk message contains the project name.
+    Threads in the signed-in user's mailbox where at least one Inbox/Spam/Junk message contains the project name.
     Counts and previews use only messages that contain the project name (not the whole reply chain).
     """
     try:
@@ -1003,7 +1108,7 @@ def get_project_mailbox_conversation_emails(
     project_id: str,
     conversation_id: str,
     db: Session = Depends(get_db),
-    admin_email: str = Depends(get_admin_user),
+    admin_email: str = Depends(get_admin_or_manager_user),
 ):
     """
     Messages in this conversation that contain the project name only (chronological).
@@ -1092,11 +1197,15 @@ def get_project_mailbox_conversation_emails(
 def list_escalation_counts_by_user(
     db: Session = Depends(get_db),
     _auth: str = Depends(get_admin_or_manager_user),
+    actor_email: str = Depends(get_current_user_email),
 ):
     """List all users with their escalation email count and status (read/unread/replied). Excludes default/system mailbox."""
     excluded = _excluded_mailboxes_for_user_lists()
     users = db.query(User).order_by(User.email).all()
     users = [u for u in users if (u.email or "").strip().lower() not in excluded]
+    scope = actor_manager_scope_mailboxes(db, actor_email)
+    if scope is not None:
+        users = [u for u in users if (u.email or "").strip().lower() in scope]
     if not hasattr(Email, "is_escalation") or not hasattr(Email, "mailbox_owner_email"):
         return [
             UserEscalationCountOut(
@@ -1159,11 +1268,13 @@ def list_escalations_for_user(
     from_date: str | None = Query(None, alias="from"),
     team: str | None = Query(None, description="Filter by assigned team"),
     _auth: str = Depends(get_admin_or_manager_user),
+    actor_email: str = Depends(get_current_user_email),
 ):
     """List escalation emails for a specific user's mailbox. Admin or Manager."""
     mailbox = (mailbox or "").strip().lower()
     if not mailbox or "@" not in mailbox:
         raise HTTPException(status_code=400, detail="Valid mailbox (user email) required")
+    assert_mailbox_in_manager_scope(db, actor_email, mailbox)
     try:
         if not hasattr(Email, "is_escalation"):
             return {"escalations": [], "total": 0, "page": page, "pageSize": page_size}
@@ -1193,11 +1304,15 @@ def list_escalations_for_user(
 def list_lead_counts_by_user(
     db: Session = Depends(get_db),
     _auth: str = Depends(get_admin_or_manager_user),
+    actor_email: str = Depends(get_current_user_email),
 ):
     """List all users with their lead email count and status (read/unread/replied). Excludes default/system mailbox."""
     excluded = _excluded_mailboxes_for_user_lists()
     users = db.query(User).order_by(User.email).all()
     users = [u for u in users if (u.email or "").strip().lower() not in excluded]
+    scope = actor_manager_scope_mailboxes(db, actor_email)
+    if scope is not None:
+        users = [u for u in users if (u.email or "").strip().lower() in scope]
     if not hasattr(Email, "lead_label") or not hasattr(Email, "mailbox_owner_email"):
         return [
             UserLeadCountOut(
@@ -1260,11 +1375,13 @@ def list_leads_for_user(
     from_date: str | None = Query(None, alias="from"),
     team: str | None = Query(None, description="Filter by assigned team"),
     _auth: str = Depends(get_admin_or_manager_user),
+    actor_email: str = Depends(get_current_user_email),
 ):
     """List lead emails for a specific user's mailbox. Admin or Manager."""
     mailbox = (mailbox or "").strip().lower()
     if not mailbox or "@" not in mailbox:
         raise HTTPException(status_code=400, detail="Valid mailbox (user email) required")
+    assert_mailbox_in_manager_scope(db, actor_email, mailbox)
     try:
         if not hasattr(Email, "lead_label"):
             return {"leads": [], "total": 0, "page": page, "pageSize": page_size}
@@ -1299,11 +1416,13 @@ def admin_list_retagged_for_mailbox(
     page_size: int = Query(20, ge=1, le=500, alias="pageSize"),
     from_date: str | None = Query(None, alias="from"),
     _auth: str = Depends(get_admin_or_manager_user),
+    actor_email: str = Depends(get_current_user_email),
 ):
     """Retagged emails (ex escalation/lead) for a user's mailbox. Admin or Manager."""
     mailbox_l = (mailbox or "").strip().lower()
     if not mailbox_l or "@" not in mailbox_l:
         raise HTTPException(status_code=400, detail="Valid mailbox (user email) required")
+    assert_mailbox_in_manager_scope(db, actor_email, mailbox_l)
     try:
         if not hasattr(Email, "retagged_at"):
             return {"retagged": [], "total": 0, "page": page, "pageSize": page_size}
@@ -1336,6 +1455,7 @@ def admin_retag_email(
     body: RetagEmailBody = Body(...),
     db: Session = Depends(get_db),
     admin_email: str = Depends(get_admin_or_manager_user),
+    actor_email: str = Depends(get_current_user_email),
 ):
     """Retag mail in another user's mailbox (immediate apply). Admin or Manager."""
     email = db.query(Email).filter(Email.id == email_id).first()
@@ -1344,6 +1464,7 @@ def admin_retag_email(
     owner = (getattr(email, "mailbox_owner_email", None) or "").strip().lower()
     if owner != (mailbox or "").strip().lower():
         raise HTTPException(status_code=400, detail="Email does not belong to the specified mailbox")
+    assert_mailbox_in_manager_scope(db, actor_email, owner)
     _perform_retag(db, email, body.assigned_team, admin_email)
     return {"ok": True, "emailId": email_id, "assignedTeam": email.assigned_team}
 

@@ -10,7 +10,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import and_, func
 from sqlalchemy.orm import Session, joinedload
 
-from app.api.deps import get_admin_or_manager_user
+from app.api.admin_access import actor_manager_scope_mailboxes, manager_actor_row
+from app.api.deps import get_admin_or_manager_user, get_current_user_email
 from app.config import get_settings
 from app.db.models import Email, TeamProject, User
 from app.db.session import get_db
@@ -232,16 +233,39 @@ DAY_LABELS = {
 }
 
 
-@router.get("", response_model=TrackerDashboardOut)
-def get_tracker_dashboard(db: Session = Depends(get_db)):
-    week_start, week_end = _week_bounds_utc()
-    watch_emails = _tracker_watch_emails(db)
-    projects = (
+def _tracker_projects_for_dashboard(db: Session, actor_email: str) -> list[TeamProject]:
+    q = (
         db.query(TeamProject)
         .options(joinedload(TeamProject.team))
         .order_by(TeamProject.updated_at.desc())
-        .all()
     )
+    if actor_manager_scope_mailboxes(db, actor_email) is not None:
+        mgr = manager_actor_row(db, actor_email)
+        if not mgr or not mgr.team_id:
+            return []
+        q = q.filter(TeamProject.team_id == mgr.team_id)
+    return q.all()
+
+
+def _assert_tracker_project_access(db: Session, actor_email: str, project: TeamProject) -> None:
+    if actor_manager_scope_mailboxes(db, actor_email) is None:
+        return
+    mgr = manager_actor_row(db, actor_email)
+    if not mgr or not mgr.team_id or project.team_id != mgr.team_id:
+        raise HTTPException(
+            status_code=403,
+            detail="You can only access tracker data for your department's projects",
+        )
+
+
+@router.get("", response_model=TrackerDashboardOut)
+def get_tracker_dashboard(
+    db: Session = Depends(get_db),
+    actor_email: str = Depends(get_current_user_email),
+):
+    week_start, week_end = _week_bounds_utc()
+    watch_emails = _tracker_watch_emails(db)
+    projects = _tracker_projects_for_dashboard(db, actor_email)
     out: list[ProjectTrackerOut] = []
     for p in projects:
         schedule = _normalize_schedule_days(getattr(p, "tracker_schedule_days", None))
@@ -278,11 +302,13 @@ def list_project_tracker_emails(
     days: int = Query(7, ge=1, le=365, description="Lookback window ending now (UTC), in days"),
     limit: int = Query(100, ge=1, le=300, description="Max rows after Cc filter"),
     db: Session = Depends(get_db),
+    actor_email: str = Depends(get_current_user_email),
 ):
     """Matching tracker mails for this project in the lookback window (newest first)."""
     p = db.query(TeamProject).filter(TeamProject.id == project_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Project not found")
+    _assert_tracker_project_access(db, actor_email, p)
     week_end = datetime.now(timezone.utc)
     week_start = week_end - timedelta(days=days)
     watch_emails = _tracker_watch_emails(db)
@@ -316,6 +342,7 @@ def patch_tracker_schedule(
     project_id: str,
     body: TrackerSchedulePatch,
     db: Session = Depends(get_db),
+    actor_email: str = Depends(get_current_user_email),
 ):
     p = (
         db.query(TeamProject)
@@ -325,6 +352,7 @@ def patch_tracker_schedule(
     )
     if not p:
         raise HTTPException(status_code=404, detail="Project not found")
+    _assert_tracker_project_access(db, actor_email, p)
     schedule = _normalize_schedule_days(body.scheduleDays)
     p.tracker_schedule_days = schedule if schedule else None
     db.add(p)

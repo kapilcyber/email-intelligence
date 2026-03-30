@@ -36,6 +36,8 @@ export default function AdminTeamLeadersPage() {
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [loginEvents, setLoginEvents] = useState<LoginEventOut[]>([]);
   const [syncStatus, setSyncStatus] = useState<LoginSyncStatusOut | null>(null);
+  const [me, setMe] = useState<{ userId?: string; isAdmin?: boolean; department?: string | null } | null>(null);
+  const canEdit = !!me?.isAdmin;
   const loginRows = useMemo(() => {
     return [...loginEvents]
       .sort((a, b) => activityTimestampMs(b.loginAt) - activityTimestampMs(a.loginAt))
@@ -55,18 +57,27 @@ export default function AdminTeamLeadersPage() {
     return [...allUsers].sort((a, b) => score(b) - score(a));
   }, [allUsers]);
 
+  const visibleAllUsers = useMemo(() => {
+    if (canEdit) return sortedAllUsers;
+    const managerId = (me?.userId ?? "").trim();
+    if (!managerId) return [];
+    return sortedAllUsers.filter((u) => u.managerId === managerId);
+  }, [canEdit, sortedAllUsers, me?.userId]);
+
   const load = () => {
     if (status !== "authenticated") return;
     setLoading(true);
     setError(null);
     Promise.all([
+      api.getMe().catch(() => null),
       api.getUsers({ role: "Manager" }),
       api.getTeams(),
       api.getUsers(),
       api.getLoginEvents({ limit: 1000 }).catch(() => [] as LoginEventOut[]),
       api.getLoginSyncStatus().catch(() => null as LoginSyncStatusOut | null),
     ])
-      .then(([m, t, u, events, sync]) => {
+      .then(([meResp, m, t, u, events, sync]) => {
+        setMe(meResp ? { userId: meResp.userId, isAdmin: meResp.isAdmin, department: meResp.department ?? null } : null);
         setManagers(m);
         setTeams(t);
         setAllUsers(u);
@@ -82,11 +93,13 @@ export default function AdminTeamLeadersPage() {
   }, [status, api]);
 
   const assignRole = (userId: string, role: string) => {
+    if (!canEdit) return;
     setUpdatingId(userId);
     api.updateUser(userId, { role }).then(() => load()).catch(() => setError("Failed to update")).finally(() => setUpdatingId(null));
   };
 
   const assignTeam = (userId: string, teamId: string) => {
+    if (!canEdit) return;
     setUpdatingId(userId);
     api.updateUser(userId, { teamId: teamId || undefined }).then(() => load()).catch(() => setError("Failed to update")).finally(() => setUpdatingId(null));
   };
@@ -148,7 +161,7 @@ export default function AdminTeamLeadersPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <LogIn className="h-5 w-5" />
-            Login history
+            {canEdit ? "Login history" : "Login history (my department)"}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -225,7 +238,7 @@ export default function AdminTeamLeadersPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <UserCircle className="h-5 w-5" />
-            Managers ({managers.length})
+            Managers {canEdit ? `(${managers.length})` : "(read only)"}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -233,7 +246,7 @@ export default function AdminTeamLeadersPage() {
             <Skeleton className="h-48 w-full rounded-lg" />
           ) : managers.length === 0 ? (
             <p className="py-6 text-center text-sm text-neutral-500 dark:text-neutral-400">
-              No managers yet. Assign role &quot;Manager&quot; to users in Workflow or create users first.
+              No managers yet.
             </p>
           ) : (
             <ul className="divide-y divide-neutral-200 dark:divide-neutral-700">
@@ -247,7 +260,7 @@ export default function AdminTeamLeadersPage() {
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <Select value={u.teamId ?? ""} onValueChange={(tid) => assignTeam(u.id, tid)} disabled={!!updatingId}>
+                    <Select value={u.teamId ?? ""} onValueChange={(tid) => assignTeam(u.id, tid)} disabled={!!updatingId || !canEdit}>
                       <SelectTrigger className="w-[160px]">
                         <SelectValue placeholder="Team" />
                       </SelectTrigger>
@@ -272,15 +285,15 @@ export default function AdminTeamLeadersPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <Users className="h-5 w-5" />
-            All users — assign role or team (by recent activity)
+            {canEdit ? "All users — assign role or team (by recent activity)" : "Members assigned to me (read only)"}
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {loading ? null : sortedAllUsers.length === 0 ? (
+          {loading ? null : visibleAllUsers.length === 0 ? (
             <p className="py-4 text-sm text-neutral-500 dark:text-neutral-400">No users. Create users via API or seed.</p>
           ) : (
             <ul className="divide-y divide-neutral-200 dark:divide-neutral-700">
-              {sortedAllUsers.map((u) => (
+              {visibleAllUsers.map((u) => (
                 <li key={u.id} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0 flex-1">
                     <p className="font-medium text-neutral-900 dark:text-neutral-50">{u.displayName ?? u.email}</p>
@@ -292,7 +305,7 @@ export default function AdminTeamLeadersPage() {
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <Select value={u.role} onValueChange={(role) => assignRole(u.id, role)} disabled={!!updatingId}>
+                    <Select value={u.role} onValueChange={(role) => assignRole(u.id, role)} disabled={!!updatingId || !canEdit}>
                       <SelectTrigger className="w-[110px]">
                         <SelectValue />
                       </SelectTrigger>
@@ -302,7 +315,7 @@ export default function AdminTeamLeadersPage() {
                         <SelectItem value="Admin">Admin</SelectItem>
                       </SelectContent>
                     </Select>
-                    <Select value={u.teamId ?? ""} onValueChange={(tid) => assignTeam(u.id, tid)} disabled={!!updatingId}>
+                    <Select value={u.teamId ?? ""} onValueChange={(tid) => assignTeam(u.id, tid)} disabled={!!updatingId || !canEdit}>
                       <SelectTrigger className="w-[140px]">
                         <SelectValue placeholder="Team" />
                       </SelectTrigger>
