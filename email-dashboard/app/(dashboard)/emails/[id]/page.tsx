@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { getApi } from "@/lib/api/client";
 import type { EmailDetail } from "@/lib/types";
-import { ArrowLeft, Paperclip, Mail, Calendar, Users, Folder, ExternalLink, Download, Sparkles, MessageSquare, AlertTriangle, RefreshCw } from "lucide-react";
+import { Paperclip, Mail, Calendar, Users, Folder, ExternalLink, Download, Sparkles, MessageSquare, AlertTriangle, RefreshCw } from "lucide-react";
 import { PriorityBadge } from "@/components/status/priority-badge";
 
 function formatDate(iso: string) {
@@ -30,6 +30,13 @@ function folderLabel(folder: string | null | undefined) {
   return folder;
 }
 
+function sanitizeEmailHtml(html: string): string {
+  // Prevent email-provided global CSS from leaking into the app shell.
+  return html
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "")
+    .replace(/<link\b[^>]*rel=["']?stylesheet["']?[^>]*>/gi, "");
+}
+
 export default function EmailDetailPage() {
   const { data: session, status } = useSession();
   const api = useMemo(
@@ -37,7 +44,6 @@ export default function EmailDetailPage() {
     [session?.user?.email, session?.user?.name]
   );
   const params = useParams();
-  const router = useRouter();
   const id = typeof params.id === "string" ? params.id : "";
   const [email, setEmail] = useState<EmailDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -62,11 +68,7 @@ export default function EmailDetailPage() {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-4xl space-y-6">
-        <Button variant="ghost" size="sm" onClick={() => router.push("/emails")} className="gap-2">
-          <ArrowLeft className="h-4 w-4" />
-          Back to emails
-        </Button>
+      <div className="space-y-6">
         <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white p-8 dark:border-neutral-800 dark:bg-neutral-900/50">
           <div className="mb-6 h-7 w-3/4 animate-pulse rounded bg-neutral-200 dark:bg-neutral-700" />
           <div className="mb-6 grid gap-4 sm:grid-cols-2">
@@ -85,11 +87,7 @@ export default function EmailDetailPage() {
 
   if (error || !email) {
     return (
-      <div className="mx-auto max-w-4xl space-y-6">
-        <Button variant="ghost" size="sm" onClick={() => router.push("/emails")} className="gap-2">
-          <ArrowLeft className="h-4 w-4" />
-          Back to emails
-        </Button>
+      <div className="space-y-6">
         <div className="rounded-xl border border-red-200 bg-red-50/80 px-6 py-4 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
           {error ?? "Email not found."}
         </div>
@@ -98,7 +96,9 @@ export default function EmailDetailPage() {
   }
 
   const isHtml = (email.bodyContentType || "").toLowerCase() === "html";
-  const bodyContent = email.bodyContent || email.bodyPreview || null;
+  const rawBodyContent = email.bodyContent || email.bodyPreview || null;
+  const bodyContent =
+    rawBodyContent && isHtml ? sanitizeEmailHtml(rawBodyContent) : rawBodyContent;
   const displayFolder = folderLabel(email.folder);
 
   const hasSummary = email.summary != null && String(email.summary).trim() !== "";
@@ -130,21 +130,11 @@ export default function EmailDetailPage() {
   };
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={() => router.push("/emails")}
-        className="-ml-1 gap-2 text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Back to emails
-      </Button>
-
+    <div className="space-y-6">
       <article className="overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-900/50">
         {/* Subject */}
         <header className="border-b border-neutral-100 px-6 py-5 dark:border-neutral-800">
-          <h1 className="text-xl font-semibold tracking-tight text-neutral-900 dark:text-neutral-50">
+          <h1 className="text-2xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50">
             {email.subject || "(No subject)"}
           </h1>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -175,6 +165,17 @@ export default function EmailDetailPage() {
                   <p className="text-xs font-medium uppercase tracking-wider text-neutral-400 dark:text-neutral-500">Cc</p>
                   <p className="mt-0.5 break-words text-sm text-neutral-700 dark:text-neutral-200">
                     {formatRecipients(email.ccRecipients)}
+                  </p>
+                </div>
+              </div>
+            )}
+            {email.bccRecipients && email.bccRecipients.length > 0 && (
+              <div className="flex gap-3 sm:col-span-2">
+                <Users className="mt-0.5 h-4 w-4 shrink-0 text-neutral-400" />
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wider text-neutral-400 dark:text-neutral-500">Bcc</p>
+                  <p className="mt-0.5 break-words text-sm text-neutral-700 dark:text-neutral-200">
+                    {formatRecipients(email.bccRecipients)}
                   </p>
                 </div>
               </div>
@@ -264,9 +265,23 @@ export default function EmailDetailPage() {
               {hasSummary ? (
                 <p className="mt-0.5 text-sm text-neutral-700 dark:text-neutral-300">{email.summary}</p>
               ) : (
-                <p className="mt-0.5 text-sm italic text-neutral-500 dark:text-neutral-400">
-                  Summary not available (AI pending or failed).
-                </p>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <p className="text-sm italic text-neutral-500 dark:text-neutral-400">
+                    Summary not available (AI pending or failed).
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 gap-1.5 px-2 text-xs"
+                    onClick={handleRetryAi}
+                    disabled={retrying}
+                    title="Retrieve summary"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 ${retrying ? "animate-spin" : ""}`} />
+                    {retrying ? "Retrieving…" : "Retrieve"}
+                  </Button>
+                </div>
               )}
             </div>
             <div className="flex flex-wrap items-center gap-2">

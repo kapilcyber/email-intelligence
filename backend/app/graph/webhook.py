@@ -2,9 +2,9 @@
 Microsoft Graph change notifications: subscribe, validate, renew.
 """
 from typing import Any
-import httpx
 from app.config import get_settings
 from app.graph.auth import get_auth_headers
+from app.http_client import httpx_client
 
 GRAPH_BASE = "https://graph.microsoft.com/v1.0"
 EXPIRATION_MINUTES = 4230  # max ~3 days
@@ -32,7 +32,7 @@ def subscribe(user_id: str, change_type: str = "created") -> dict[str, Any]:
     exp = datetime.now(timezone.utc) + timedelta(minutes=EXPIRATION_MINUTES)
     payload["expirationDateTime"] = exp.strftime("%Y-%m-%dT%H:%M:%S.000Z")
     url = f"{GRAPH_BASE}/subscriptions"
-    with httpx.Client(timeout=30.0) as client:
+    with httpx_client(timeout=30.0) as client:
         r = client.post(url, json=payload, headers=get_auth_headers())
         r.raise_for_status()
         data = r.json()
@@ -45,7 +45,7 @@ def renew_subscription(subscription_id: str) -> dict[str, Any]:
     exp = datetime.now(timezone.utc) + timedelta(minutes=EXPIRATION_MINUTES)
     url = f"{GRAPH_BASE}/subscriptions/{subscription_id}"
     payload = {"expirationDateTime": exp.strftime("%Y-%m-%dT%H:%M:%S.000Z")}
-    with httpx.Client(timeout=30.0) as client:
+    with httpx_client(timeout=30.0) as client:
         r = client.patch(url, json=payload, headers=get_auth_headers())
         r.raise_for_status()
         data = r.json()

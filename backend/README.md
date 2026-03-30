@@ -1,6 +1,6 @@
 # Email Intelligence — Backend
 
-FastAPI backend for email ingestion (Phase 1), AI classification (Phase 2), escalations/leads (Phase 3), and admin/teams (Phase 4): Microsoft Graph, Redis/Celery, PostgreSQL, Ollama (primary) and OpenAI (fallback).
+FastAPI backend for email ingestion (Phase 1) and AI classification (Phase 2): Microsoft Graph, Redis/Celery, PostgreSQL, Ollama (primary) and OpenAI (fallback).
 
 ## Phase 1 deliverables
 
@@ -48,7 +48,7 @@ FastAPI backend for email ingestion (Phase 1), AI classification (Phase 2), esca
    Use `python -m pip` if `pip` is not on PATH.
 
 3. **PostgreSQL & Redis**
-   - **With DB:** Ensure PostgreSQL is running (e.g. pgAdmin 4). Create the app database once: from the `backend` folder run **`python scripts/create_db.py`** (uses `.env` credentials). Or in pgAdmin: right‑click **Databases → Create → Database**, name it `email_intelligence`. Set `DATABASE_URL` or `POSTGRES_*` in `.env`.
+   - **With DB:** Ensure PostgreSQL is running (e.g. pgAdmin 4). Create the app database once: from the `backend` folder run **`python scripts/create_db.py`** (uses `.env` credentials). Or in pgAdmin: right‑click **Databases → Create → Database**, name it `email_intelligence`. Set `DATABASE_URL` or `POSTGRES_*` in `.env`. **Then run `alembic upgrade head`** to create/update tables (the app does not create tables at startup).
    - **Without PostgreSQL:** The API runs without a database: health reports database as "error", dashboard metrics and emails return zeros/empty. Start the API and dashboard as usual; the UI will load and show "Database or backend may be unavailable" if the backend is unreachable.
    - **Redis** is used for Celery and queue stats. If Redis is not running, health reports redis as "error" and queue stats return zeros; the API still responds.
 
@@ -60,10 +60,10 @@ FastAPI backend for email ingestion (Phase 1), AI classification (Phase 2), esca
    ```
 
 5. **Alembic (database migrations)**  
-   From the `backend` folder:
-   - **Fresh DB:** `alembic upgrade head` creates all tables (senders, emails, attachments, teams, users, escalation_threads, etc.).
-   - **Existing DB already in sync:** `alembic stamp head` to mark current without running.
-   - **New migration after model changes:** `alembic revision --autogenerate -m "description"` then `alembic upgrade head`.  
+   Schema is managed only by Alembic; the API does not run `create_all` at startup. From the `backend` folder:
+   - **Fresh DB or first run:** `alembic upgrade head` creates all tables (senders, emails, attachments, teams, users, etc.).
+   - **Existing DB already in sync with migrations:** `alembic stamp head` to mark current without running.
+   - **After adding/changing models:** `alembic revision --autogenerate -m "description"` then `alembic upgrade head`.  
    See `alembic/README.md` for more.
 
 ## Run
@@ -131,61 +131,34 @@ Indexes: `processing_status`, `ai_status` (and existing `message_id`, `received_
 
 **Migration:** `python scripts/add_phase2_observability_columns.py`
 
-## Phase 3 — Escalations, leads, routing
-
-- **Escalations:** Emails flagged for escalation (e.g. high priority, keywords) with metadata; list via `/api/escalations` and `/api/escalation-threads`.
-- **Leads:** Sales-lead labelling (Hot/Warm/Cold) and buying signals; list via `/api/leads`.
-- **Assign team:** `PATCH /api/emails/:id/assign` to set `assigned_team` (Tech, Sales, etc.).
-
-## Phase 4 — Admin (teams, users, workflow)
-
-- **Teams & users:** CRUD for teams and users; assign roles, managers, team leads. Requires admin (e.g. `ADMIN_EMAILS` in `.env` or user with `role = Admin`).
-- **Workflow:** `GET /api/admin/workflow` returns who leads whom for org chart.
-- **Counts:** Escalation and lead counts per user for admin dashboards.
-
 ## API
 
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | /api/health | Health + DB/Redis status |
-| GET | /api/me | Current user (email, role, isAdmin); creates/updates user from session |
 | GET | /api/emails | List emails (page, pageSize, search, from, to) |
-| GET | /api/emails/:id | Email detail with attachments and AI fields |
 | **POST** | **/api/emails/backfill** | Enqueue sync of existing mail from Graph (body: `user_id`, optional `folder_id`, `days`) |
-| POST | /api/emails/:id/retry-ai | Re-enqueue AI classification for one email |
-| POST | /api/emails/classify-backfill | Enqueue "Classify all" (batch AI classification) |
 | GET | /api/dashboard/metrics | KPIs for dashboard |
-| GET | /api/dashboard/daily-summary | Daily summary (escalations, leads, etc.) |
-| POST | /api/dashboard/daily-summary/generate | Trigger daily summary generation |
+| GET | /api/dashboard/calendar-events | User’s Outlook calendar (Graph `calendarView`; app permission **Calendars.Read**) |
 | GET | /api/webhook/status | Webhook subscription status |
 | POST | /api/webhook/notify | Graph callback (validation + notifications) |
 | POST | /api/webhook/subscribe | Create subscription (body: `user_id`) |
 | GET | /api/queue/status | Queue/worker stats |
 | GET | /api/settings | Read-only config (secrets masked) |
 | GET | /api/system/health | Webhook status, last webhook ts, AI latency avg, queue backlog |
-| GET | /api/escalations | Phase 3: list escalations (optional filters) |
-| GET | /api/escalation-threads | Phase 3: escalation threads |
-| GET | /api/leads | Phase 3: list leads (optional filters) |
-| PATCH | /api/emails/:id/assign | Phase 3: assign email to team |
-| GET | /api/admin/teams | Admin: list teams |
-| GET | /api/admin/users | Admin: list users |
-| PATCH | /api/admin/users/:id | Admin: update user (role, team, manager, etc.) |
-| POST | /api/admin/users | Admin: create user |
-| GET | /api/admin/escalation-counts | Admin: escalation counts per user |
-| GET | /api/admin/lead-counts | Admin: lead counts per user |
-| GET | /api/admin/workflow | Admin: workflow (who leads whom) |
+| POST | /api/emails/:id/retry-ai | Re-enqueue AI classification for one email |
 
 ## Project layout
 
 ```
 app/
-  main.py           # FastAPI app, CORS, routes, /api/me
+  main.py           # FastAPI app, CORS, routes
   config.py         # Settings from env
-  api/              # health, webhook, emails, dashboard, queue, settings, system, phase3, admin
-  db/               # session, models (Email, Attachment, Sender, Team, User, EscalationThread)
+  api/              # health, webhook, emails, dashboard, queue, settings
+  db/               # session, models (Email, Attachment, Sender)
   graph/            # auth (token), client (messages), webhook (subscribe/renew)
-  workers/          # celery_app, tasks (ingest, classify, backfill, daily summary, etc.)
-  ai/               # classifier (Ollama/OpenAI), escalation, trust
+  workers/          # celery_app, tasks (ingest_email_task, classify_email_task, backfill_emails_task)
+  ai/               # classifier (Ollama primary, OpenAI fallback: summary, category, priority, reply suggestions)
 ```
 
 ## Connect frontend

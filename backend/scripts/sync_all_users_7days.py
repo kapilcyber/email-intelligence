@@ -14,6 +14,7 @@ def main():
     from app.db.session import init_db, SessionLocal
     from app.db.models import User
     from app.workers.tasks import backfill_emails_task, backfill_classify_emails_task
+    from app.workers.user_queue import user_queue_incr
 
     get_settings()
     init_db()
@@ -31,6 +32,7 @@ def main():
 
     print(f"Found {len(emails)} users. Enqueueing sync (last 7 days) for each...")
     for email in emails:
+        user_queue_incr(email, 1)
         backfill_emails_task.delay(email, "inbox", 7)
         print(f"  Enqueued backfill: {email}")
 

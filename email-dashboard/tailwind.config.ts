@@ -9,6 +9,19 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      colors: {
+        background: "hsl(var(--background) / <alpha-value>)",
+        foreground: "hsl(var(--foreground) / <alpha-value>)",
+        muted: "hsl(var(--muted) / <alpha-value>)",
+        "muted-foreground": "hsl(var(--muted-foreground) / <alpha-value>)",
+        panel: "hsl(var(--panel) / <alpha-value>)",
+        "panel-foreground": "hsl(var(--panel-foreground) / <alpha-value>)",
+        "panel-elevated": "hsl(var(--panel-elevated) / <alpha-value>)",
+        border: "hsl(var(--border) / <alpha-value>)",
+        ring: "hsl(var(--ring) / <alpha-value>)",
+        accent: "hsl(var(--accent) / <alpha-value>)",
+        "accent-foreground": "hsl(var(--accent-foreground) / <alpha-value>)",
+      },
       borderRadius: {
         "2xl": "1rem",
       },

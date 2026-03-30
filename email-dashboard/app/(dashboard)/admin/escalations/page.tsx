@@ -9,7 +9,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertCircle, ArrowLeft, Download, Info, Table2, Users } from "lucide-react";
+import { AlertCircle, Download, Info, Table2, Users, Tags } from "lucide-react";
+import { RetagMailControl } from "@/components/escalations/retag-mail-control";
 import {
   LineChart,
   Line,
@@ -25,13 +26,13 @@ import {
   Bar,
 } from "recharts";
 
-const PAGE_SIZE = 20;
-const CHART_PAGE_SIZE = 200;
+const DEFAULT_PAGE_SIZE = 20;
+const CHART_PAGE_SIZE = 400;
 const PRIORITY_LABELS = ["Critical", "High", "Medium", "Low", "Spam"];
 const CHART_COLORS = ["#ef4444", "#f97316", "#eab308", "#22c55e", "#94a3b8"];
 
 type ViewMode = "all" | "analytics" | "table";
-type DateRange = "month" | "year" | "custom";
+type DateRange = "all" | "month" | "year" | "custom";
 
 function formatDate(s: string) {
   try {
@@ -44,6 +45,9 @@ function formatDate(s: string) {
 
 function getDateRangeFromPreset(preset: DateRange): string {
   const now = new Date();
+  if (preset === "all") {
+    return "";
+  }
   if (preset === "month") {
     const start = new Date(now.getFullYear(), now.getMonth(), 1);
     return start.toISOString().slice(0, 10);
@@ -62,7 +66,7 @@ export default function AdminEscalationsPage() {
   );
 
   const [viewMode, setViewMode] = useState<ViewMode>("all");
-  const [dateRange, setDateRange] = useState<DateRange>("month");
+  const [dateRange, setDateRange] = useState<DateRange>("all");
   const [customFrom, setCustomFrom] = useState("");
   const [teamFilter, setTeamFilter] = useState<string>("");
   const [search, setSearch] = useState("");
@@ -72,10 +76,15 @@ export default function AdminEscalationsPage() {
   const [userCounts, setUserCounts] = useState<UserEscalationCountOut[]>([]);
   const [userCountsLoading, setUserCountsLoading] = useState(true);
   const [selectedUserEmail, setSelectedUserEmail] = useState<string | null>(null);
+  const [mailKindTab, setMailKindTab] = useState<"escalations" | "retag">("escalations");
+  const [retagItems, setRetagItems] = useState<EscalationLeadItem[]>([]);
+  const [retagTotal, setRetagTotal] = useState(0);
+  const [retagPage, setRetagPage] = useState(1);
   const [items, setItems] = useState<EscalationLeadItem[]>([]);
   const [chartItems, setChartItems] = useState<EscalationLeadItem[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [loading, setLoading] = useState(true);
   const [chartLoading, setChartLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -106,7 +115,7 @@ export default function AdminEscalationsPage() {
       .getAdminEscalationsForUser({
         mailbox: selectedUserEmail,
         page,
-        pageSize: PAGE_SIZE,
+        pageSize,
         from: fromDate || undefined,
         team: teamFilter || undefined,
       })
@@ -115,6 +124,25 @@ export default function AdminEscalationsPage() {
         setTotal(r.total);
       })
       .catch(() => setError("Failed to load escalations"))
+      .finally(() => setLoading(false));
+  };
+
+  const loadAdminRetag = () => {
+    if (status !== "authenticated" || !selectedUserEmail) return;
+    setLoading(true);
+    setError(null);
+    api
+      .getAdminRetagged({
+        mailbox: selectedUserEmail,
+        page: retagPage,
+        pageSize,
+        from: fromDate || undefined,
+      })
+      .then((r) => {
+        setRetagItems(r.retagged);
+        setRetagTotal(r.total);
+      })
+      .catch(() => setError("Failed to load ReTag list"))
       .finally(() => setLoading(false));
   };
 
@@ -155,23 +183,35 @@ export default function AdminEscalationsPage() {
   }, [status, selectedUserEmail]);
 
   useEffect(() => {
-    if (selectedUserEmail) loadTable();
-  }, [status, api, selectedUserEmail, page, teamFilter, fromDate]);
+    if (selectedUserEmail && mailKindTab === "escalations") loadTable();
+  }, [status, api, selectedUserEmail, page, pageSize, teamFilter, fromDate, mailKindTab]);
 
   useEffect(() => {
-    if (selectedUserEmail && (viewMode === "all" || viewMode === "analytics")) {
+    if (selectedUserEmail && mailKindTab === "retag") loadAdminRetag();
+  }, [status, api, selectedUserEmail, mailKindTab, retagPage, pageSize, fromDate]);
+
+  useEffect(() => {
+    if (
+      selectedUserEmail &&
+      mailKindTab === "escalations" &&
+      (viewMode === "all" || viewMode === "analytics")
+    ) {
       loadCharts();
     }
-  }, [status, api, selectedUserEmail, viewMode, fromDate, teamFilter]);
+  }, [status, api, selectedUserEmail, viewMode, fromDate, teamFilter, mailKindTab]);
 
   useEffect(() => {
     if (status !== "authenticated" || !selectedUserEmail) return;
     const id = window.setInterval(() => {
-      loadTable();
-      if (viewMode === "all" || viewMode === "analytics") loadCharts();
+      if (mailKindTab === "escalations") {
+        loadTable();
+        if (viewMode === "all" || viewMode === "analytics") loadCharts();
+      } else {
+        loadAdminRetag();
+      }
     }, 30000);
     return () => window.clearInterval(id);
-  }, [status, api, selectedUserEmail, page, teamFilter, fromDate, viewMode]);
+  }, [status, api, selectedUserEmail, page, pageSize, teamFilter, fromDate, viewMode, mailKindTab]);
 
   const filteredItems = useMemo(() => {
     let list = items;
@@ -221,7 +261,7 @@ export default function AdminEscalationsPage() {
     return Object.entries(byPriority).map(([priority, count]) => ({ priority, count }));
   }, [chartItems]);
 
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const handleDownload = () => {
     const rows = [
@@ -273,19 +313,35 @@ export default function AdminEscalationsPage() {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-50">Escalations</h1>
-          <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-            {selectedUserEmail
-              ? `Escalation mails for ${selectedUser?.displayName ?? selectedUserEmail.split("@")[0]}`
-              : "All users. Click a user to see their escalation mails."}
-          </p>
+          <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-50">Escalations</h1>
         </div>
         {selectedUserEmail && (
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={() => (setSelectedUserEmail(null), setPage(1))} className="gap-2">
-              <ArrowLeft className="h-4 w-4" />
-              Back to users
-            </Button>
+            <div className="flex rounded-lg border border-neutral-200 bg-white p-0.5 dark:border-neutral-700 dark:bg-neutral-900">
+              <button
+                type="button"
+                onClick={() => (setMailKindTab("escalations"), setPage(1))}
+                className={`rounded-md px-3 py-1.5 text-sm font-medium ${
+                  mailKindTab === "escalations"
+                    ? "bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900"
+                    : "text-neutral-600 dark:text-neutral-400"
+                }`}
+              >
+                Escalations
+              </button>
+              <button
+                type="button"
+                onClick={() => (setMailKindTab("retag"), setRetagPage(1))}
+                className={`flex items-center gap-1 rounded-md px-3 py-1.5 text-sm font-medium ${
+                  mailKindTab === "retag"
+                    ? "bg-indigo-600 text-white dark:bg-indigo-500"
+                    : "text-neutral-600 dark:text-neutral-400"
+                }`}
+              >
+                <Tags className="h-3.5 w-3.5" />
+                ReTag
+              </button>
+            </div>
             <div className="flex rounded-lg border border-neutral-200 bg-white p-0.5 dark:border-neutral-700 dark:bg-neutral-900">
               {(["all", "analytics", "table"] as const).map((mode) => (
                 <button
@@ -303,14 +359,21 @@ export default function AdminEscalationsPage() {
               ))}
             </div>
             <div className="flex items-center gap-2">
-              <Select value={dateRange} onValueChange={(v) => setDateRange(v as DateRange)}>
-                <SelectTrigger className="w-[140px]">
+              <Select
+                value={dateRange}
+                onValueChange={(v) => {
+                  setDateRange(v as DateRange);
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger className="w-[160px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="all">All time</SelectItem>
                   <SelectItem value="month">This month</SelectItem>
                   <SelectItem value="year">This year</SelectItem>
-                  <SelectItem value="custom">Custom date</SelectItem>
+                  <SelectItem value="custom">Custom from date</SelectItem>
                 </SelectContent>
               </Select>
               {dateRange === "custom" && (
@@ -344,9 +407,6 @@ export default function AdminEscalationsPage() {
               <Users className="h-5 w-5" />
               Users — escalation count
             </CardTitle>
-            <p className="text-sm font-normal text-neutral-500 dark:text-neutral-400">
-              Click a user to open their escalation mails table.
-            </p>
           </CardHeader>
           <CardContent>
             {userCountsLoading ? (
@@ -369,7 +429,10 @@ export default function AdminEscalationsPage() {
                       <tr
                         key={u.email}
                         className="cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/50"
-                        onClick={() => setSelectedUserEmail(u.email)}
+                        onClick={() => {
+                          setPage(1);
+                          setSelectedUserEmail(u.email);
+                        }}
                       >
                         <td className="px-4 py-3 font-medium text-neutral-900 dark:text-neutral-50">
                           {u.displayName ?? u.email.split("@")[0]}
@@ -393,7 +456,7 @@ export default function AdminEscalationsPage() {
         </Card>
       )}
 
-      {selectedUserEmail && (
+      {selectedUserEmail && mailKindTab === "escalations" && (
         <>
       {/* KPI cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -436,7 +499,7 @@ export default function AdminEscalationsPage() {
               <div>
                 <p className="text-sm font-medium text-neutral-500 dark:text-neutral-400">Date range</p>
                 <p className="text-lg font-semibold text-neutral-900 dark:text-neutral-50">
-                  {fromDate ? formatDate(fromDate) : "All"}
+                  {fromDate ? formatDate(fromDate) : "All time"}
                 </p>
               </div>
             </div>
@@ -541,6 +604,22 @@ export default function AdminEscalationsPage() {
                 Escalations table
               </CardTitle>
               <div className="flex flex-wrap items-center gap-2">
+                <Select
+                  value={String(pageSize)}
+                  onValueChange={(v) => {
+                    setPageSize(Number(v));
+                    setPage(1);
+                  }}
+                >
+                  <SelectTrigger className="w-[120px]">
+                    <SelectValue placeholder="Rows" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="20">20 per page</SelectItem>
+                    <SelectItem value="50">50 per page</SelectItem>
+                    <SelectItem value="100">100 per page</SelectItem>
+                  </SelectContent>
+                </Select>
                 <Select value={teamFilter || "all"} onValueChange={(v) => (setTeamFilter(v === "all" ? "" : v), setPage(1))}>
                   <SelectTrigger className="w-[140px]">
                     <SelectValue placeholder="Team" />
@@ -598,6 +677,7 @@ export default function AdminEscalationsPage() {
                         <th className="px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">Mail type</th>
                         <th className="px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">Status</th>
                         <th className="px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">Date reported</th>
+                        <th className="px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">Retag</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-neutral-200 dark:divide-neutral-700">
@@ -633,15 +713,36 @@ export default function AdminEscalationsPage() {
                             </span>
                           </td>
                           <td className="px-4 py-3 text-neutral-500">{formatDate(item.receivedAt)}</td>
+                          <td className="px-4 py-3 align-top">
+                            {selectedUserEmail && (
+                              <RetagMailControl
+                                emailId={item.id}
+                                adminMailbox={selectedUserEmail}
+                                departmentNames={teamNames}
+                                onDone={() => {
+                                  loadTable();
+                                  if (mailKindTab === "retag") loadAdminRetag();
+                                }}
+                                compact
+                              />
+                            )}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-                {totalPages > 1 && (
-                  <div className="mt-4 flex items-center justify-between">
+                {(totalPages > 1 || total > 0) && (
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
                     <p className="text-sm text-neutral-500 dark:text-neutral-400">
-                      Page {page} of {totalPages}
+                      {total > 0 ? (
+                        <>
+                          Showing {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} of {total}
+                          {totalPages > 1 ? ` · Page ${page} of ${totalPages}` : ""}
+                        </>
+                      ) : (
+                        `Page ${page} of ${totalPages}`
+                      )}
                     </p>
                     <div className="flex gap-2">
                       <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
@@ -659,6 +760,70 @@ export default function AdminEscalationsPage() {
         </Card>
       )}
         </>
+      )}
+
+      {selectedUserEmail && mailKindTab === "retag" && (
+        <Card className="rounded-xl border-neutral-200 dark:border-neutral-800">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Tags className="h-5 w-5" />
+              ReTag — {selectedUserEmail} ({retagTotal})
+            </CardTitle>
+            <p className="text-sm font-normal text-neutral-500 dark:text-neutral-400">
+              Mail this user retagged from escalation/lead into another department.
+            </p>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <Skeleton className="h-64 w-full rounded-lg" />
+            ) : retagItems.length === 0 ? (
+              <p className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">No retagged mail.</p>
+            ) : (
+              <div className="overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-700">
+                <table className="w-full text-left text-sm">
+                  <thead className="border-b border-neutral-200 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800/50">
+                    <tr>
+                      <th className="px-4 py-3">Subject</th>
+                      <th className="px-4 py-3">Department</th>
+                      <th className="px-4 py-3">Retagged</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-200 dark:divide-neutral-700">
+                    {retagItems.map((item) => (
+                      <tr key={item.id}>
+                        <td className="px-4 py-3">
+                          <Link href={`/emails/${item.id}`} className="font-medium hover:underline">
+                            {item.subject || "(No subject)"}
+                          </Link>
+                        </td>
+                        <td className="px-4 py-3">{item.assignedTeam ?? "—"}</td>
+                        <td className="px-4 py-3 text-xs text-neutral-500">
+                          {item.retaggedAt ? formatDate(item.retaggedAt) : "—"}
+                          {item.retagPreviousSummary ? ` · ${item.retagPreviousSummary}` : ""}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {Math.ceil(retagTotal / pageSize) > 1 && (
+              <div className="mt-4 flex justify-between">
+                <Button variant="outline" size="sm" disabled={retagPage <= 1} onClick={() => setRetagPage((p) => p - 1)}>
+                  Previous
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={retagPage >= Math.ceil(retagTotal / pageSize)}
+                  onClick={() => setRetagPage((p) => p + 1)}
+                >
+                  Next
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       )}
     </div>
   );

@@ -25,6 +25,106 @@ export interface DashboardMetrics {
   priorityCounts?: Record<string, number>;
 }
 
+/** Outlook / Microsoft Graph calendar event (dashboard widget) */
+export interface CalendarEventOut {
+  id: string | null;
+  subject: string;
+  start: { dateTime: string; timeZone?: string } | null;
+  end: { dateTime: string; timeZone?: string } | null;
+  organizerName: string | null;
+  organizerEmail: string | null;
+  joinUrl: string | null;
+  webLink: string | null;
+  isCancelled: boolean;
+  isOnlineMeeting: boolean;
+  location: string | null;
+  showAs?: string | null;
+}
+
+export interface CalendarEventsResponse {
+  events: CalendarEventOut[];
+  error: string | null;
+}
+
+export interface NotificationItem {
+  id: string;
+  kind: "new_mail" | "meeting_scheduled" | "ai_pending" | "important_date" | "unreplied_mail" | string;
+  title: string;
+  message: string;
+  level: "info" | "warning" | "error" | string;
+  at: string;
+  count?: number;
+  href?: string;
+}
+
+export interface NotificationsResponse {
+  items: NotificationItem[];
+  error: string | null;
+}
+
+export interface MyProjectItem {
+  projectId: string;
+  projectName: string;
+  status: "running" | "new" | "planned" | "completed" | string;
+  teamName: string | null;
+  role: string | null;
+  responsibilities: string | null;
+  reportsToUserId: string | null;
+  structure: { phases?: string[]; notes?: string; currentPhase?: number } | null;
+  updatedAt: string | null;
+}
+
+export interface MyProjectsResponse {
+  projects: MyProjectItem[];
+}
+
+export type FollowUpDayKey = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
+
+export interface FollowUpTrackerDay {
+  key: FollowUpDayKey;
+  label: string;
+  expected: boolean;
+  sentByMe: boolean;
+}
+
+export interface FollowUpTrackerProject {
+  projectId: string;
+  projectName: string;
+  teamName: string | null;
+  scheduleDays: string[];
+  weekStartISO: string;
+  weekEndISO: string;
+  days: FollowUpTrackerDay[];
+}
+
+export interface FollowUpTrackerResponse {
+  weekStartISO: string;
+  weekEndISO: string;
+  projects: FollowUpTrackerProject[];
+}
+
+export interface FollowUpReminderItem {
+  projectId: string;
+  projectName: string;
+}
+
+export interface FollowUpRemindersResponse {
+  reminders: FollowUpReminderItem[];
+  todayKey: string;
+}
+
+export interface FollowUpTrackerHistoryEmail {
+  emailId: string;
+  subject: string | null;
+  receivedAt: string;
+}
+
+export interface FollowUpTrackerHistoryResponse {
+  projectId: string;
+  projectName: string;
+  emails: FollowUpTrackerHistoryEmail[];
+}
+
 export type EmailStatus = "stored" | "failed";
 
 export type AiStatus = "pending" | "completed" | "failed";
@@ -46,6 +146,8 @@ export interface EmailRecord {
   aiStatus?: AiStatus | null;
   aiProcessedAt?: string | null;
   processingStatus?: ProcessingStatus | null;
+  /** Department/team (Tech, Sales, Accounts, etc.) */
+  assignedTeam?: string | null;
 }
 
 export interface EmailsResponse {
@@ -53,6 +155,27 @@ export interface EmailsResponse {
   total: number;
   page: number;
   pageSize: number;
+}
+
+/** One email thread (conversation) for Threads view */
+export interface ConversationItem {
+  conversationId: string;
+  subject: string | null;
+  lastReceivedAt: string;
+  messageCount: number;
+  participantsPreview: string;
+}
+
+export interface ConversationsResponse {
+  conversations: ConversationItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface ThreadEmailsResponse {
+  conversationId: string;
+  emails: EmailDetail[];
 }
 
 export interface EmailAttachment {
@@ -71,6 +194,7 @@ export interface EmailDetail {
   senderDisplayName: string | null;
   toRecipients: { email?: string; name?: string }[];
   ccRecipients: { email?: string; name?: string }[];
+  bccRecipients?: { email?: string; name?: string }[];
   receivedAt: string;
   sentAt: string | null;
   folder: string | null;
@@ -125,6 +249,8 @@ export interface QueueStatusResponse {
   failed: number;
   retryCount: number;
   workerUptime: number; // seconds
+  /** Celery workers visible to the broker (shared across users). */
+  activeWorkers?: number;
   taskDistribution?: { name: string; count: number }[];
 }
 
@@ -160,10 +286,16 @@ export interface EscalationLeadItem {
   /** Mailbox owner (member) for "Created by" column */
   mailboxOwner?: string | null;
   leadLabel?: string | null;
+  /** Buying signals from lead detection (e.g. demo_request, budget_discussion) */
+  buyingSignals?: string[];
   /** Reasons this was flagged as escalation: priority_high, keywords, negative_tone, re_chain, cc_senior, thread_length */
   escalationReasons?: string[] | null;
   /** Whether the email has been read (from Outlook/is_read) */
   isRead?: boolean;
+  /** Set when mail was retagged out of escalation/lead */
+  retaggedAt?: string | null;
+  retaggedBy?: string | null;
+  retagPreviousSummary?: string | null;
 }
 
 export interface EscalationsResponse {
@@ -180,6 +312,48 @@ export interface LeadsResponse {
   pageSize: number;
 }
 
+/** Mails moved from escalation/lead to a department via Retag */
+export interface RetaggedResponse {
+  retagged: EscalationLeadItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface RetagActionResponse {
+  ok: boolean;
+  emailId: string;
+  assignedTeam?: string | null;
+  requestedTeam?: string | null;
+  status?: "pending" | "approved" | "rejected";
+  mode?: "applied" | "request";
+  requestId?: string;
+  message?: string;
+}
+
+export interface RetagApprovalOut {
+  id: string;
+  emailId: string;
+  mailboxOwnerEmail: string;
+  requestedByEmail: string;
+  requestedTeam: string;
+  status: "pending" | "approved" | "rejected";
+  requestedAt: string;
+  reviewedAt?: string | null;
+  reviewedByEmail?: string | null;
+  reviewNote?: string | null;
+  emailSubject?: string | null;
+  sender?: string | null;
+  receivedAt?: string | null;
+}
+
+export interface MyRetagRequestsResponse {
+  requests: RetagApprovalOut[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 // Phase 4 — Admin (teams, users, workflow)
 export interface TeamOut {
   id: string;
@@ -188,18 +362,24 @@ export interface TeamOut {
   memberCount: number;
 }
 
-/** User with escalation count (admin escalations: list users first, then click to see table). */
+/** User with escalation count and status (read/unread/replied) for admin dashboard. */
 export interface UserEscalationCountOut {
   email: string;
   displayName: string | null;
   escalationCount: number;
+  readCount?: number;
+  unreadCount?: number;
+  repliedCount?: number;
 }
 
-/** User with lead count (admin leads: list users first, then click to see table). */
+/** User with lead count and status (read/unread/replied) for admin dashboard. */
 export interface UserLeadCountOut {
   email: string;
   displayName: string | null;
   leadCount: number;
+  readCount?: number;
+  unreadCount?: number;
+  repliedCount?: number;
 }
 
 export interface UserOut {
@@ -212,6 +392,10 @@ export interface UserOut {
   managerId: string | null;
   isTeamLead: boolean;
   reportCount: number;
+  /** Last successful /api/me sync (ISO). */
+  lastLoginAt?: string | null;
+  /** Account created in app DB (ISO). */
+  createdAt?: string | null;
 }
 
 export interface WorkflowNode {
@@ -238,8 +422,146 @@ export interface TeamStatusOut {
   leadsCount: number;
 }
 
+export interface ProjectAssignmentOut {
+  userId: string;
+  email: string;
+  displayName: string | null;
+  /** Role on this project (e.g. Tech lead). */
+  role?: string | null;
+  /** What this person does on the project. */
+  responsibilities?: string | null;
+  /** Another assignee they report to on this project only (not org manager). */
+  reportsToUserId?: string | null;
+}
+
+export interface ProjectAssignmentUpsert {
+  userId: string;
+  role?: string | null;
+  responsibilities?: string | null;
+  reportsToUserId?: string | null;
+}
+
+export interface TeamProjectOut {
+  id: string;
+  name: string;
+  teamId: string | null;
+  teamName: string | null;
+  status: "running" | "new" | "planned" | "completed";
+  structure: { phases?: string[]; notes?: string; currentPhase?: number } | null;
+  /** Explicit project lead; must be an assigned user. Not the same as org "team lead". */
+  projectLeadUserId?: string | null;
+  /** Admin user who created the project (mailbox threads are scoped to this user). */
+  createdByUserId?: string | null;
+  assignedUsers: ProjectAssignmentOut[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Admin Tracker: weekday keys stored and returned by API (UTC week). */
+export type TrackerDayKey = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
+
+export interface TrackerDayState {
+  key: TrackerDayKey;
+  label: string;
+  expected: boolean;
+  sent: boolean;
+}
+
+export interface ProjectTrackerRow {
+  projectId: string;
+  projectName: string;
+  teamName: string | null;
+  scheduleDays: string[];
+  weekStartISO: string;
+  weekEndISO: string;
+  days: TrackerDayState[];
+}
+
+export interface TrackerDashboardResponse {
+  projects: ProjectTrackerRow[];
+}
+
+export interface TrackerEmailListItem {
+  emailId: string;
+  subject: string | null;
+  receivedAt: string;
+  senderEmail: string;
+  mailboxOwnerEmail: string | null;
+}
+
+export interface TrackerProjectEmailsResponse {
+  projectId: string;
+  projectName: string;
+  weekStartISO: string;
+  weekEndISO: string;
+  emails: TrackerEmailListItem[];
+}
+
+export interface ReviewEscalationUser {
+  email: string;
+  displayName: string | null;
+  escalationCount: number;
+  repliedCount: number;
+  pendingCount: number;
+}
+
+export interface ReviewProjectTrackerUser {
+  email: string;
+  displayName: string | null;
+  trackerCount: number;
+  hasSentTracker: boolean;
+}
+
+/** Shown after an admin assigns Manager or Admin until the user dismisses it. */
+export interface RolePromotionPayload {
+  show: boolean;
+  role: string;
+  promotedAt: string | null;
+}
+
 export interface MeResponse {
+  userId?: string;
   email: string;
   role: string;
   isAdmin: boolean;
+  /** Who the user reports to (set in admin Team leaders). */
+  reportingManager?: { displayName: string | null; email: string } | null;
+  /** Department/team name the user belongs to. */
+  department?: string | null;
+  rolePromotion?: RolePromotionPayload | null;
+}
+
+export interface RecentSignInOut {
+  userId: string;
+  email: string;
+  displayName: string | null;
+  role: string;
+  lastLoginAt: string | null;
+  createdAt: string | null;
+}
+
+/** One persisted session: created at login, closed at logout. */
+export interface LoginEventOut {
+  id: string;
+  userId: string;
+  email: string;
+  displayName: string | null;
+  loginAt: string;
+  logoutAt: string | null;
+  isLoggedIn: boolean;
+  /** oauth = Microsoft sign-in; session = opened from /api/me without oauth. */
+  loginSource: string;
+}
+
+export interface LoginSyncStatusOut {
+  totalUsers: number;
+  usersWithLastLoginAt: number;
+  usersMissingLastLoginAt: number;
+  totalLoginEvents: number;
+  activeSessions: number;
+  oauthEvents24h: number;
+  sessionEvents24h: number;
+  lastOauthEventAt: string | null;
+  lastAnyEventAt: string | null;
+  syncHealth: "healthy" | "warning" | "error" | string;
 }

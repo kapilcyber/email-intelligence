@@ -1,5 +1,5 @@
 """
-Phase 2: Email classification via OpenAI (primary) and Ollama (fallback).
+Phase 2: Email classification via Ollama (primary) and OpenAI (fallback).
 Produces summary, category, priority score/label, reply suggestions.
 With structured JSON enforcement, timeout, retry, and observability.
 """
@@ -370,17 +370,17 @@ def classify_email_content(
     correlation_id = correlation_id or "none"
     settings = get_settings()
     prompt = _build_prompt(subject, body_preview, body_content, sender_email)
-    use_openai = bool(settings.openai_api_key and settings.openai_api_key.strip())
     use_ollama = bool(settings.ollama_base_url and settings.ollama_base_url.strip())
+    use_openai = bool(settings.openai_api_key and settings.openai_api_key.strip())
 
-    if not use_openai and not use_ollama:
+    if not use_ollama and not use_openai:
         logger.info("AI_RESPONSE: skipped_no_provider correlation_id=%s", correlation_id)
         return _failure_dict()
 
-    # Try Ollama first if configured
+    # Try Ollama first (primary) if configured
     if use_ollama:
         last_ollama_error: Exception | None = None
-        for attempt in range(OLLAMA_MAX_RETRIES):
+        for attempt in range(MAX_RETRIES):
             try:
                 client = _get_ollama_client()
                 start = time.perf_counter()
@@ -405,7 +405,7 @@ def classify_email_content(
                     attempt + 1,
                     str(e),
                 )
-                if attempt < OLLAMA_MAX_RETRIES - 1:
+                if attempt < MAX_RETRIES - 1:
                     delay = RETRY_BASE_DELAY * (2**attempt)
                     logger.info("AI_RESPONSE: ollama_retry correlation_id=%s delay=%.1fs", correlation_id, delay)
                     time.sleep(delay)
@@ -418,7 +418,7 @@ def classify_email_content(
     # Fallback to OpenAI if configured
     if use_openai:
         last_openai_error: Exception | None = None
-        for attempt in range(MAX_RETRIES):
+        for attempt in range(OLLAMA_MAX_RETRIES):
             try:
                 client = _get_openai_client()
                 start = time.perf_counter()
@@ -443,7 +443,7 @@ def classify_email_content(
                     attempt + 1,
                     str(e),
                 )
-                if attempt < MAX_RETRIES - 1:
+                if attempt < OLLAMA_MAX_RETRIES - 1:
                     delay = RETRY_BASE_DELAY * (2**attempt)
                     logger.info("AI_RESPONSE: openai_retry correlation_id=%s delay=%.1fs", correlation_id, delay)
                     time.sleep(delay)

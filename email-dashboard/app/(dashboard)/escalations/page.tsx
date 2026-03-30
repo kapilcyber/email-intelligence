@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertCircle, ChevronRight } from "lucide-react";
+import { RetagMailControl } from "@/components/escalations/retag-mail-control";
 
 const PAGE_SIZE = 20;
 
@@ -62,13 +63,10 @@ export default function EscalationsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-50">My Escalations</h1>
-        <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-          Escalation emails in your mailbox (Critical/High priority). Open to view details.
-        </p>
+        <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-50">My Escalations</h1>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div data-tour-id="escalations-filters" className="flex flex-wrap items-center gap-2">
         <input
           type="date"
           className="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
@@ -83,7 +81,7 @@ export default function EscalationsPage() {
         </div>
       )}
 
-      <Card className="rounded-2xl">
+      <Card data-tour-id="escalations-list" className="rounded-2xl">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <AlertCircle className="h-5 w-5" />
@@ -100,7 +98,7 @@ export default function EscalationsPage() {
           ) : (
             <ul className="divide-y divide-neutral-200 dark:divide-neutral-700">
               {items.map((item) => (
-                <li key={item.id} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <li key={item.id} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0 flex-1">
                     <Link
                       href={`/emails/${item.id}`}
@@ -120,7 +118,8 @@ export default function EscalationsPage() {
                       </p>
                     )}
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex shrink-0 flex-col items-end gap-2 sm:flex-row sm:items-center">
+                    <RetagMailControl emailId={item.id} onDone={load} compact />
                     <Link href={`/emails/${item.id}`}>
                       <Button variant="ghost" size="icon">
                         <ChevronRight className="h-4 w-4" />

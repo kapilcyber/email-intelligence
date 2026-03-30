@@ -79,7 +79,7 @@ export function DropdownMenuContent({
     <div
       ref={ref}
       className={cn(
-        "absolute z-50 mt-1 min-w-[8rem] overflow-hidden rounded-md border border-neutral-200 bg-white py-1 shadow-md dark:border-neutral-800 dark:bg-neutral-900",
+        "absolute z-50 mt-1 min-w-[8rem] overflow-hidden rounded-md border border-border bg-panel py-1 shadow-md",
         align === "end" ? "right-0" : "left-0",
         className
       )}
@@ -103,7 +103,7 @@ export function DropdownMenuItem({
     <div
       role="menuitem"
       className={cn(
-        "relative flex cursor-pointer select-none items-center px-2 py-1.5 text-sm outline-none hover:bg-neutral-100 dark:hover:bg-neutral-800",
+        "relative flex cursor-pointer select-none items-center px-2 py-1.5 text-sm outline-none hover:bg-muted",
         className
       )}
       onClick={() => {

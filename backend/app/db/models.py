@@ -28,7 +28,7 @@ class Email(Base):
     __tablename__ = "emails"
 
     id = Column(String(36), primary_key=True, default=uuid_gen)
-    message_id = Column(String(1024), unique=True, nullable=False, index=True)
+    message_id = Column(String(1024), nullable=False, index=True)
     graph_id = Column(String(512), unique=True, nullable=True, index=True)
     conversation_id = Column(String(512), nullable=True, index=True)
 
@@ -41,6 +41,7 @@ class Email(Base):
     sender_id = Column(String(36), ForeignKey("senders.id"), nullable=True)
     sender_display_name = Column(String(512), nullable=True)
     cc_recipients = Column(JSONB, nullable=True)
+    bcc_recipients = Column(JSONB, nullable=True)
     to_recipients = Column(JSONB, nullable=True)
 
     received_at = Column(DateTime(timezone=True), nullable=False, index=True)
@@ -77,6 +78,11 @@ class Email(Base):
     assigned_team = Column(String(64), nullable=True, index=True)  # Tech, Networking, Cybersecurity, Sales, Accounts, Data & AI, General
     lead_label = Column(String(32), nullable=True, index=True)  # Hot, Warm, Cold
     lead_metadata = Column(JSONB, nullable=True)  # {"buying_signals": ["demo_request", "budget_discussion", ...]}
+
+    # User/admin retag: removed from escalation/lead, routed to a department; AI re-classify won't override
+    retagged_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    retagged_by_email = Column(String(512), nullable=True, index=True)
+    retag_metadata = Column(JSONB, nullable=True)  # wasEscalation, wasLead, previousLeadLabel, previousAssignedTeam
 
     sender_rel = relationship("Sender", back_populates="emails", foreign_keys=[sender_id])
     attachments = relationship("Attachment", back_populates="email", cascade="all, delete-orphan")
@@ -125,10 +131,52 @@ class User(Base):
     is_team_lead = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_login_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    role_promoted_at = Column(DateTime(timezone=True), nullable=True)
+    role_promotion_dismissed_at = Column(DateTime(timezone=True), nullable=True)
 
     team = relationship("Team", back_populates="members", foreign_keys=[team_id])
     manager = relationship("User", remote_side=[id], foreign_keys=[manager_id])
     reports = relationship("User", back_populates="manager", foreign_keys=[manager_id])
+    login_events = relationship("UserLoginEvent", back_populates="user", foreign_keys="UserLoginEvent.user_id")
+
+
+class UserLoginEvent(Base):
+    """One row per browser/app session: opened on login, closed on logout."""
+
+    __tablename__ = "user_login_events"
+
+    id = Column(String(36), primary_key=True, default=uuid_gen)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    email = Column(String(512), nullable=False, index=True)
+    login_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    logout_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    is_logged_in = Column(Boolean, nullable=False, default=True, index=True)
+    login_source = Column(String(32), nullable=False, index=True)  # oauth | session
+
+    user = relationship("User", back_populates="login_events", foreign_keys=[user_id])
+
+    __table_args__ = (Index("ix_user_login_events_user_login", "user_id", "login_at"),)
+
+
+class RetagApprovalRequest(Base):
+    """Non-admin retag request that requires admin approval before retag is applied."""
+    __tablename__ = "retag_approval_requests"
+
+    id = Column(String(36), primary_key=True, default=uuid_gen)
+    email_id = Column(String(36), ForeignKey("emails.id", ondelete="CASCADE"), nullable=False, index=True)
+    mailbox_owner_email = Column(String(512), nullable=False, index=True)
+    requested_by_email = Column(String(512), nullable=False, index=True)
+    requested_team = Column(String(64), nullable=False, index=True)
+    status = Column(String(32), nullable=False, default="pending", index=True)  # pending | approved | rejected
+    requested_at = Column(DateTime(timezone=True), default=datetime.utcnow, index=True)
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
+    reviewed_by_email = Column(String(512), nullable=True)
+    review_note = Column(Text, nullable=True)
+
+    __table_args__ = (
+        Index("ix_retag_req_pending_email", "email_id", "status"),
+    )
 
 
 class DailySummary(Base):
@@ -154,3 +202,63 @@ class EscalationThread(Base):
     last_escalation_at = Column(DateTime(timezone=True), nullable=False)
     escalation_count = Column(Integer, default=1)
     last_email_id = Column(String(36), ForeignKey("emails.id", ondelete="SET NULL"), nullable=True)
+
+
+class TeamProject(Base):
+    """Admin-managed projects per team with workflow structure metadata."""
+    __tablename__ = "team_projects"
+
+    id = Column(String(36), primary_key=True, default=uuid_gen)
+    name = Column(String(256), nullable=False, index=True)
+    team_id = Column(String(36), ForeignKey("teams.id", ondelete="SET NULL"), nullable=True, index=True)
+    status = Column(String(32), nullable=False, default="running", index=True)  # running | new | planned | completed
+    structure = Column(JSONB, nullable=True)  # {"phases": [...], "notes": "..."}
+    # Admin Tracker: expected send days per week, e.g. ["mon","wed","fri"] (lowercase short keys).
+    tracker_schedule_days = Column(JSONB, nullable=True)
+    created_by_user_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    # Optional project-only lead (not org team lead). Must be among assigned users.
+    project_lead_user_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    team = relationship("Team", foreign_keys=[team_id])
+    assignments = relationship("ProjectAssignment", back_populates="project", cascade="all, delete-orphan")
+
+
+class ProjectAssignment(Base):
+    """User assignments to a team project."""
+    __tablename__ = "project_assignments"
+
+    id = Column(String(36), primary_key=True, default=uuid_gen)
+    project_id = Column(String(36), ForeignKey("team_projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    role = Column(String(64), nullable=True)  # project-specific role (e.g. Tech lead)
+    responsibilities = Column(Text, nullable=True)  # what they do on this project
+    # Project-internal reporting (not org manager). Must be another assignee or null.
+    reports_to_user_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+    project = relationship("TeamProject", back_populates="assignments", foreign_keys=[project_id])
+    user = relationship("User", foreign_keys=[user_id])
+
+    __table_args__ = (Index("ix_project_assignments_unique", "project_id", "user_id", unique=True),)
+
+
+class MomMeetingRecord(Base):
+    """Per-mailbox minutes-of-meeting (MOM) prompt state for calendar meetings."""
+
+    __tablename__ = "mom_meeting_records"
+
+    id = Column(String(36), primary_key=True, default=uuid_gen)
+    mailbox_owner_email = Column(String(512), nullable=False, index=True)
+    event_key = Column(Text, nullable=False)
+    subject = Column(Text, nullable=True)
+    start_at = Column(DateTime(timezone=True), nullable=True)
+    end_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    meeting_type = Column(String(64), nullable=False, default="Unknown")
+    status = Column(String(32), nullable=False, index=True)  # snoozed | sent | skipped
+    snooze_until = Column(DateTime(timezone=True), nullable=True)
+    sent_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (Index("ux_mom_mailbox_event", "mailbox_owner_email", "event_key", unique=True),)

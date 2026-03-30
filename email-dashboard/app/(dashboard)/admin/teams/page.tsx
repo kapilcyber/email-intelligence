@@ -45,7 +45,7 @@ export default function AdminTeamsPage() {
   if (error) {
     return (
       <div className="space-y-6">
-        <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-50">Teams</h1>
+        <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-50">Teams</h1>
         <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400">
           {error}
         </div>
@@ -56,10 +56,7 @@ export default function AdminTeamsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-50">Teams</h1>
-        <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-          Tech, Networking, Cybersecurity, Sales, Accounts, Data & AI. View members and team status.
-        </p>
+        <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-50">Teams</h1>
       </div>
 
       {loading ? (

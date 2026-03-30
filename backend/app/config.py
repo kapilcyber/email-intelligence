@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     # Redis
     redis_url: str = "redis://localhost:6379/0"
 
+    # HTTP/TLS (for Graph or outbound webhooks behind corporate TLS interception)
+    http_verify_ssl: bool = True
+    http_ca_bundle: str = ""  # Optional path to CA bundle (pem/cert) used by HTTPX verify
+
     # App
     environment: str = "development"
     # Optional: only needed for Graph webhook subscriptions
