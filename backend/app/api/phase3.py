@@ -244,7 +244,7 @@ def _is_admin_actor(db: Session, actor_email: str) -> bool:
     if email_l and email_l in admin_list:
         return True
     u = db.query(User).filter(User.email == email_l).first()
-    return bool(u and (u.role or "") == "Admin")
+    return bool(u and (u.role or "") in ("Admin", "Manager"))
 
 
 def _perform_retag(

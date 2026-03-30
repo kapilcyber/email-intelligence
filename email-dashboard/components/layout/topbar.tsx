@@ -121,7 +121,7 @@ export function Topbar({ environment = "Dev" }: { systemStatus?: SystemStatus; e
     api
       .getNotifications()
       .then((r) => setItems(r.items ?? []))
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => setLoading(false));
   };
 

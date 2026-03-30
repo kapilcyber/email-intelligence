@@ -230,7 +230,10 @@ export default function AdminProjectWorkflowPage() {
           <div>
             <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-50">{project.name}</h1>
             <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-              {project.teamName ?? "No team"} · <span className="capitalize">{project.status}</span>
+              {project.teamName ?? "No department"} · <span className="capitalize">{project.status}</span>
+              {typeof project.structure?.currentPhase === "number"
+                ? ` · Phase ${project.structure.currentPhase}`
+                : ""}
             </p>
             {project.projectLeadUserId && (
               <p className="mt-2 text-sm text-indigo-800 dark:text-indigo-200">
@@ -261,7 +264,8 @@ export default function AdminProjectWorkflowPage() {
                 Phase workflow
               </CardTitle>
               <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                Structure you defined for this project (comma-separated phases on the project form).
+                Workflow steps from the project form (custom names or default Phase 1 … Phase 5). The status/phase selector stores
+                which numbered phase the project is in.
               </p>
             </CardHeader>
             <CardContent>

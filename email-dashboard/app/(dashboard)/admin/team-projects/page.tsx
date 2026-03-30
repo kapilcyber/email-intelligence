@@ -10,6 +10,24 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { ChevronRight } from "lucide-react";
+import { DEPARTMENT_CATEGORIES } from "@/lib/departments";
+
+const PROJECT_STATUS_OPTS = ["new", "planned", "running", "completed"] as const;
+type ProjectFormStatus = (typeof PROJECT_STATUS_OPTS)[number];
+
+function statusLabel(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+const STATUS_PHASE_OPTIONS: { value: string; label: string }[] = [
+  ...PROJECT_STATUS_OPTS.map((st) => ({ value: `status:${st}`, label: statusLabel(st) })),
+  ...Array.from({ length: 5 }, (_, i) => ({ value: `phase:${i + 1}`, label: `Phase ${i + 1}` })),
+];
+
+function defaultWorkflowPhases(): string[] {
+  return Array.from({ length: 5 }, (_, i) => `Phase ${i + 1}`);
+}
+
 
 /** How the project role is chosen in the form (stored as TL, Manager, or free text). */
 type ProjectRoleKind = "tl" | "manager" | "custom";
@@ -47,9 +65,15 @@ export default function AdminTeamProjectsPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [projectName, setProjectName] = useState("");
-  const [projectStatus, setProjectStatus] = useState<"running" | "new" | "planned" | "completed">("running");
+  const [projectStatus, setProjectStatus] = useState<ProjectFormStatus>("running");
+  const [projectPhase, setProjectPhase] = useState<number>(1);
+  /** Flat selector state: `status:<value>` or `phase:<1..5>`. */
+  const [statusPhaseValue, setStatusPhaseValue] = useState("status:running");
   const [projectTeamId, setProjectTeamId] = useState<string>("");
-  const [projectPhases, setProjectPhases] = useState("");
+  /** Department name: empty = all users; must match `User.teamName`. */
+  const [selectedDepartment, setSelectedDepartment] = useState("");
+  /** Custom workflow step names (comma-separated). If empty, uses Phase 1 … Phase 5. */
+  const [customPhaseNames, setCustomPhaseNames] = useState("");
   const [projectNotes, setProjectNotes] = useState("");
   /** Users included on this project */
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
@@ -86,12 +110,70 @@ export default function AdminTeamProjectsPage() {
     load();
   }, [status, api]);
 
+  useEffect(() => {
+    if (statusPhaseValue.startsWith("status:")) {
+      const raw = statusPhaseValue.slice("status:".length) as ProjectFormStatus;
+      if (PROJECT_STATUS_OPTS.includes(raw)) setProjectStatus(raw);
+      return;
+    }
+    if (statusPhaseValue.startsWith("phase:")) {
+      const n = parseInt(statusPhaseValue.slice("phase:".length), 10);
+      if (Number.isFinite(n)) setProjectPhase(Math.min(5, Math.max(1, n)));
+    }
+  }, [statusPhaseValue]);
+
+  /** All department/team names to pick from (app departments + DB teams). */
+  const departmentOptions = useMemo(() => {
+    const s = new Set<string>([...DEPARTMENT_CATEGORIES]);
+    teams.forEach((t) => {
+      if (t.name?.trim()) s.add(t.name.trim());
+    });
+    return Array.from(s).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+  }, [teams]);
+
+  const filteredUsers = useMemo(() => {
+    if (!selectedDepartment) return users;
+    return users.filter((u) => (u.teamName ?? "").trim() === selectedDepartment);
+  }, [users, selectedDepartment]);
+
+  useEffect(() => {
+    if (!selectedDepartment) {
+      setProjectTeamId("");
+      return;
+    }
+    const team = teams.find((t) => t.name.trim() === selectedDepartment);
+    setProjectTeamId(team?.id ?? "");
+  }, [selectedDepartment, teams]);
+
+  useEffect(() => {
+    if (!selectedDepartment) return;
+    const allowed = new Set(filteredUsers.map((u) => u.id));
+    setSelectedMemberIds((prev) => prev.filter((id) => allowed.has(id)));
+    setMemberDetails((d) => {
+      const next: typeof d = { ...d };
+      for (const id of Object.keys(next)) {
+        if (!allowed.has(id)) delete next[id];
+      }
+      for (const k of Object.keys(next)) {
+        const reportsTo = next[k].reportsToUserId;
+        if (reportsTo && !allowed.has(reportsTo)) {
+          next[k] = { ...next[k], reportsToUserId: "" };
+        }
+      }
+      return next;
+    });
+    setProjectLeadUserId((lead) => (lead && allowed.has(lead) ? lead : ""));
+  }, [selectedDepartment, filteredUsers]);
+
   const resetProjectForm = () => {
     setEditingProjectId(null);
     setProjectName("");
     setProjectStatus("running");
+    setProjectPhase(1);
+    setStatusPhaseValue("status:running");
     setProjectTeamId("");
-    setProjectPhases("");
+    setSelectedDepartment("");
+    setCustomPhaseNames("");
     setProjectNotes("");
     setSelectedMemberIds([]);
     setMemberDetails({});
@@ -147,15 +229,18 @@ export default function AdminTeamProjectsPage() {
     }
     setSavingProject(true);
     setError(null);
+    const customList = customPhaseNames
+      .split(",")
+      .map((x) => x.trim())
+      .filter(Boolean);
+    const phases = customList.length > 0 ? customList : defaultWorkflowPhases();
     const body = {
       name: projectName.trim(),
       status: projectStatus,
       teamId: projectTeamId || null,
       structure: {
-        phases: projectPhases
-          .split(",")
-          .map((x) => x.trim())
-          .filter(Boolean),
+        phases,
+        currentPhase: projectPhase,
         notes: projectNotes.trim() || undefined,
       },
       projectLeadUserId: projectLeadUserId.trim() || null,
@@ -185,9 +270,21 @@ export default function AdminTeamProjectsPage() {
   const editProject = (p: TeamProjectOut) => {
     setEditingProjectId(p.id);
     setProjectName(p.name);
-    setProjectStatus(p.status);
+    const ph = p.structure?.currentPhase;
+    const phaseNum =
+      typeof ph === "number" && Number.isFinite(ph) ? Math.min(5, Math.max(1, ph)) : 1;
+    const st = PROJECT_STATUS_OPTS.includes(p.status as ProjectFormStatus)
+      ? p.status
+      : "running";
+    setProjectStatus(st as ProjectFormStatus);
+    setProjectPhase(phaseNum);
+    setStatusPhaseValue(`status:${st}`);
+    setSelectedDepartment((p.teamName ?? "").trim());
     setProjectTeamId(p.teamId ?? "");
-    setProjectPhases((p.structure?.phases ?? []).join(", "));
+    const savedPhases = p.structure?.phases ?? [];
+    const isDefault =
+      savedPhases.length === 5 && savedPhases.every((name, i) => name === `Phase ${i + 1}`);
+    setCustomPhaseNames(isDefault ? "" : savedPhases.join(", "));
     setProjectNotes(p.structure?.notes ?? "");
     setSelectedMemberIds(p.assignedUsers.map((u) => u.userId));
     setMemberDetails(
@@ -233,44 +330,50 @@ export default function AdminTeamProjectsPage() {
               placeholder="Project name"
               className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
             />
-            <div className="grid grid-cols-2 gap-2">
-              <Select
-                value={projectStatus}
-                onValueChange={(v) => setProjectStatus(v as "running" | "new" | "planned" | "completed")}
-              >
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-neutral-600 dark:text-neutral-400">Status &amp; phase</p>
+              <Select value={statusPhaseValue} onValueChange={setStatusPhaseValue}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Status" />
+                  <SelectValue placeholder="Status and phase" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="running">Running</SelectItem>
-                  <SelectItem value="new">New</SelectItem>
-                  <SelectItem value="planned">Planned</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select
-                value={projectTeamId || "__none__"}
-                onValueChange={(v) => setProjectTeamId(v === "__none__" ? "" : v)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Team" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">No team</SelectItem>
-                  {teams.map((t) => (
-                    <SelectItem key={t.id} value={t.id}>
-                      {t.name}
+                  {STATUS_PHASE_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-            <input
-              value={projectPhases}
-              onChange={(e) => setProjectPhases(e.target.value)}
-              placeholder="Phases (comma separated)"
-              className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
-            />
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-neutral-600 dark:text-neutral-400">Department</p>
+              <Select
+                value={selectedDepartment || "__all__"}
+                onValueChange={(v) => setSelectedDepartment(v === "__all__" ? "" : v)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Department" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__">All departments</SelectItem>
+                  {departmentOptions.map((name) => (
+                    <SelectItem key={name} value={name}>
+                      {name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-neutral-600 dark:text-neutral-400">Custom phase names (optional)</p>
+              <textarea
+                value={customPhaseNames}
+                onChange={(e) => setCustomPhaseNames(e.target.value)}
+                placeholder="e.g. Discovery, Design, Build, Test, Launch — comma-separated. Leave empty to use Phase 1 … Phase 5 for the workflow."
+                rows={3}
+                className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+              />
+            </div>
             <textarea
               value={projectNotes}
               onChange={(e) => setProjectNotes(e.target.value)}
@@ -278,15 +381,11 @@ export default function AdminTeamProjectsPage() {
               rows={4}
               className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
             />
-            <p className="text-xs font-medium text-neutral-600 dark:text-neutral-400">Team members on this project</p>
-            <p className="text-[11px] leading-relaxed text-neutral-500 dark:text-neutral-400">
-              Set the <strong>reporting tree</strong> per person with <strong>Reports to on this project</strong>. That
-              drives the workflow chart for this project only.
+            <p className="text-xs font-medium text-neutral-600 dark:text-neutral-400">
+              Team members on this project
+              {selectedDepartment ? ` (${filteredUsers.length} in ${selectedDepartment})` : ` (${filteredUsers.length} shown)`}
             </p>
             <div className="space-y-2">
-              <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
-                Optional: choose one <strong>project lead</strong> (only from people assigned below).
-              </p>
               <Select
                 value={projectLeadUserId || "__none__"}
                 onValueChange={(v) => setProjectLeadUserId(v === "__none__" ? "" : v)}
@@ -310,7 +409,7 @@ export default function AdminTeamProjectsPage() {
               </Select>
             </div>
             <div className="max-h-80 space-y-3 overflow-y-auto rounded-md border border-neutral-200 p-2 dark:border-neutral-700">
-              {users.map((u) => {
+              {filteredUsers.map((u) => {
                 const on = selectedMemberIds.includes(u.id);
                 const det = memberDetails[u.id] ?? defaultMemberRow();
                 const reportOptions = selectedMemberIds.filter((id) => id !== u.id);
@@ -320,7 +419,7 @@ export default function AdminTeamProjectsPage() {
                       <input type="checkbox" checked={on} onChange={() => toggleMember(u.id)} />
                       <span>{u.displayName ?? u.email}</span>
                       <span className="text-[10px] font-normal text-neutral-400" title="Org role (Admin → Workflow), not used on this project chart">
-                        Org: {u.role}
+                        {u.teamName ? `${u.teamName} · ` : ""}Org: {u.role}
                       </span>
                     </label>
                     {on && (
@@ -424,7 +523,10 @@ export default function AdminTeamProjectsPage() {
                         <div className="min-w-0 flex-1">
                           <p className="font-medium text-neutral-900 dark:text-neutral-100">{p.name}</p>
                           <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                            {p.teamName ?? "No team"} · {p.status}
+                            {p.teamName ?? "No department"} · {p.status}
+                            {typeof p.structure?.currentPhase === "number"
+                              ? ` · Phase ${p.structure.currentPhase}`
+                              : ""}
                           </p>
                           {(p.structure?.phases?.length ?? 0) > 0 && (
                             <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">

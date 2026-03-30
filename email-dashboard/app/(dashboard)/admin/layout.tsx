@@ -2,13 +2,17 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { getApi } from "@/lib/api/client";
 import { Skeleton } from "@/components/ui/skeleton";
+
+/** Admin-only areas; org Managers may not open these (sidebar hides them). */
+const ADMIN_ONLY_PATH_PREFIXES = ["/admin/team-projects", "/admin/workflow", "/admin/approvals"];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const pathname = usePathname();
   const api = useMemo(
     () => getApi(session?.user?.email ?? null, session?.user?.name ?? null),
     [session?.user?.email, session?.user?.name]
@@ -35,7 +39,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     api
       .getMe()
       .then((me) => {
-        if (me.isAdmin || isInEnvList) {
+        const isAdminEffective = me.isAdmin || isInEnvList;
+        const isManager = (me.role ?? "").trim() === "Manager";
+        const isManagerOnly = isManager && !isAdminEffective;
+        if (isManagerOnly && ADMIN_ONLY_PATH_PREFIXES.some((p) => pathname.startsWith(p))) {
+          router.replace("/dashboard");
+          setAllowed(false);
+          return;
+        }
+        if (isAdminEffective || isManager) {
           setAllowed(true);
         } else {
           router.replace("/dashboard");
@@ -46,7 +58,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         else router.replace("/dashboard");
       })
       .finally(() => setChecking(false));
-  }, [status, session?.user?.email, api, router, adminEmailsList]);
+  }, [status, session?.user?.email, api, router, adminEmailsList, pathname]);
 
   if (checking) {
     return (

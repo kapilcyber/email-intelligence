@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Lenis from "lenis";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
+import { RoleChangeSessionGuard } from "@/components/layout/role-change-toast";
 import { MomPromptHost } from "@/components/meetings/mom-prompt-host";
 import { FollowUpReminderHost } from "@/components/follow-up/follow-up-reminder-host";
 import { ToggleWalkthrough } from "@/components/tour/toggle-walkthrough";
@@ -44,6 +45,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <Sidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} />
       <div className="flex flex-1 flex-col overflow-hidden">
         <Topbar environment={env} />
+        <RoleChangeSessionGuard />
         <main ref={mainRef} className="flex-1 overflow-auto bg-app-gradient p-4 md:p-6">
           <div ref={contentRef} className="min-h-full">
             {children}

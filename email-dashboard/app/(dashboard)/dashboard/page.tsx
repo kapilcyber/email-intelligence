@@ -29,7 +29,6 @@ import {
   Calendar,
   ExternalLink,
   Video,
-  X,
 } from "lucide-react";
 import {
   BarChart,
@@ -625,9 +624,7 @@ export default function DashboardPage() {
     reportingManager?: { displayName: string | null; email: string } | null;
     department?: string | null;
     isAdmin?: boolean;
-    rolePromotion?: { show: boolean; role: string; promotedAt: string | null } | null;
   } | null>(null);
-  const [dismissingPromotion, setDismissingPromotion] = useState(false);
   const [teamMembers, setTeamMembers] = useState<UserOut[] | null>(null);
   const [teams, setTeams] = useState<TeamOut[] | null>(null);
   const [expandedDepartment, setExpandedDepartment] = useState<string | null>(null);
@@ -789,7 +786,6 @@ export default function DashboardPage() {
           reportingManager: r.reportingManager ?? null,
           department: r.department ?? null,
           isAdmin: r.isAdmin ?? false,
-          rolePromotion: r.rolePromotion?.show ? r.rolePromotion : null,
         })
       )
       .catch(() => setMe(null));
@@ -1118,41 +1114,6 @@ export default function DashboardPage() {
               Close tour
             </Button>
           </div>
-        </div>
-      )}
-      {me?.rolePromotion?.show && (
-        <div className="flex flex-col gap-3 rounded-xl border border-indigo-200 bg-indigo-50 p-4 text-indigo-950 shadow-sm dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-100 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold">Your access was updated</p>
-            <p className="mt-1 text-sm text-indigo-900/90 dark:text-indigo-200/90">
-              {me.rolePromotion.role === "Admin" ? (
-                <>
-                  You now have <strong>Admin</strong> access. Open <strong>Admin</strong> in the sidebar for team leaders, projects, tracker, and review.
-                </>
-              ) : (
-                <>
-                  You were assigned the <strong>Manager</strong> role. Admin-only pages still require Admin access or your email on the admin allow list.
-                </>
-              )}
-            </p>
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="shrink-0 border-indigo-300 bg-white hover:bg-indigo-100 dark:border-indigo-700 dark:bg-indigo-950 dark:hover:bg-indigo-900"
-            disabled={dismissingPromotion}
-            onClick={() => {
-              setDismissingPromotion(true);
-              api
-                .dismissRolePromotion()
-                .then(() => refreshMe())
-                .finally(() => setDismissingPromotion(false));
-            }}
-          >
-            <X className="mr-1 h-4 w-4" />
-            Dismiss
-          </Button>
         </div>
       )}
       {!metricsError && !emailsError && emails.length === 0 && (metrics?.emailsIngestedToday ?? 0) === 0 && (

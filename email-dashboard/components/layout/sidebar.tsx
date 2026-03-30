@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getApi } from "@/lib/api/client";
+import { ME_UPDATED_EVENT } from "@/lib/me-sync-events";
 import { DEPARTMENT_CATEGORIES } from "@/lib/departments";
 import type { TeamOut } from "@/lib/types";
 
@@ -46,7 +47,17 @@ const navItemsAfterDepartments = [
   { href: "/how-to-use", label: "How to use", icon: BookOpen },
 ];
 
-const adminNavItems = [
+/** Shown to org Managers (and Admins). Excludes workflow, projects, approvals. */
+const managerAdminNavItems = [
+  { href: "/admin/team-leaders", label: "Team leaders", icon: UserCircle },
+  { href: "/admin/tracker", label: "Tracker", icon: CalendarRange },
+  { href: "/admin/review", label: "Review", icon: ClipboardCheck },
+  { href: "/admin/escalations", label: "Escalations", icon: AlertCircle },
+  { href: "/admin/leads", label: "Leads", icon: List },
+];
+
+/** Full admin menu order (Projects / Workflow / Approvals only for Admin role or allow list). */
+const adminNavItemsAll = [
   { href: "/admin/team-leaders", label: "Team leaders", icon: UserCircle },
   { href: "/admin/team-projects", label: "Projects", icon: FolderKanban },
   { href: "/admin/tracker", label: "Tracker", icon: CalendarRange },
@@ -56,6 +67,12 @@ const adminNavItems = [
   { href: "/admin/leads", label: "Leads", icon: List },
   { href: "/admin/approvals", label: "Approvals", icon: ShieldCheck },
 ];
+
+const ADMIN_ONLY_HREFS = new Set([
+  "/admin/team-projects",
+  "/admin/workflow",
+  "/admin/approvals",
+]);
 
 function DepartmentsNavSection({ collapsed }: { collapsed: boolean }) {
   const pathname = usePathname();
@@ -407,17 +424,39 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
     [session?.user?.email, session?.user?.name]
   );
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isManagerRole, setIsManagerRole] = useState(false);
   const adminEmailsEnv = typeof window !== "undefined" ? (process.env.NEXT_PUBLIC_ADMIN_EMAILS ?? "") : (process.env.NEXT_PUBLIC_ADMIN_EMAILS ?? "");
   const adminEmailsList = useMemo(() => adminEmailsEnv.split(",").map((e) => e.trim().toLowerCase()).filter(Boolean), [adminEmailsEnv]);
   useEffect(() => {
     if (status !== "authenticated" || !session?.user?.email) {
       setIsAdmin(false);
+      setIsManagerRole(false);
       return;
     }
     const userEmail = (session.user.email ?? "").trim().toLowerCase();
     const isInEnvList = adminEmailsList.length > 0 && adminEmailsList.includes(userEmail);
-    api.getMe().then((r) => setIsAdmin(r.isAdmin || isInEnvList)).catch(() => setIsAdmin(isInEnvList));
+
+    const loadMe = () => {
+      api
+        .getMe()
+        .then((r) => {
+          setIsAdmin(r.isAdmin || isInEnvList);
+          setIsManagerRole((r.role ?? "").trim() === "Manager");
+        })
+        .catch(() => {
+          setIsAdmin(isInEnvList);
+          setIsManagerRole(false);
+        });
+    };
+
+    loadMe();
+    const onMeSync = () => loadMe();
+    window.addEventListener(ME_UPDATED_EVENT, onMeSync);
+    return () => window.removeEventListener(ME_UPDATED_EVENT, onMeSync);
   }, [status, session?.user?.email, api, adminEmailsList]);
+  const showManagerAdminNav = isManagerRole && !isAdmin;
+  const showFullAdminNav = isAdmin;
+  const showElevatedAdminNav = showFullAdminNav || showManagerAdminNav;
   const name = session?.user?.name ?? session?.user?.email ?? "User";
   const email = session?.user?.email ?? "";
 
@@ -488,34 +527,36 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
         {navItemsTop.map(({ href, label, icon }) => renderNavLink(href, label, icon))}
         <DepartmentsNavSection collapsed={collapsed} />
         {navItemsAfterDepartments.map(({ href, label, icon }) => renderNavLink(href, label, icon))}
-        {isAdmin && (
+        {showElevatedAdminNav && (
           <>
             {!collapsed && (
               <p className="mt-3 mb-1 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Admin
+                {showManagerAdminNav ? "Management" : "Admin"}
               </p>
             )}
             <AdminTeamsNavSection collapsed={collapsed} />
-            {adminNavItems.map(({ href, label, icon: Icon }) => {
-              const isActive = pathname === href || pathname.startsWith(href + "/");
-              return (
-                <Link
-                  key={href}
-                  href={href}
-                  className={cn(
-                    "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
-                    isActive
-                      ? "bg-black text-white"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                    collapsed && "justify-center px-2"
-                  )}
-                  title={collapsed ? label : undefined}
-                >
-                  <Icon className="h-5 w-5 shrink-0" />
-                  {!collapsed && <span>{label}</span>}
-                </Link>
-              );
-            })}
+            {(showFullAdminNav ? adminNavItemsAll : managerAdminNavItems)
+              .filter((item) => showFullAdminNav || !ADMIN_ONLY_HREFS.has(item.href))
+              .map(({ href, label, icon: Icon }) => {
+                const isActive = pathname === href || pathname.startsWith(href + "/");
+                return (
+                  <Link
+                    key={href}
+                    href={href}
+                    className={cn(
+                      "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                      isActive
+                        ? "bg-black text-white"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                      collapsed && "justify-center px-2"
+                    )}
+                    title={collapsed ? label : undefined}
+                  >
+                    <Icon className="h-5 w-5 shrink-0" />
+                    {!collapsed && <span>{label}</span>}
+                  </Link>
+                );
+              })}
           </>
         )}
       </nav>

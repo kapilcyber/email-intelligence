@@ -70,7 +70,7 @@ export interface MyProjectItem {
   role: string | null;
   responsibilities: string | null;
   reportsToUserId: string | null;
-  structure: { phases?: string[]; notes?: string } | null;
+  structure: { phases?: string[]; notes?: string; currentPhase?: number } | null;
   updatedAt: string | null;
 }
 
@@ -447,7 +447,7 @@ export interface TeamProjectOut {
   teamId: string | null;
   teamName: string | null;
   status: "running" | "new" | "planned" | "completed";
-  structure: { phases?: string[]; notes?: string } | null;
+  structure: { phases?: string[]; notes?: string; currentPhase?: number } | null;
   /** Explicit project lead; must be an assigned user. Not the same as org "team lead". */
   projectLeadUserId?: string | null;
   /** Admin user who created the project (mailbox threads are scoped to this user). */

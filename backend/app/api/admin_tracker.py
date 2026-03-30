@@ -10,12 +10,12 @@ from pydantic import BaseModel, Field
 from sqlalchemy import and_, func
 from sqlalchemy.orm import Session, joinedload
 
-from app.api.deps import get_admin_user
+from app.api.deps import get_admin_or_manager_user
 from app.config import get_settings
 from app.db.models import Email, TeamProject, User
 from app.db.session import get_db
 
-router = APIRouter(prefix="/tracker", dependencies=[Depends(get_admin_user)])
+router = APIRouter(prefix="/tracker", dependencies=[Depends(get_admin_or_manager_user)])
 
 TRACKER_SUBSTRING = "tracker"
 TRACKER_DAY_KEYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")

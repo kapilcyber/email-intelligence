@@ -9,12 +9,12 @@ from pydantic import BaseModel, Field
 from sqlalchemy import exists, func, or_
 from sqlalchemy.orm import Session, aliased
 
-from app.api.deps import get_admin_user
+from app.api.deps import get_admin_or_manager_user
 from app.config import get_settings
 from app.db.models import Email, TeamProject, User
 from app.db.session import get_db
 
-router = APIRouter(prefix="/review", dependencies=[Depends(get_admin_user)])
+router = APIRouter(prefix="/review", dependencies=[Depends(get_admin_or_manager_user)])
 
 
 def _utcnow() -> datetime:

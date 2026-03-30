@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 from app.db.session import get_db
 from app.db.models import Team, User, UserLoginEvent, Email, Attachment, TeamProject, ProjectAssignment, RetagApprovalRequest
-from app.api.deps import get_admin_user
+from app.api.deps import get_admin_user, get_admin_or_manager_user
 from app.api.phase3 import _email_to_item, RetagEmailBody, _perform_retag
 from app.api.emails import (
     ConversationOut,
@@ -23,7 +23,7 @@ from app.api.emails import (
 )
 from app.config import get_settings
 
-router = APIRouter(dependencies=[Depends(get_admin_user)])
+router = APIRouter()
 
 # Mailboxes to exclude from "Users — escalation count" / "Users — lead count" (e.g. default backfill mailbox already on admin dashboard)
 def _excluded_mailboxes_for_user_lists() -> set[str]:
@@ -355,7 +355,10 @@ def _assert_project_mailbox_threads_access(project: TeamProject, admin_email: st
 
 # --- Teams ---
 @router.get("/teams", response_model=list[TeamOut])
-def list_teams(db: Session = Depends(get_db)):
+def list_teams(
+    db: Session = Depends(get_db),
+    _auth: str = Depends(get_admin_or_manager_user),
+):
     """List all teams with member count."""
     teams = db.query(Team).order_by(Team.name).all()
     result = []
@@ -366,7 +369,11 @@ def list_teams(db: Session = Depends(get_db)):
 
 
 @router.get("/teams/{team_id}", response_model=TeamOut)
-def get_team(team_id: str, db: Session = Depends(get_db)):
+def get_team(
+    team_id: str,
+    db: Session = Depends(get_db),
+    _auth: str = Depends(get_admin_or_manager_user),
+):
     """Get team by id with member count."""
     team = db.query(Team).filter(Team.id == team_id).first()
     if not team:
@@ -376,7 +383,11 @@ def get_team(team_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/teams/{team_id}/status", response_model=TeamStatusOut)
-def get_team_status(team_id: str, db: Session = Depends(get_db)):
+def get_team_status(
+    team_id: str,
+    db: Session = Depends(get_db),
+    _auth: str = Depends(get_admin_or_manager_user),
+):
     """Team status: counts of emails assigned, escalations, leads."""
     team = db.query(Team).filter(Team.id == team_id).first()
     if not team:
@@ -403,6 +414,7 @@ def list_users(
     db: Session = Depends(get_db),
     role: str | None = Query(None, description="Filter by role: Admin, Manager, Member"),
     team_id: str | None = Query(None, alias="teamId"),
+    _auth: str = Depends(get_admin_or_manager_user),
 ):
     """List users with role, team, manager. Optional filter by role or team."""
     q = db.query(User).order_by(User.email)
@@ -437,6 +449,7 @@ def list_users(
 def list_login_events(
     db: Session = Depends(get_db),
     limit: int = Query(500, ge=1, le=2000),
+    _auth: str = Depends(get_admin_or_manager_user),
 ):
     """Session rows (login → logout); newest first."""
     try:
@@ -465,7 +478,10 @@ def list_login_events(
 
 
 @router.get("/login-sync-status", response_model=LoginSyncStatusOut)
-def login_sync_status(db: Session = Depends(get_db)):
+def login_sync_status(
+    db: Session = Depends(get_db),
+    _auth: str = Depends(get_admin_or_manager_user),
+):
     """Quick diagnostics for auth->backend user sync health."""
     now = datetime.now(timezone.utc)
     cutoff = now.replace(microsecond=0) - timedelta(hours=24)
@@ -509,6 +525,7 @@ def list_retag_approvals(
     status: str = Query("pending"),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200, alias="pageSize"),
+    _auth: str = Depends(get_admin_user),
 ):
     q = db.query(RetagApprovalRequest).order_by(RetagApprovalRequest.requested_at.desc())
     status_v = (status or "").strip().lower()
@@ -584,6 +601,7 @@ def reject_retag_request(
 def recent_sign_ins(
     db: Session = Depends(get_db),
     limit: int = Query(30, ge=1, le=100),
+    _auth: str = Depends(get_admin_user),
 ):
     """Recent platform access for admins (last login or account created)."""
     activity = func.coalesce(User.last_login_at, User.created_at)
@@ -609,6 +627,7 @@ def update_user(
     manager_id: str | None = Query(None, alias="managerId"),
     is_team_lead: bool | None = Query(None, alias="isTeamLead"),
     db: Session = Depends(get_db),
+    _auth: str = Depends(get_admin_or_manager_user),
 ):
     """Update user role, team, manager, or is_team_lead."""
     user = db.query(User).filter(User.id == user_id).first()
@@ -655,6 +674,7 @@ def create_user(
     role: str = Query("Member"),
     team_id: str | None = Query(None, alias="teamId"),
     db: Session = Depends(get_db),
+    _auth: str = Depends(get_admin_user),
 ):
     """Create a user (for sync or manual add)."""
     email = email.strip().lower()
@@ -686,6 +706,7 @@ def list_projects_workflow(
     db: Session = Depends(get_db),
     team_id: str | None = Query(None, alias="teamId"),
     status: str | None = Query(None),
+    _auth: str = Depends(get_admin_user),
 ):
     try:
         q = db.query(TeamProject).order_by(TeamProject.updated_at.desc())
@@ -706,7 +727,11 @@ def list_projects_workflow(
 
 
 @router.get("/projects-workflow/{project_id}", response_model=TeamProjectOut)
-def get_project_workflow(project_id: str, db: Session = Depends(get_db)):
+def get_project_workflow(
+    project_id: str,
+    db: Session = Depends(get_db),
+    _auth: str = Depends(get_admin_user),
+):
     """Single project for admin workflow detail view."""
     try:
         project = db.query(TeamProject).filter(TeamProject.id == project_id).first()
@@ -1064,7 +1089,10 @@ def get_project_mailbox_conversation_emails(
 
 # --- Escalations by user (admin: list users with counts, then view one user's escalations) ---
 @router.get("/escalation-counts", response_model=list[UserEscalationCountOut])
-def list_escalation_counts_by_user(db: Session = Depends(get_db)):
+def list_escalation_counts_by_user(
+    db: Session = Depends(get_db),
+    _auth: str = Depends(get_admin_or_manager_user),
+):
     """List all users with their escalation email count and status (read/unread/replied). Excludes default/system mailbox."""
     excluded = _excluded_mailboxes_for_user_lists()
     users = db.query(User).order_by(User.email).all()
@@ -1130,8 +1158,9 @@ def list_escalations_for_user(
     page_size: int = Query(20, ge=1, le=500),
     from_date: str | None = Query(None, alias="from"),
     team: str | None = Query(None, description="Filter by assigned team"),
+    _auth: str = Depends(get_admin_or_manager_user),
 ):
-    """List escalation emails for a specific user's mailbox. Admin only."""
+    """List escalation emails for a specific user's mailbox. Admin or Manager."""
     mailbox = (mailbox or "").strip().lower()
     if not mailbox or "@" not in mailbox:
         raise HTTPException(status_code=400, detail="Valid mailbox (user email) required")
@@ -1161,7 +1190,10 @@ def list_escalations_for_user(
 
 # --- Leads by user (admin: list users with counts, then view one user's leads) ---
 @router.get("/lead-counts", response_model=list[UserLeadCountOut])
-def list_lead_counts_by_user(db: Session = Depends(get_db)):
+def list_lead_counts_by_user(
+    db: Session = Depends(get_db),
+    _auth: str = Depends(get_admin_or_manager_user),
+):
     """List all users with their lead email count and status (read/unread/replied). Excludes default/system mailbox."""
     excluded = _excluded_mailboxes_for_user_lists()
     users = db.query(User).order_by(User.email).all()
@@ -1227,8 +1259,9 @@ def list_leads_for_user(
     label: str | None = Query(None, description="Filter by lead label: Hot, Warm, Cold"),
     from_date: str | None = Query(None, alias="from"),
     team: str | None = Query(None, description="Filter by assigned team"),
+    _auth: str = Depends(get_admin_or_manager_user),
 ):
-    """List lead emails for a specific user's mailbox. Admin only."""
+    """List lead emails for a specific user's mailbox. Admin or Manager."""
     mailbox = (mailbox or "").strip().lower()
     if not mailbox or "@" not in mailbox:
         raise HTTPException(status_code=400, detail="Valid mailbox (user email) required")
@@ -1265,8 +1298,9 @@ def admin_list_retagged_for_mailbox(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=500, alias="pageSize"),
     from_date: str | None = Query(None, alias="from"),
+    _auth: str = Depends(get_admin_or_manager_user),
 ):
-    """Retagged emails (ex escalation/lead) for a user's mailbox. Admin only."""
+    """Retagged emails (ex escalation/lead) for a user's mailbox. Admin or Manager."""
     mailbox_l = (mailbox or "").strip().lower()
     if not mailbox_l or "@" not in mailbox_l:
         raise HTTPException(status_code=400, detail="Valid mailbox (user email) required")
@@ -1301,9 +1335,9 @@ def admin_retag_email(
     mailbox: str = Query(..., description="Mailbox owner email (must match the email row)"),
     body: RetagEmailBody = Body(...),
     db: Session = Depends(get_db),
-    admin_email: str = Depends(get_admin_user),
+    admin_email: str = Depends(get_admin_or_manager_user),
 ):
-    """Retag mail in another user's mailbox (immediate apply). Admin only."""
+    """Retag mail in another user's mailbox (immediate apply). Admin or Manager."""
     email = db.query(Email).filter(Email.id == email_id).first()
     if not email:
         raise HTTPException(status_code=404, detail="Email not found")
@@ -1316,7 +1350,10 @@ def admin_retag_email(
 
 # --- Workflow (who leads whom) ---
 @router.get("/workflow", response_model=list[WorkflowNode])
-def get_workflow(db: Session = Depends(get_db)):
+def get_workflow(
+    db: Session = Depends(get_db),
+    _auth: str = Depends(get_admin_user),
+):
     """Return flat list of users with reportIds for building tree (Manager -> members)."""
     users = db.query(User).order_by(User.email).all()
     report_map: dict[str, list[str]] = {}

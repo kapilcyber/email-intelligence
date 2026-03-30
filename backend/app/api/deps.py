@@ -41,3 +41,24 @@ def get_admin_user(
     if user_row and getattr(user_row, "role", None) == "Admin":
         return email
     raise HTTPException(status_code=403, detail="Admin access required")
+
+
+def get_admin_or_manager_user(
+    email: str = Depends(get_current_user_email),
+    db: Session = Depends(get_db),
+):
+    """
+    Require Admin (env list or User.role == Admin) or org role Manager.
+    Used for tracker, review, team oversight, and per-user escalations/leads views.
+    """
+    from app.db.models import User
+
+    settings = get_settings()
+    admin_list = [e.strip().lower() for e in (settings.admin_emails or "").split(",") if e.strip()]
+    if admin_list and email.lower() in admin_list:
+        return email
+    user_row = db.query(User).filter(User.email == email).first()
+    role = getattr(user_row, "role", None) if user_row else None
+    if role in ("Admin", "Manager"):
+        return email
+    raise HTTPException(status_code=403, detail="Admin or Manager access required")
