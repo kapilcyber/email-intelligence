@@ -57,18 +57,18 @@ const managerAdminNavItems = [
   { href: "/admin/leads", label: "Leads", icon: List },
 ];
 
-/** Full admin menu order (Projects / Workflow / Approvals only for Admin role or allow list). */
+/** Full admin menu order (Projects / Hierarchy / Approvals only for Admin role or allow list). */
 const adminNavItemsAll = [
   { href: "/admin/team-leaders", label: "Team leaders", icon: UserCircle },
   { href: "/admin/team-projects", label: "Projects", icon: FolderKanban },
-  { href: "/admin/archive-projects", label: "Archive Projects", icon: FolderOpen },
   { href: "/admin/temporary-team", label: "Temporary team", icon: Users },
   { href: "/admin/tracker", label: "Tracker", icon: CalendarRange },
   { href: "/admin/review", label: "Review", icon: ClipboardCheck },
-  { href: "/admin/workflow", label: "Workflow", icon: Network },
+  { href: "/admin/workflow", label: "Hierarchy", icon: Network },
   { href: "/admin/escalations", label: "Escalations", icon: AlertCircle },
   { href: "/admin/leads", label: "Leads", icon: List },
   { href: "/admin/approvals", label: "Approvals", icon: ShieldCheck },
+  { href: "/admin/archive-projects", label: "Archive Projects", icon: FolderOpen },
 ];
 
 const ADMIN_ONLY_HREFS = new Set([

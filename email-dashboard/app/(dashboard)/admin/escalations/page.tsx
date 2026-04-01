@@ -405,7 +405,7 @@ export default function AdminEscalationsPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <Users className="h-5 w-5" />
-              Users — escalation count
+              Users
             </CardTitle>
           </CardHeader>
           <CardContent>

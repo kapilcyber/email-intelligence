@@ -134,7 +134,7 @@ export default function AdminTrackerPage() {
               <CardContent className="space-y-4">
                 <div>
                   <p className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-                    Expected tracker days (click to toggle)
+                    Tracker days
                   </p>
                   <div className="flex flex-wrap gap-1.5">
                     {DAY_ORDER.map((d) => {

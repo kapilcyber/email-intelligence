@@ -4,12 +4,12 @@ import { useEffect, useState, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { getApi } from "@/lib/api/client";
 import type { WorkflowNode, WorkflowTreeNode, UserOut } from "@/lib/types";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Network, User, LayoutGrid, List } from "lucide-react";
+import { User, LayoutGrid, List } from "lucide-react";
 
 function buildTree(nodes: WorkflowNode[]): WorkflowTreeNode[] {
   const byId = new Map<string, WorkflowTreeNode>();
@@ -145,7 +145,7 @@ export default function AdminWorkflowPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-50">
-            Workflow
+            Hierarchy
           </h1>
         </div>
         <div className="flex gap-2">
@@ -175,12 +175,6 @@ export default function AdminWorkflowPage() {
       )}
 
       <Card className="rounded-2xl">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Network className="h-5 w-5" />
-            {view === "chart" ? "Hierarchy chart" : "Reporting structure"}
-          </CardTitle>
-        </CardHeader>
         <CardContent>
           {loading ? (
             <Skeleton className="h-64 w-full rounded-lg" />

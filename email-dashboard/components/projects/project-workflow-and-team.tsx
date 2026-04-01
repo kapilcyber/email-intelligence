@@ -270,7 +270,7 @@ export function ProjectWorkflowAndTeamSection({
           >
             <span className="flex min-w-0 items-center gap-2 text-base font-semibold">
               <Network className="h-5 w-5 shrink-0" aria-hidden />
-              <span className="truncate">Project team (reporting on this project)</span>
+              <span className="truncate">Project team</span>
             </span>
             <ChevronDown
               className={cn(
@@ -295,7 +295,7 @@ export function ProjectWorkflowAndTeamSection({
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <Network className="h-5 w-5" />
-              Project team (reporting on this project)
+              Project team
             </CardTitle>
           </CardHeader>
           <CardContent>{teamSectionBody}</CardContent>

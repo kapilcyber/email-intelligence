@@ -1,85 +1,128 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 import { getApi } from "@/lib/api/client";
-import { Skeleton } from "@/components/ui/skeleton";
+import type { MeResponse } from "@/lib/types";
 
-/** Admin-only areas; org Managers may not open these (sidebar hides them). */
-const ADMIN_ONLY_PATH_PREFIXES = ["/admin/workflow", "/admin/approvals"];
+const ADMIN_ONLY_PREFIXES_FOR_MANAGER = ["/admin/tracker", "/admin/review"];
 
 function isAdminOnlyPathForManager(pathname: string): boolean {
-  const p = pathname.replace(/\/$/, "") || "/";
-  if (p === "/admin/team-projects") return true;
-  if (ADMIN_ONLY_PATH_PREFIXES.some((prefix) => p.startsWith(prefix))) return true;
-  return false;
+  const p = pathname || "";
+  return ADMIN_ONLY_PREFIXES_FOR_MANAGER.some((prefix) => p === prefix || p.startsWith(`${prefix}/`));
 }
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  const { data: session, status } = useSession();
+  const pathname = usePathname() || "";
   const router = useRouter();
-  const pathname = usePathname();
+  const { data: session, status } = useSession();
+  const adminEmailsEnv = process.env.NEXT_PUBLIC_ADMIN_EMAILS ?? "";
+  const adminEmailsList = useMemo(
+    () => adminEmailsEnv.split(",").map((e) => e.trim().toLowerCase()).filter(Boolean),
+    [adminEmailsEnv]
+  );
   const api = useMemo(
     () => getApi(session?.user?.email ?? null, session?.user?.name ?? null),
     [session?.user?.email, session?.user?.name]
   );
-  const [checking, setChecking] = useState(true);
-  const [allowed, setAllowed] = useState(false);
 
-  const adminEmailsList = useMemo(() => {
-    const raw = process.env.NEXT_PUBLIC_ADMIN_EMAILS ?? "";
-    return raw.split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
-  }, []);
+  const [me, setMe] = useState<MeResponse | null>(null);
+  /** Start true so the first authenticated paint does not flash "denied" before the effect runs. */
+  const [meLoading, setMeLoading] = useState(true);
+  const [meError, setMeError] = useState(false);
 
+  /** Fetch /api/me once per signed-in user (not on every admin sub-route). */
   useEffect(() => {
+    if (status === "loading") return;
     if (status === "unauthenticated") {
-      router.replace("/signin");
+      setMe(null);
+      setMeLoading(false);
+      setMeError(false);
       return;
     }
-    if (status !== "authenticated" || !session?.user?.email) {
-      setChecking(false);
+    if (status !== "authenticated" || !session?.user?.email?.trim()) {
+      setMe(null);
+      setMeLoading(false);
+      setMeError(false);
       return;
     }
-    const userEmail = (session.user.email ?? "").trim().toLowerCase();
-    const isInEnvList = adminEmailsList.length > 0 && adminEmailsList.includes(userEmail);
+
+    let cancelled = false;
+    setMeLoading(true);
+    setMeError(false);
     api
       .getMe()
-      .then((me) => {
-        const isAdminEffective = me.isAdmin || isInEnvList;
-        const isManager = (me.role ?? "").trim() === "Manager";
-        const isManagerOnly = isManager && !isAdminEffective;
-        if (isManagerOnly && isAdminOnlyPathForManager(pathname)) {
-          router.replace("/dashboard");
-          setAllowed(false);
-          return;
-        }
-        if (isAdminEffective || isManager) {
-          setAllowed(true);
-        } else {
-          router.replace("/dashboard");
+      .then((r: MeResponse) => {
+        if (!cancelled) {
+          setMe(r);
+          setMeError(false);
         }
       })
       .catch(() => {
-        if (isInEnvList) setAllowed(true);
-        else router.replace("/dashboard");
+        if (!cancelled) {
+          setMe(null);
+          setMeError(true);
+        }
       })
-      .finally(() => setChecking(false));
-  }, [status, session?.user?.email, api, router, adminEmailsList, pathname]);
+      .finally(() => {
+        if (!cancelled) setMeLoading(false);
+      });
 
-  if (checking) {
+    return () => {
+      cancelled = true;
+    };
+  }, [status, session?.user?.email, api]);
+
+  const access = useMemo(() => {
+    if (status === "loading") return "session-loading" as const;
+    if (status === "unauthenticated") return "unauthenticated" as const;
+    if (status !== "authenticated" || !session?.user?.email?.trim()) return "no-session" as const;
+    if (meLoading) return "me-loading" as const;
+
+    const userEmail = (session.user.email ?? "").trim().toLowerCase();
+    const isInEnvList = adminEmailsList.length > 0 && adminEmailsList.includes(userEmail);
+
+    if (meError && !isInEnvList) return "denied" as const;
+
+    const isAdminEffective = (me?.isAdmin ?? false) || isInEnvList;
+    const isManager = (me?.role ?? "").trim() === "Manager";
+    if (!isAdminEffective && !isManager) return "denied" as const;
+
+    const isManagerOnly = isManager && !isAdminEffective;
+    if (isManagerOnly && isAdminOnlyPathForManager(pathname)) return "denied-manager-route" as const;
+
+    return "ok" as const;
+  }, [status, session?.user?.email, me, meLoading, meError, pathname, adminEmailsList]);
+
+  useEffect(() => {
+    if (access === "unauthenticated") {
+      router.replace("/signin");
+      return;
+    }
+    if (access === "denied" || access === "denied-manager-route" || access === "no-session") {
+      router.replace("/dashboard");
+    }
+  }, [access, router]);
+
+  if (access === "session-loading" || access === "me-loading") {
     return (
-      <div className="flex items-center justify-center p-8">
-        <Skeleton className="h-12 w-48 rounded-lg" />
+      <div className="p-8">
+        <div className="mx-auto max-w-[960px] space-y-4">
+          <div className="h-8 w-40 animate-pulse rounded-md bg-muted" />
+          <div className="h-40 animate-pulse rounded-xl bg-muted/60" />
+        </div>
       </div>
     );
   }
-  if (!allowed) {
+
+  if (access !== "ok") {
     return (
-      <div className="flex items-center justify-center p-8 text-sm text-neutral-500 dark:text-neutral-400">
+      <div className="p-8 text-sm text-muted-foreground">
         Redirecting…
       </div>
     );
   }
-  return <>{children}</>;
+
+  return children;
 }

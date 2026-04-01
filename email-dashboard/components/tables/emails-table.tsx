@@ -2,7 +2,6 @@
 
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { StatusBadge } from "@/components/status/status-badge";
 import { PriorityBadge } from "@/components/status/priority-badge";
 import { RetagMailControl } from "@/components/escalations/retag-mail-control";
 import type { EmailRecord } from "@/lib/types";
@@ -45,6 +44,7 @@ export function EmailsTable({
   onRetagDone,
 }: EmailsTableProps) {
   const router = useRouter();
+  const shouldShowRetag = showRetag ?? true;
 
   if (isLoading) {
     return (
@@ -56,11 +56,9 @@ export function EmailsTable({
               <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Sender</th>
               <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Department</th>
               <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Priority</th>
-              <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">AI Status</th>
               <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Received</th>
               <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Folder</th>
-              <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Status</th>
-              {showRetag ? (
+              {shouldShowRetag ? (
                 <th className="min-w-0 whitespace-nowrap px-2 py-2 text-left text-xs font-medium text-muted-foreground">
                   Retag
                 </th>
@@ -77,8 +75,7 @@ export function EmailsTable({
                 <td className="px-2 py-2"><Skeleton className="h-5 w-16" /></td>
                 <td className="px-2 py-2"><Skeleton className="h-4 w-20" /></td>
                 <td className="px-2 py-2"><Skeleton className="h-4 w-16" /></td>
-                <td className="px-2 py-2"><Skeleton className="h-5 w-14" /></td>
-                {showRetag ? (
+                {shouldShowRetag ? (
                   <td className="px-2 py-2"><Skeleton className="h-8 w-[180px]" /></td>
                 ) : null}
               </tr>
@@ -111,11 +108,9 @@ export function EmailsTable({
               <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Sender</th>
               <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Department</th>
               <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Priority</th>
-              <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">AI Status</th>
               <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Received</th>
               <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Folder</th>
-              <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Status</th>
-              {showRetag ? (
+              {shouldShowRetag ? (
                 <th className="min-w-0 whitespace-nowrap px-2 py-2 text-left text-xs font-medium text-muted-foreground">
                   Retag
                 </th>
@@ -126,13 +121,6 @@ export function EmailsTable({
             {emails.map((email) => {
               const rowClass = "border-b border-border/60 transition-colors hover:bg-muted/60";
               const isClickable = !!getEmailLink;
-              const aiStatus = email.aiStatus ?? "pending";
-              const aiStatusBadge =
-                aiStatus === "completed"
-                  ? { label: "Completed", className: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300" }
-                  : aiStatus === "failed"
-                    ? { label: "Failed", className: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300" }
-                    : { label: "Pending", className: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300" };
               return (
                 <tr
                   key={email.id}
@@ -163,19 +151,11 @@ export function EmailsTable({
                   <td className="px-2 py-2">
                     <PriorityBadge label={email.priorityLabel} />
                   </td>
-                  <td className="px-2 py-2">
-                    <span className={`rounded-full px-1.5 py-0.5 text-[11px] font-medium ${aiStatusBadge.className}`}>
-                      {aiStatusBadge.label}
-                    </span>
-                  </td>
                   <td className="whitespace-nowrap px-2 py-2 text-muted-foreground">
                     {formatDate(email.receivedAt)}
                   </td>
                   <td className="px-2 py-2 text-muted-foreground">{folderLabel(email.folder)}</td>
-                  <td className="px-2 py-2">
-                    <StatusBadge status={email.status} />
-                  </td>
-                  {showRetag ? (
+                  {shouldShowRetag ? (
                     <td
                       className="w-[1%] whitespace-nowrap px-2 py-2 align-middle"
                       onClick={(e) => e.stopPropagation()}
