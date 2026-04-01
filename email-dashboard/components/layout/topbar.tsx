@@ -9,6 +9,7 @@ import { signOut } from "next-auth/react";
 import { Calendar, Search, Moon, Sun, LogOut, Bell, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getApi } from "@/lib/api/client";
+import { ME_UPDATED_EVENT } from "@/lib/me-sync-events";
 import { cn } from "@/lib/utils";
 import type { NotificationItem, SystemStatus } from "@/lib/types";
 
@@ -23,7 +24,6 @@ const pathToLabel: Record<string, string> = {
   "/webhook": "Webhook",
   "/threads": "Threads",
   "/admin/team-projects": "Projects",
-  "/admin": "Admin",
   "/admin/tracker": "Tracker",
   "/admin/review": "Review",
   "/follow-up": "Follow UP",
@@ -49,7 +49,11 @@ function toEmailDisplayNumber(rawId: string): string {
 
 type BreadcrumbItem = { label: string; href: string };
 
-function buildBreadcrumbItems(pathname: string, trackerProjectLabel: string | null): BreadcrumbItem[] {
+function buildBreadcrumbItems(
+  pathname: string,
+  trackerProjectLabel: string | null,
+  adminRootLabel: string
+): BreadcrumbItem[] {
   if (!pathname || pathname === "/") {
     return [{ label: "Dashboard", href: "/dashboard" }];
   }
@@ -79,6 +83,11 @@ function buildBreadcrumbItems(pathname: string, trackerProjectLabel: string | nu
     let href = acc;
     if (href === "/departments") {
       href = "/departments/all";
+    }
+    if (acc === "/admin") {
+      href = "/dashboard";
+      items.push({ label: adminRootLabel, href });
+      continue;
     }
     let label = pathToLabel[acc];
     if (!label) {
@@ -110,9 +119,58 @@ export function Topbar({ environment = "Dev" }: { systemStatus?: SystemStatus; e
   const [items, setItems] = useState<NotificationItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [isAdminEffective, setIsAdminEffective] = useState(false);
+  const [isManagerRole, setIsManagerRole] = useState(false);
+  const [meHydrated, setMeHydrated] = useState(false);
+  const adminEmailsEnv = process.env.NEXT_PUBLIC_ADMIN_EMAILS ?? "";
+  const adminEmailsList = useMemo(
+    () => adminEmailsEnv.split(",").map((e) => e.trim().toLowerCase()).filter(Boolean),
+    [adminEmailsEnv]
+  );
+
+  useEffect(() => {
+    if (status === "loading") return;
+    if (status !== "authenticated" || !session?.user?.email) {
+      setIsAdminEffective(false);
+      setIsManagerRole(false);
+      setMeHydrated(true);
+      return;
+    }
+    const userEmail = (session.user.email ?? "").trim().toLowerCase();
+    const isInEnvList = adminEmailsList.length > 0 && adminEmailsList.includes(userEmail);
+
+    const loadMe = (fromMeSync: boolean) => {
+      if (!fromMeSync) setMeHydrated(false);
+      api
+        .getMe()
+        .then((r) => {
+          const role = (r.role ?? "").trim();
+          setIsAdminEffective(r.isAdmin || isInEnvList);
+          setIsManagerRole(role === "Manager");
+        })
+        .catch(() => {
+          setIsAdminEffective(isInEnvList);
+          setIsManagerRole(false);
+        })
+        .finally(() => setMeHydrated(true));
+    };
+
+    loadMe(false);
+    const onMeSync = () => loadMe(true);
+    window.addEventListener(ME_UPDATED_EVENT, onMeSync);
+    return () => window.removeEventListener(ME_UPDATED_EVENT, onMeSync);
+  }, [status, session?.user?.email, api, adminEmailsList]);
+
+  const adminRootLabel = useMemo(() => {
+    if (!meHydrated) return "Admin";
+    if (isAdminEffective) return "Admin";
+    if (isManagerRole) return "Management";
+    return "Workspace";
+  }, [meHydrated, isAdminEffective, isManagerRole]);
+
   const breadcrumbItems = useMemo(
-    () => buildBreadcrumbItems(pathname, trackerProjectLabel),
-    [pathname, trackerProjectLabel]
+    () => buildBreadcrumbItems(pathname, trackerProjectLabel, adminRootLabel),
+    [pathname, trackerProjectLabel, adminRootLabel]
   );
 
   const loadNotifications = () => {

@@ -1,35 +1,50 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import { useEffect, useState, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { getApi } from "@/lib/api/client";
+import { downloadAoAAsXlsx } from "@/lib/download-xlsx";
+import { cn } from "@/lib/utils";
 import type { EscalationLeadItem, TeamOut, UserLeadCountOut } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Download, Info, Table2, Tags, Users } from "lucide-react";
-import { RetagMailControl } from "@/components/escalations/retag-mail-control";
 import {
-  LineChart,
-  Line,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
+  ComposedChart,
+  Area,
+  Line,
   BarChart,
   Bar,
+  Cell,
+  LabelList,
 } from "recharts";
 
 const DEFAULT_PAGE_SIZE = 20;
 const CHART_PAGE_SIZE = 400;
 const LEAD_LABELS = ["Hot", "Warm", "Cold"];
-const CHART_COLORS = ["#ef4444", "#f97316", "#22c55e", "#0ea5e9", "#8b5cf6", "#94a3b8"];
+const LEAD_LABEL_FILL: Record<string, string> = {
+  Hot: "#ef4444",
+  Warm: "#f97316",
+  Cold: "#22c55e",
+  Other: "#64748b",
+};
+
+const chartTooltipBox: CSSProperties = {
+  borderRadius: 12,
+  border: "1px solid rgba(148, 163, 184, 0.25)",
+  boxShadow: "0 12px 40px rgba(15, 23, 42, 0.1)",
+  padding: "10px 14px",
+  background: "rgba(255, 255, 255, 0.97)",
+};
 
 type ViewMode = "all" | "analytics" | "table";
 type DateRange = "all" | "month" | "year" | "custom";
@@ -237,52 +252,36 @@ export default function AdminLeadsPage() {
       .map(([date, count]) => ({ date, count }));
   }, [chartItems]);
 
-  const donutData = useMemo(() => {
+  const labelBarData = useMemo(() => {
     const byLabel: Record<string, number> = {};
     LEAD_LABELS.forEach((l) => (byLabel[l] = 0));
     chartItems.forEach((i) => {
       const l = i.leadLabel || "Other";
       byLabel[l] = (byLabel[l] ?? 0) + 1;
     });
-    return Object.entries(byLabel).map(([name, value]) => ({ name, value }));
+    return Object.entries(byLabel).map(([label, count]) => ({ label, count }));
   }, [chartItems]);
 
-  const barData = useMemo(() => {
+  const labelPieData = useMemo(() => labelBarData.filter((d) => d.count > 0), [labelBarData]);
+
+  const teamNameValueData = useMemo(() => {
     const byTeam: Record<string, number> = {};
     chartItems.forEach((i) => {
       const t = i.assignedTeam || "Unassigned";
       byTeam[t] = (byTeam[t] ?? 0) + 1;
     });
-    return Object.entries(byTeam).map(([team, count]) => ({ team, count }));
+    return Object.entries(byTeam).map(([name, value]) => ({ name, value }));
   }, [chartItems]);
+
+  const teamBarChartData = useMemo(
+    () => [...teamNameValueData].sort((a, b) => b.value - a.value),
+    [teamNameValueData]
+  );
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
-  const handleDownload = () => {
-    const rows = [
-      ["ID", "Subject", "Lead", "Created by", "Mail type", "Priority", "Date"],
-      ...items.map((i) => [
-        i.id,
-        i.subject ?? "",
-        i.leadLabel ?? "",
-        i.mailboxOwner ?? i.sender ?? "",
-        i.mailType ?? "—",
-        i.priorityLabel ?? "",
-        formatDate(i.receivedAt),
-      ]),
-    ];
-    const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `leads-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const handleExportTable = () => {
-    const rows = [
+  const handleExportTable = async () => {
+    const rows: (string | number)[][] = [
       ["ID", "Subject", "Lead", "Created by", "Mail type", "Priority", "Date"],
       ...filteredItems.map((i) => [
         i.id,
@@ -294,60 +293,61 @@ export default function AdminLeadsPage() {
         formatDate(i.receivedAt),
       ]),
     ];
-    const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `leads-table-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    await downloadAoAAsXlsx(rows, "leads-table", "Leads");
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-50">Leads</h1>
-        </div>
+    <div className="flex w-full min-w-0 flex-col gap-6 md:gap-8">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <header className="min-w-0">
+          <h1 className="text-2xl font-bold tracking-tight text-neutral-900 dark:text-neutral-100">Leads</h1>
+          {selectedUserEmail && (
+            <p className="mt-1 truncate text-sm text-neutral-500 dark:text-neutral-400">
+              Mailbox: <span className="font-medium text-neutral-700 dark:text-neutral-300">{selectedUserEmail}</span>
+            </p>
+          )}
+        </header>
         {selectedUserEmail && (
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex rounded-lg border border-neutral-200 bg-white p-0.5 dark:border-neutral-700 dark:bg-neutral-900">
+            <div className="flex rounded-lg border border-neutral-200 p-0.5 dark:border-neutral-600">
               <button
                 type="button"
                 onClick={() => (setMailKindTab("leads"), setPage(1))}
-                className={`rounded-md px-3 py-1.5 text-sm font-medium ${
+                className={cn(
+                  "rounded-md px-3 py-1.5 text-xs font-medium sm:text-sm",
                   mailKindTab === "leads"
-                    ? "bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900"
-                    : "text-neutral-600 dark:text-neutral-400"
-                }`}
+                    ? "bg-[#1E1E1E] text-white dark:bg-neutral-700"
+                    : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-700"
+                )}
               >
                 Leads
               </button>
               <button
                 type="button"
                 onClick={() => (setMailKindTab("retag"), setRetagPage(1))}
-                className={`flex items-center gap-1 rounded-md px-3 py-1.5 text-sm font-medium ${
+                className={cn(
+                  "flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-medium sm:text-sm",
                   mailKindTab === "retag"
-                    ? "bg-indigo-600 text-white dark:bg-indigo-500"
-                    : "text-neutral-600 dark:text-neutral-400"
-                }`}
+                    ? "bg-[#1E1E1E] text-white dark:bg-neutral-700"
+                    : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-700"
+                )}
               >
                 <Tags className="h-3.5 w-3.5" />
                 ReTag
               </button>
             </div>
-            <div className="flex rounded-lg border border-neutral-200 bg-white p-0.5 dark:border-neutral-700 dark:bg-neutral-900">
+            <div className="flex rounded-lg border border-neutral-200 p-0.5 dark:border-neutral-600">
               {(["all", "analytics", "table"] as const).map((mode) => (
                 <button
                   key={mode}
                   type="button"
                   onClick={() => setViewMode(mode)}
-                  className={`rounded-md px-3 py-1.5 text-sm font-medium capitalize ${
+                  className={cn(
+                    "rounded-md px-3 py-1.5 text-xs font-medium capitalize sm:text-sm",
                     viewMode === mode
-                      ? "bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900"
-                      : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
-                  }`}
+                      ? "bg-[#1E1E1E] text-white dark:bg-neutral-700"
+                      : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-700"
+                  )}
                 >
                   {mode === "all" ? "All" : mode === "analytics" ? "Analytics only" : "Table only"}
                 </button>
@@ -361,7 +361,7 @@ export default function AdminLeadsPage() {
                   setPage(1);
                 }}
               >
-                <SelectTrigger className="w-[160px]">
+                <SelectTrigger className="h-10 w-[160px] rounded-lg border-neutral-300 dark:border-neutral-600">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -374,44 +374,39 @@ export default function AdminLeadsPage() {
               {dateRange === "custom" && (
                 <input
                   type="date"
-                  className="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+                  className="h-10 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100"
                   value={customFrom}
                   onChange={(e) => (setCustomFrom(e.target.value), setPage(1))}
                 />
               )}
             </div>
-            <Button variant="default" size="sm" onClick={handleDownload} className="gap-2">
-              <Download className="h-4 w-4" />
-              Download data
-            </Button>
           </div>
         )}
       </div>
 
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400">
+        <div className="rounded-xl border border-red-200/80 bg-red-50/90 p-3 text-sm text-red-800 backdrop-blur-sm dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">
           {error}
         </div>
       )}
 
-      {/* User list: show first; click user to see their leads table */}
       {!selectedUserEmail && (
-        <Card className="rounded-xl border-neutral-200 dark:border-neutral-800">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Users className="h-5 w-5" />
+        <section className="overflow-hidden rounded-3xl border border-indigo-100 bg-gradient-to-br from-white via-indigo-50/80 to-violet-50/90 p-5 shadow-md shadow-indigo-100/50 dark:border-neutral-700 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 dark:shadow-none sm:p-6">
+          <CardHeader className="p-0 pb-4">
+            <CardTitle className="flex items-center gap-2 text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+              <Users className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
               Users
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-0">
             {userCountsLoading ? (
               <Skeleton className="h-64 w-full rounded-lg" />
             ) : userCounts.length === 0 ? (
               <p className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">No users found.</p>
             ) : (
-              <div className="overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-700">
+              <div className="overflow-x-auto rounded-xl border border-neutral-200/80 bg-white/40 dark:border-neutral-700 dark:bg-neutral-800/30">
                 <table className="w-full text-left text-sm">
-                  <thead className="border-b border-neutral-200 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800/50">
+                  <thead className="border-b border-neutral-200 bg-neutral-50/90 dark:border-neutral-700 dark:bg-neutral-800/50">
                     <tr>
                       <th className="px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">User</th>
                       <th className="px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">Email</th>
@@ -448,154 +443,193 @@ export default function AdminLeadsPage() {
               </div>
             )}
           </CardContent>
-        </Card>
+        </section>
       )}
 
       {selectedUserEmail && mailKindTab === "leads" && (
         <>
-      {/* KPI cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card className="rounded-xl border-neutral-200 dark:border-neutral-800">
-          <CardContent className="pt-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-neutral-500 dark:text-neutral-400">Total leads</p>
-                <p className="text-2xl font-semibold text-neutral-900 dark:text-neutral-50">{total}</p>
-              </div>
-              <Info className="h-5 w-5 text-neutral-400" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="rounded-xl border-neutral-200 dark:border-neutral-800">
-          <CardContent className="pt-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-neutral-500 dark:text-neutral-400">By label</p>
-                <p className="text-2xl font-semibold text-neutral-900 dark:text-neutral-50">
-                  {donutData.filter((d) => d.value > 0).length}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="rounded-xl border-neutral-200 dark:border-neutral-800">
-          <CardContent className="pt-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-neutral-500 dark:text-neutral-400">Teams</p>
-                <p className="text-2xl font-semibold text-neutral-900 dark:text-neutral-50">{barData.length}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="rounded-xl border-neutral-200 dark:border-neutral-800">
-          <CardContent className="pt-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-neutral-500 dark:text-neutral-400">Date range</p>
-                <p className="text-lg font-semibold text-neutral-900 dark:text-neutral-50">
-                  {fromDate ? formatDate(fromDate) : "All time"}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      <section className="grid gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3">
+        <div className="relative rounded-2xl border border-white/80 bg-gradient-to-br from-[#1e3a8a] via-[#2563eb] to-[#0ea5e9] p-5 text-white shadow-lg shadow-blue-200/70 transition-transform duration-300 hover:-translate-y-0.5 dark:border-neutral-700 dark:bg-neutral-900/60 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-900 dark:shadow-none">
+          <p className="text-sm font-medium text-white/80 dark:text-neutral-400">Total leads</p>
+          <p className="mt-1 text-3xl font-semibold text-white dark:text-neutral-100">{total}</p>
+          <p className="mt-0.5 text-xs text-white/75 dark:text-neutral-400">In selected mailbox</p>
+          <Info className="absolute right-4 top-4 h-5 w-5 text-white/50 dark:text-neutral-500" aria-hidden />
+        </div>
+        <div className="relative rounded-2xl border border-white/80 bg-gradient-to-br from-[#1e3a8a] via-[#2563eb] to-[#0ea5e9] p-5 text-white shadow-lg shadow-blue-200/70 transition-transform duration-300 hover:-translate-y-0.5 dark:border-neutral-700 dark:bg-neutral-900/60 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-900 dark:shadow-none">
+          <p className="text-sm font-medium text-white/80 dark:text-neutral-400">By label</p>
+          <p className="mt-1 text-3xl font-semibold text-white dark:text-neutral-100">{labelPieData.length}</p>
+          <p className="mt-0.5 text-xs text-white/75 dark:text-neutral-400">Labels with leads in range</p>
+        </div>
+        <div className="relative rounded-2xl border border-white/80 bg-gradient-to-br from-[#1e3a8a] via-[#2563eb] to-[#0ea5e9] p-5 text-white shadow-lg shadow-blue-200/70 transition-transform duration-300 hover:-translate-y-0.5 dark:border-neutral-700 dark:bg-neutral-900/60 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-900 dark:shadow-none sm:col-span-2 lg:col-span-1">
+          <p className="text-sm font-medium text-white/80 dark:text-neutral-400">Teams</p>
+          <p className="mt-1 text-3xl font-semibold text-white dark:text-neutral-100">{teamNameValueData.length}</p>
+          <p className="mt-0.5 text-xs text-white/75 dark:text-neutral-400">Assigned teams in range</p>
+        </div>
+      </section>
 
-      {/* Charts */}
       {(viewMode === "all" || viewMode === "analytics") && (
-        <div className="space-y-6">
-          <div className="grid gap-6 lg:grid-cols-2">
-            <Card className="rounded-xl border-neutral-200 dark:border-neutral-800">
-              <CardHeader>
-                <CardTitle className="text-base">Leads over time</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {chartLoading ? (
-                  <Skeleton className="h-[240px] w-full rounded-lg" />
-                ) : lineData.length === 0 ? (
-                  <p className="flex h-[240px] items-center justify-center text-sm text-neutral-500">
-                    No data for selected range
-                  </p>
-                ) : (
-                  <ResponsiveContainer width="100%" height={240}>
-                    <LineChart data={lineData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
-                      <CartesianGrid strokeDasharray="3 3" className="stroke-neutral-200 dark:stroke-neutral-700" />
-                      <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-                      <YAxis tick={{ fontSize: 11 }} />
-                      <Tooltip />
-                      <Line type="monotone" dataKey="count" stroke="#22c55e" strokeWidth={2} name="Count" />
-                    </LineChart>
-                  </ResponsiveContainer>
-                )}
-              </CardContent>
-            </Card>
-            <Card className="rounded-xl border-neutral-200 dark:border-neutral-800">
-              <CardHeader>
-                <CardTitle className="text-base">By lead label</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {chartLoading ? (
-                  <Skeleton className="h-[240px] w-full rounded-lg" />
-                ) : donutData.length === 0 ? (
-                  <p className="flex h-[240px] items-center justify-center text-sm text-neutral-500">
-                    No data for selected range
-                  </p>
-                ) : (
-                  <ResponsiveContainer width="100%" height={240}>
-                    <PieChart>
-                      <Pie
-                        data={donutData}
-                        dataKey="value"
-                        nameKey="name"
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={60}
-                        outerRadius={90}
-                        paddingAngle={2}
-                        label={({ name, value }) => `${name}: ${value}`}
-                      >
-                        {donutData.map((_, i) => (
-                          <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip />
-                    </PieChart>
-                  </ResponsiveContainer>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-          <Card className="rounded-xl border-neutral-200 dark:border-neutral-800">
-            <CardHeader>
-              <CardTitle className="text-base">By assigned team</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {chartLoading ? (
-                <Skeleton className="h-[240px] w-full rounded-lg" />
-              ) : (
-                <ResponsiveContainer width="100%" height={240}>
-                  <BarChart data={barData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-neutral-200 dark:stroke-neutral-700" />
-                    <XAxis dataKey="team" tick={{ fontSize: 11 }} />
-                    <YAxis tick={{ fontSize: 11 }} />
-                    <Tooltip />
-                    <Bar dataKey="count" fill="#0ea5e9" name="Count" radius={[4, 4, 0, 0]} />
-                  </BarChart>
+        <div className="flex flex-col gap-6 md:gap-8">
+          <section className="rounded-3xl border border-slate-100 bg-gradient-to-br from-white to-[#f7fbff] p-5 shadow-md shadow-slate-100/70 dark:border-neutral-700 dark:from-neutral-900 dark:to-neutral-900 dark:shadow-none sm:p-6">
+            <h3 className="mb-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-neutral-400">
+              Leads over time
+            </h3>
+            <p className="mb-4 text-[11px] text-slate-400 dark:text-neutral-500">Volume trend across the selected range</p>
+            {chartLoading ? (
+              <Skeleton className="h-[300px] w-full rounded-xl" />
+            ) : lineData.length === 0 ? (
+              <p className="flex h-[300px] items-center justify-center text-sm text-neutral-500 dark:text-neutral-400">
+                No data for selected range
+              </p>
+            ) : (
+              <div className="h-[300px] w-full [&_.recharts-cartesian-axis-tick_text]:fill-slate-500 dark:[&_.recharts-cartesian-axis-tick_text]:fill-neutral-400">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={lineData} margin={{ top: 16, right: 24, left: 8, bottom: 8 }}>
+                    <defs>
+                      <linearGradient id="adminLeadsTimeFill" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#22c55e" stopOpacity={0.5} />
+                        <stop offset="55%" stopColor="#16a34a" stopOpacity={0.2} />
+                        <stop offset="100%" stopColor="#15803d" stopOpacity={0.02} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="4 14" vertical={false} stroke="#cbd5e1" strokeOpacity={0.45} />
+                    <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 11 }} dy={6} />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11 }} allowDecimals={false} width={40} />
+                    <Tooltip
+                      contentStyle={chartTooltipBox}
+                      labelStyle={{ fontWeight: 600, marginBottom: 4 }}
+                      formatter={(v: number) => [`${v}`, "Leads"]}
+                    />
+                    <Area type="natural" dataKey="count" name="Volume" stroke="none" fill="url(#adminLeadsTimeFill)" isAnimationActive animationDuration={900} />
+                    <Line
+                      type="natural"
+                      dataKey="count"
+                      name="Trend"
+                      stroke="#15803d"
+                      strokeWidth={2.5}
+                      dot={false}
+                      activeDot={{ r: 6, strokeWidth: 2, stroke: "#fff", fill: "#166534" }}
+                      isAnimationActive
+                      animationDuration={1000}
+                    />
+                  </ComposedChart>
                 </ResponsiveContainer>
+              </div>
+            )}
+          </section>
+          <div className="grid gap-6 lg:grid-cols-2 lg:gap-8">
+            <section className="rounded-3xl border border-orange-100 bg-gradient-to-br from-white via-orange-50 to-amber-50 p-5 shadow-md shadow-orange-100/60 dark:border-neutral-800 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 dark:shadow-none sm:p-6">
+              <h3 className="mb-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-neutral-400">
+                By lead label
+              </h3>
+              <p className="mb-4 text-[11px] text-slate-400 dark:text-neutral-500">Volume by label — column view</p>
+              {chartLoading ? (
+                <Skeleton className="h-[280px] w-full rounded-xl" />
+              ) : labelPieData.length === 0 ? (
+                <p className="flex h-[280px] items-center justify-center text-sm text-neutral-500 dark:text-neutral-400">
+                  No leads in selected range
+                </p>
+              ) : (
+                <div className="h-[280px] w-full [&_.recharts-cartesian-axis-tick_text]:fill-slate-500 dark:[&_.recharts-cartesian-axis-tick_text]:fill-neutral-400">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={labelBarData} margin={{ top: 20, right: 12, left: -8, bottom: 4 }} barCategoryGap="18%">
+                      <defs>
+                        {labelBarData.map((d, i) => (
+                          <linearGradient key={d.label} id={`lead-label-col-${i}`} x1="0" y1="1" x2="0" y2="0">
+                            <stop offset="0%" stopColor={LEAD_LABEL_FILL[d.label] ?? "#0ea5e9"} stopOpacity={0.55} />
+                            <stop offset="100%" stopColor={LEAD_LABEL_FILL[d.label] ?? "#0ea5e9"} stopOpacity={1} />
+                          </linearGradient>
+                        ))}
+                      </defs>
+                      <CartesianGrid strokeDasharray="4 14" vertical={false} stroke="#cbd5e1" strokeOpacity={0.35} />
+                      <XAxis
+                        dataKey="label"
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fontSize: 11 }}
+                        interval={0}
+                        angle={-12}
+                        textAnchor="end"
+                        height={44}
+                      />
+                      <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11 }} allowDecimals={false} width={32} />
+                      <Tooltip contentStyle={chartTooltipBox} formatter={(v: number) => [`${v} leads`, "Count"]} />
+                      <Bar dataKey="count" name="Leads" radius={[10, 10, 0, 0]} maxBarSize={52} isAnimationActive animationDuration={750}>
+                        {labelBarData.map((d, i) => (
+                          <Cell key={d.label} fill={`url(#lead-label-col-${i})`} />
+                        ))}
+                        <LabelList
+                          dataKey="count"
+                          position="top"
+                          fill="#475569"
+                          fontSize={11}
+                          fontWeight={600}
+                          formatter={(v: number) => (Number(v) > 0 ? String(v) : "")}
+                        />
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
               )}
-            </CardContent>
-          </Card>
+            </section>
+            <section className="rounded-3xl border border-violet-100 bg-gradient-to-br from-white via-violet-50 to-fuchsia-50 p-5 shadow-md shadow-violet-100/60 dark:border-neutral-800 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 dark:shadow-none sm:p-6">
+              <h3 className="mb-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-neutral-400">
+                By assigned team
+              </h3>
+              <p className="mb-4 text-[11px] text-slate-400 dark:text-neutral-500">Ranked volume — horizontal comparison</p>
+              {chartLoading ? (
+                <Skeleton className="h-[280px] w-full rounded-xl" />
+              ) : teamNameValueData.length === 0 ? (
+                <p className="flex h-[280px] items-center justify-center text-sm text-neutral-500 dark:text-neutral-400">
+                  No data for selected range
+                </p>
+              ) : (
+                <div className="h-[280px] w-full [&_.recharts-cartesian-axis-tick_text]:fill-slate-500 dark:[&_.recharts-cartesian-axis-tick_text]:fill-neutral-400">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart layout="vertical" data={teamBarChartData} margin={{ top: 8, right: 36, left: 4, bottom: 8 }} barCategoryGap={14}>
+                      <defs>
+                        <linearGradient id="adminLeadsTeamBar" x1="0" y1="0" x2="1" y2="0">
+                          <stop offset="0%" stopColor="#6366f1" />
+                          <stop offset="100%" stopColor="#a855f7" />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="4 14" horizontal={false} stroke="#cbd5e1" strokeOpacity={0.35} />
+                      <XAxis type="number" axisLine={false} tickLine={false} tick={{ fontSize: 11 }} allowDecimals={false} />
+                      <YAxis
+                        type="category"
+                        dataKey="name"
+                        width={92}
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fontSize: 11 }}
+                      />
+                      <Tooltip contentStyle={chartTooltipBox} formatter={(v: number) => [`${v} leads`, "Volume"]} />
+                      <Bar
+                        dataKey="value"
+                        name="Leads"
+                        radius={[0, 10, 10, 0]}
+                        barSize={22}
+                        fill="url(#adminLeadsTeamBar)"
+                        isAnimationActive
+                        animationDuration={750}
+                      >
+                        <LabelList dataKey="value" position="right" fill="#475569" fontSize={11} fontWeight={600} formatter={(v: number) => (v > 0 ? String(v) : "")} />
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </section>
+          </div>
         </div>
       )}
 
       {/* Table */}
       {(viewMode === "all" || viewMode === "table") && (
-        <Card className="rounded-xl border-neutral-200 dark:border-neutral-800">
+        <Card className="overflow-hidden">
           <CardHeader className="pb-4">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Table2 className="h-5 w-5" />
+              <CardTitle className="flex items-center gap-2 text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                <Table2 className="h-5 w-5 text-sky-600 dark:text-sky-400" />
                 Leads table
               </CardTitle>
               <div className="flex flex-wrap items-center gap-2">
@@ -606,7 +640,7 @@ export default function AdminLeadsPage() {
                     setPage(1);
                   }}
                 >
-                  <SelectTrigger className="w-[120px]">
+                  <SelectTrigger className="h-10 w-[120px] rounded-lg border-neutral-300 dark:border-neutral-600">
                     <SelectValue placeholder="Rows" />
                   </SelectTrigger>
                   <SelectContent>
@@ -616,7 +650,7 @@ export default function AdminLeadsPage() {
                   </SelectContent>
                 </Select>
                 <Select value={labelFilter || "all"} onValueChange={(v) => (setLabelFilter(v === "all" ? "" : v), setPage(1))}>
-                  <SelectTrigger className="w-[140px]">
+                  <SelectTrigger className="h-10 w-[140px] rounded-lg border-neutral-300 dark:border-neutral-600">
                     <SelectValue placeholder="Lead label" />
                   </SelectTrigger>
                   <SelectContent>
@@ -627,7 +661,7 @@ export default function AdminLeadsPage() {
                   </SelectContent>
                 </Select>
                 <Select value={teamFilter || "all"} onValueChange={(v) => (setTeamFilter(v === "all" ? "" : v), setPage(1))}>
-                  <SelectTrigger className="w-[140px]">
+                  <SelectTrigger className="h-10 w-[140px] rounded-lg border-neutral-300 dark:border-neutral-600">
                     <SelectValue placeholder="Team" />
                   </SelectTrigger>
                   <SelectContent>
@@ -640,7 +674,7 @@ export default function AdminLeadsPage() {
                 <input
                   type="search"
                   placeholder="Search"
-                  className="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+                  className="h-10 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
@@ -658,9 +692,9 @@ export default function AdminLeadsPage() {
               <p className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">No leads found.</p>
             ) : (
               <>
-                <div className="overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-700">
+                <div className="overflow-x-auto rounded-xl border border-neutral-200/80 bg-white/30 dark:border-neutral-700 dark:bg-neutral-800/20">
                   <table className="w-full text-left text-sm">
-                    <thead className="border-b border-neutral-200 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800/50">
+                    <thead className="border-b border-neutral-200 bg-neutral-50/90 dark:border-neutral-700 dark:bg-neutral-800/50">
                       <tr>
                         <th className="px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">ID</th>
                         <th className="px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">Lead</th>
@@ -669,7 +703,6 @@ export default function AdminLeadsPage() {
                         <th className="px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">Mail type</th>
                         <th className="px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">Status</th>
                         <th className="px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">Date</th>
-                        <th className="px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">Retag</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-neutral-200 dark:divide-neutral-700">
@@ -710,20 +743,6 @@ export default function AdminLeadsPage() {
                             </span>
                           </td>
                           <td className="px-4 py-3 text-neutral-500">{formatDate(item.receivedAt)}</td>
-                          <td className="px-4 py-3 align-top">
-                            {selectedUserEmail && (
-                              <RetagMailControl
-                                emailId={item.id}
-                                adminMailbox={selectedUserEmail}
-                                departmentNames={teamNames}
-                                onDone={() => {
-                                  loadTable();
-                                  if (mailKindTab === "retag") loadAdminRetag();
-                                }}
-                                compact
-                              />
-                            )}
-                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -760,25 +779,25 @@ export default function AdminLeadsPage() {
       )}
 
       {selectedUserEmail && mailKindTab === "retag" && (
-        <Card className="rounded-xl border-neutral-200 dark:border-neutral-800">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Tags className="h-5 w-5" />
+        <section className="overflow-hidden rounded-3xl border border-cyan-100 bg-gradient-to-br from-white to-[#edf8ff] p-5 shadow-md shadow-cyan-100/60 dark:border-neutral-700 dark:from-neutral-900 dark:to-neutral-900 dark:shadow-none sm:p-6">
+          <CardHeader className="p-0 pb-4">
+            <CardTitle className="flex items-center gap-2 text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+              <Tags className="h-5 w-5 text-cyan-600 dark:text-cyan-400" />
               ReTag — {selectedUserEmail} ({retagTotal})
             </CardTitle>
-            <p className="text-sm font-normal text-neutral-500 dark:text-neutral-400">
+            <p className="pt-1 text-sm text-neutral-500 dark:text-neutral-400">
               Mail this user retagged from escalation/lead into another department.
             </p>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-0">
             {loading ? (
               <Skeleton className="h-64 w-full rounded-lg" />
             ) : retagItems.length === 0 ? (
               <p className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">No retagged mail.</p>
             ) : (
-              <div className="overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-700">
+              <div className="overflow-x-auto rounded-xl border border-neutral-200/80 bg-white/40 dark:border-neutral-700 dark:bg-neutral-800/30">
                 <table className="w-full text-left text-sm">
-                  <thead className="border-b border-neutral-200 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800/50">
+                  <thead className="border-b border-neutral-200 bg-neutral-50/90 dark:border-neutral-700 dark:bg-neutral-800/50">
                     <tr>
                       <th className="px-4 py-3">Subject</th>
                       <th className="px-4 py-3">Department</th>
@@ -789,7 +808,10 @@ export default function AdminLeadsPage() {
                     {retagItems.map((item) => (
                       <tr key={item.id}>
                         <td className="px-4 py-3">
-                          <Link href={`/emails/${item.id}`} className="font-medium hover:underline">
+                          <Link
+                            href={`/emails/${item.id}`}
+                            className="font-medium text-neutral-900 hover:underline dark:text-neutral-50"
+                          >
                             {item.subject || "(No subject)"}
                           </Link>
                         </td>
@@ -820,7 +842,7 @@ export default function AdminLeadsPage() {
               </div>
             )}
           </CardContent>
-        </Card>
+        </section>
       )}
     </div>
   );

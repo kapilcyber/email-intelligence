@@ -77,6 +77,8 @@ class WorkflowNode(BaseModel):
     isTeamLead: bool
     managerId: str | None
     reportIds: list[str] = []
+    """Team project names this user is assigned to (admin team projects)."""
+    projectNames: list[str] = Field(default_factory=list)
 
 
 class ProjectAssignmentOut(BaseModel):
@@ -1481,6 +1483,17 @@ def get_workflow(
     for u in users:
         if u.manager_id:
             report_map.setdefault(u.manager_id, []).append(u.id)
+
+    projects_by_user: dict[str, list[str]] = {}
+    for user_id, proj_name in (
+        db.query(ProjectAssignment.user_id, TeamProject.name)
+        .join(TeamProject, ProjectAssignment.project_id == TeamProject.id)
+        .all()
+    ):
+        projects_by_user.setdefault(user_id, []).append(proj_name)
+    for uid in projects_by_user:
+        projects_by_user[uid] = sorted(set(projects_by_user[uid]))
+
     result = []
     for u in users:
         result.append(
@@ -1493,6 +1506,7 @@ def get_workflow(
                 isTeamLead=u.is_team_lead,
                 managerId=u.manager_id,
                 reportIds=report_map.get(u.id, []),
+                projectNames=projects_by_user.get(u.id, []),
             )
         )
     return result

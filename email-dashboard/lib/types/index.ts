@@ -407,6 +407,8 @@ export interface WorkflowNode {
   isTeamLead: boolean;
   managerId: string | null;
   reportIds: string[];
+  /** Team project names this user is assigned to (admin team projects). */
+  projectNames?: string[];
 }
 
 /** Tree node for hierarchy chart (WorkflowNode with nested children). */
