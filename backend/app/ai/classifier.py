@@ -3,6 +3,7 @@ Phase 2: Email classification via Ollama (primary) and OpenAI (fallback).
 Produces summary, category, priority score/label, reply suggestions.
 With structured JSON enforcement, timeout, retry, and observability.
 """
+import html
 import json
 import logging
 import re
@@ -21,7 +22,7 @@ OLLAMA_MAX_RETRIES = 2
 MAX_RETRIES = 3
 RETRY_BASE_DELAY = 2.0
 # Enough tokens for full JSON; avoids truncation mid-string (e.g. in suggested_replies)
-MAX_TOKENS_RESPONSE = 1024
+MAX_TOKENS_RESPONSE = 1280
 
 
 def _get_openai_client():
@@ -104,12 +105,36 @@ def _escape_for_format(s: str) -> str:
     return str(s).replace("{", "{{").replace("}", "}}")
 
 
+def _html_to_plain_excerpt(
+    raw: str | None,
+    *,
+    max_html_chars: int = 20000,
+    max_plain_chars: int = 3000,
+) -> str:
+    """
+    Strip HTML to plain text for the LLM prompt only (DB body_content stays unchanged).
+    """
+    if not raw or not str(raw).strip():
+        return ""
+    s = str(raw)[:max_html_chars]
+    s = html.unescape(s)
+    s = re.sub(r"<script[\s\S]*?</script>", " ", s, flags=re.IGNORECASE)
+    s = re.sub(r"<style[\s\S]*?</style>", " ", s, flags=re.IGNORECASE)
+    s = re.sub(r"<[^>]+>", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    if max_plain_chars > 0:
+        s = s[:max_plain_chars]
+    return s
+
+
 def _build_prompt(subject: str | None, body_preview: str | None, body_content: str | None, sender: str) -> str:
-    subject = subject or "(No subject)"
-    preview = (body_preview or "")[:500]
-    content = (body_content or "")[:3000]
-    if not content and preview:
-        content = preview
+    subject_display = subject or "(No subject)"
+    preview_raw = (body_preview or "")[:500]
+    plain_body = _html_to_plain_excerpt(body_content, max_html_chars=20000, max_plain_chars=3000)
+    plain_preview = _html_to_plain_excerpt(preview_raw, max_html_chars=2000, max_plain_chars=500)
+    content = plain_body
+    if not content and plain_preview:
+        content = plain_preview
     sender = sender or "unknown"
     example_json = '{"summary": "Meeting follow-up with action items.", "category": "General", "priority_score": 55, "suggested_replies": ["Thanks, will review by EOD.", "Can we move to 3pm?"], "lead_label": null, "buying_signals": []}'
     template = """Analyze this email and respond with a single JSON object only. No markdown, no code block, no explanation. Output only valid JSON.
@@ -118,8 +143,10 @@ Email:
 From: {sender}
 Subject: {subject}
 
-Body (excerpt):
+Body (plain-text excerpt; HTML was removed for analysis):
 {content}
+
+If the body excerpt above is empty or has almost no meaningful text (e.g. image-only newsletters), summarize from the subject line and From address. Always provide a non-empty "summary" when the subject line is not "(No subject)".
 
 Respond with exactly this structure (only these keys):
 - "summary": one or two short sentences summarizing the email.
@@ -132,8 +159,8 @@ Respond with exactly this structure (only these keys):
 Example: """
     part1 = template.format(
         sender=_escape_for_format(sender),
-        subject=_escape_for_format(subject),
-        content=_escape_for_format(content),
+        subject=_escape_for_format(subject_display),
+        content=_escape_for_format(content) if content else "(empty — use subject and From only)",
     )
     return part1 + example_json
 
@@ -300,9 +327,15 @@ def _normalize_buying_signals(signals: Any) -> list[str]:
     return out
 
 
-def _content_to_result(content: str, correlation_id: str | None = None) -> dict[str, Any]:
+def _content_to_result(
+    content: str,
+    correlation_id: str | None = None,
+    *,
+    subject: str | None = None,
+    sender_email: str | None = None,
+) -> dict[str, Any]:
     """Parse LLM content to JSON and build the standard result dict. Raises only if no content or parse completely fails."""
-    if not (content or content.strip()):
+    if not content or not str(content).strip():
         raise ValueError("Empty content")
     data = _parse_json_from_response(content, correlation_id)
     summary = _extract_summary_safe(data)
@@ -329,6 +362,15 @@ def _content_to_result(content: str, correlation_id: str | None = None) -> dict[
             confidence = None
     lead_label = _normalize_lead_label(data.get("lead_label") or data.get("leadLabel"))
     buying_signals = _normalize_buying_signals(data.get("buying_signals") or data.get("buyingSignals"))
+    if summary is None:
+        subj = (subject or "").strip()
+        if subj:
+            summary = f"Email regarding: {subj}."
+            logger.info(
+                "PARSED_SUMMARY: applied_subject_fallback correlation_id=%s sender=%s",
+                correlation_id or "none",
+                (sender_email or "")[:80],
+            )
     return {
         "summary": summary,
         "category": category,
@@ -388,7 +430,12 @@ def classify_email_content(
                 latency_ms = (time.perf_counter() - start) * 1000
                 if not content:
                     raise ValueError("Ollama returned empty content")
-                result = _content_to_result(content, correlation_id)
+                result = _content_to_result(
+                    content,
+                    correlation_id,
+                    subject=subject,
+                    sender_email=sender_email,
+                )
                 logger.info(
                     "AI_RESPONSE: provider=ollama correlation_id=%s latency_ms=%.0f attempt=%d content_length=%d",
                     correlation_id,
@@ -426,7 +473,12 @@ def classify_email_content(
                 latency_ms = (time.perf_counter() - start) * 1000
                 if not content:
                     raise ValueError("OpenAI returned empty content")
-                result = _content_to_result(content, correlation_id)
+                result = _content_to_result(
+                    content,
+                    correlation_id,
+                    subject=subject,
+                    sender_email=sender_email,
+                )
                 logger.info(
                     "AI_RESPONSE: provider=openai fallback=True correlation_id=%s latency_ms=%.0f attempt=%d content_length=%d",
                     correlation_id,

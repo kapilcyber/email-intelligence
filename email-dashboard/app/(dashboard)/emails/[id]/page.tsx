@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
@@ -37,6 +37,10 @@ function sanitizeEmailHtml(html: string): string {
     .replace(/<link\b[^>]*rel=["']?stylesheet["']?[^>]*>/gi, "");
 }
 
+const AI_POLL_INTERVAL_MS = 2500;
+const AI_POLL_TIMEOUT_MS = 3 * 60 * 1000;
+const AI_POLL_MAX_FAILURES = 5;
+
 export default function EmailDetailPage() {
   const { data: session, status } = useSession();
   const api = useMemo(
@@ -49,6 +53,19 @@ export default function EmailDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
+  const [pollNotice, setPollNotice] = useState<string | null>(null);
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const clearAiPoll = () => {
+    if (pollIntervalRef.current != null) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    return () => clearAiPoll();
+  }, [id]);
 
   useEffect(() => {
     if (!id || status !== "authenticated") {
@@ -107,11 +124,54 @@ export default function EmailDetailPage() {
 
   const aiFailed = email.aiStatus === "failed";
   const handleRetryAi = () => {
+    setPollNotice(null);
     setRetrying(true);
-    api.retryAi(email.id).then(() => {
-      setRetrying(false);
-      api.getEmail(email.id).then(setEmail);
-    }).catch(() => setRetrying(false));
+    const emailId = email.id;
+    clearAiPoll();
+    api
+      .retryAi(emailId)
+      .then(async () => {
+        let first: EmailDetail | null = null;
+        try {
+          first = await api.getEmail(emailId);
+          setEmail(first);
+        } catch {
+          /* first refresh optional; polling will retry */
+        }
+        if (first?.aiStatus === "completed" || first?.aiStatus === "failed") {
+          setRetrying(false);
+          return;
+        }
+        const startedAt = Date.now();
+        let failures = 0;
+        pollIntervalRef.current = setInterval(() => {
+          if (Date.now() - startedAt > AI_POLL_TIMEOUT_MS) {
+            clearAiPoll();
+            setRetrying(false);
+            setPollNotice("AI is taking longer than expected. Refresh the page or try Retrieve again.");
+            return;
+          }
+          api
+            .getEmail(emailId)
+            .then((data) => {
+              failures = 0;
+              setEmail(data);
+              if (data.aiStatus === "completed" || data.aiStatus === "failed") {
+                clearAiPoll();
+                setRetrying(false);
+              }
+            })
+            .catch(() => {
+              failures += 1;
+              if (failures >= AI_POLL_MAX_FAILURES) {
+                clearAiPoll();
+                setRetrying(false);
+                setPollNotice("Could not load updated AI results. Check your connection and try again.");
+              }
+            });
+        }, AI_POLL_INTERVAL_MS);
+      })
+      .catch(() => setRetrying(false));
   };
 
   return (
@@ -212,6 +272,11 @@ export default function EmailDetailPage() {
               )}
             </div>
           </div>
+          {pollNotice && (
+            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+              {pollNotice}
+            </div>
+          )}
           {aiFailed && (
             <div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-800 dark:bg-amber-950/40">
               <div className="flex items-center gap-2 text-amber-800 dark:text-amber-200">
