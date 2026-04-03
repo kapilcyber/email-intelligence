@@ -4,6 +4,7 @@ import { Fragment, useMemo, useState } from "react";
 import type { TeamProjectOut, ProjectAssignmentOut } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { LenisScrollArea } from "@/components/lenis/lenis-scroll-area";
 import { cn } from "@/lib/utils";
 import { ChevronDown, ChevronRight, GitBranch, Network, User } from "lucide-react";
 
@@ -34,9 +35,9 @@ function computeEffectiveProjectParents(assignments: ProjectAssignmentOut[]): Ma
           break;
         }
         seen.add(cur);
-        const next = raw.get(cur) ?? null;
-        if (!next || !idSet.has(next)) break;
-        cur = next;
+        const nextParent: string | null = raw.get(cur) ?? null;
+        if (!nextParent || !idSet.has(nextParent)) break;
+        cur = nextParent;
       }
       if (valid) parent = direct;
     }
@@ -132,13 +133,11 @@ function ProjectMemberChart({
 }) {
   if (roots.length === 0) return null;
   return (
-    <div className="overflow-x-auto py-4">
-      <div className="flex min-w-max flex-wrap justify-center gap-8">
-        {roots.map((node) => (
-          <ProjectHierarchyNode key={node.userId} node={node} projectLeadUserId={projectLeadUserId} />
-        ))}
-      </div>
-    </div>
+    <LenisScrollArea axis="horizontal" className="py-4" contentClassName="flex min-w-max flex-wrap justify-center gap-8">
+      {roots.map((node) => (
+        <ProjectHierarchyNode key={node.userId} node={node} projectLeadUserId={projectLeadUserId} />
+      ))}
+    </LenisScrollArea>
   );
 }
 

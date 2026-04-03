@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertCircle, CalendarRange } from "lucide-react";
+import { LenisScrollArea } from "@/components/lenis/lenis-scroll-area";
 import { cn } from "@/lib/utils";
 
 type ReviewParam = "escalation" | "projectTracker";
@@ -118,7 +119,7 @@ export default function AdminReviewPage() {
             escalationRows.length === 0 ? (
               <p className="text-sm text-neutral-500 dark:text-neutral-400">No data.</p>
             ) : (
-              <div className="overflow-x-auto">
+              <LenisScrollArea axis="horizontal">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-neutral-200 text-left text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
@@ -142,12 +143,12 @@ export default function AdminReviewPage() {
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </LenisScrollArea>
             )
           ) : trackerRows.length === 0 ? (
             <p className="text-sm text-neutral-500 dark:text-neutral-400">No data.</p>
           ) : (
-            <div className="overflow-x-auto">
+            <LenisScrollArea axis="horizontal">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-neutral-200 text-left text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
@@ -170,7 +171,7 @@ export default function AdminReviewPage() {
                             "inline-flex rounded-full px-2 py-0.5 text-xs font-medium",
                             r.hasSentTracker
                               ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300"
-                              : "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
+                              : "bg-amber-100 text-amber-800 dark:bg-emerald-900/40 dark:text-amber-300"
                           )}
                         >
                           {r.hasSentTracker ? "Yes" : "No"}
@@ -180,7 +181,7 @@ export default function AdminReviewPage() {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </LenisScrollArea>
           )}
         </CardContent>
       </Card>

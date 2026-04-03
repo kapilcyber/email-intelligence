@@ -1,7 +1,11 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
+import { LenisScrollArea } from "@/components/lenis/lenis-scroll-area";
 import { cn } from "@/lib/utils";
+
+const SELECT_MENU_Z = 500;
 
 function getItemsFromChildren(children: React.ReactNode): Array<{ value: string; label: React.ReactNode }> {
   const items: Array<{ value: string; label: React.ReactNode }> = [];
@@ -26,6 +30,32 @@ function isCompoundStructure(children: React.ReactNode): boolean {
   return hasTrigger;
 }
 
+function computeMenuPosition(triggerEl: HTMLElement): { top: number; left: number; width: number; maxHeight: number } {
+  const rect = triggerEl.getBoundingClientRect();
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const gap = 4;
+  const desiredMax = 280;
+  const spaceBelow = vh - rect.bottom - gap - 8;
+  const spaceAbove = rect.top - gap - 8;
+  let top: number;
+  let maxHeight: number;
+  if (spaceBelow >= 160 || spaceBelow >= spaceAbove) {
+    top = rect.bottom + gap;
+    maxHeight = Math.min(desiredMax, Math.max(80, spaceBelow));
+  } else {
+    maxHeight = Math.min(desiredMax, Math.max(80, spaceAbove));
+    top = rect.top - gap - maxHeight;
+  }
+  let left = rect.left;
+  const width = Math.max(rect.width, 120);
+  if (left + width > vw - 8) {
+    left = Math.max(8, vw - width - 8);
+  }
+  if (left < 8) left = 8;
+  return { top, left, width, maxHeight };
+}
+
 export function Select({
   value,
   onValueChange,
@@ -42,7 +72,12 @@ export function Select({
   disabled?: boolean;
 }) {
   const [open, setOpen] = React.useState(false);
+  const [mounted, setMounted] = React.useState(false);
+  const [menuBox, setMenuBox] = React.useState<{ top: number; left: number; width: number; maxHeight: number } | null>(
+    null
+  );
   const ref = React.useRef<HTMLDivElement>(null);
+  const menuRef = React.useRef<HTMLDivElement>(null);
 
   const compound = isCompoundStructure(children);
   let triggerClassName = "";
@@ -71,14 +106,89 @@ export function Select({
   const selectedItem = items.find((i) => i.value === value);
   const displayLabel = selectedItem ? selectedItem.label : valuePlaceholder ?? "Select";
 
+  const updateMenuPosition = React.useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    setMenuBox(computeMenuPosition(el));
+  }, []);
+
+  React.useEffect(() => setMounted(true), []);
+
+  React.useLayoutEffect(() => {
+    if (!open) {
+      setMenuBox(null);
+      return;
+    }
+    updateMenuPosition();
+    const onScrollOrResize = () => updateMenuPosition();
+    window.addEventListener("resize", onScrollOrResize);
+    window.addEventListener("scroll", onScrollOrResize, true);
+    return () => {
+      window.removeEventListener("resize", onScrollOrResize);
+      window.removeEventListener("scroll", onScrollOrResize, true);
+    };
+  }, [open, updateMenuPosition]);
+
   React.useEffect(() => {
     if (!open) return;
     const handleClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      if (ref.current?.contains(t)) return;
+      if (menuRef.current?.contains(t)) return;
+      setOpen(false);
     };
     document.addEventListener("click", handleClick);
     return () => document.removeEventListener("click", handleClick);
   }, [open]);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+
+  const menu =
+    mounted &&
+    open &&
+    menuBox &&
+    createPortal(
+      <div
+        ref={menuRef}
+        role="listbox"
+        className="fixed flex flex-col overflow-hidden rounded-md border border-border bg-panel text-foreground shadow-lg outline-none"
+        style={{
+          top: menuBox.top,
+          left: menuBox.left,
+          width: menuBox.width,
+          maxHeight: menuBox.maxHeight,
+          zIndex: SELECT_MENU_Z,
+        }}
+      >
+        <LenisScrollArea className="min-h-0 max-h-full w-full" contentClassName="py-1">
+          {items.map((item) => (
+            <div
+              key={item.value}
+              role="option"
+              aria-selected={value === item.value}
+              className={cn(
+                "cursor-pointer px-3 py-2 text-sm text-foreground hover:bg-muted",
+                value === item.value && "bg-muted"
+              )}
+              onClick={() => {
+                onValueChange?.(item.value);
+                setOpen(false);
+              }}
+            >
+              {item.label}
+            </div>
+          ))}
+        </LenisScrollArea>
+      </div>,
+      document.body
+    );
 
   return (
     <div ref={ref} className={cn("relative", className)}>
@@ -98,26 +208,7 @@ export function Select({
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
         </svg>
       </button>
-      {open && (
-        <div className="absolute z-50 mt-1 w-full rounded-md border border-border bg-panel py-1 shadow-md">
-          {items.map((item) => (
-            <div
-              key={item.value}
-              role="option"
-              className={cn(
-                "cursor-pointer px-3 py-2 text-sm hover:bg-muted",
-                value === item.value && "bg-muted"
-              )}
-              onClick={() => {
-                onValueChange?.(item.value);
-                setOpen(false);
-              }}
-            >
-              {item.label}
-            </div>
-          ))}
-        </div>
-      )}
+      {menu}
     </div>
   );
 }
@@ -140,3 +231,4 @@ SelectValue.displayName = "SelectValue";
 export function SelectItem({ value, children }: { value: string; children: React.ReactNode }) {
   return <>{children}</>;
 }
+SelectItem.displayName = "SelectItem";

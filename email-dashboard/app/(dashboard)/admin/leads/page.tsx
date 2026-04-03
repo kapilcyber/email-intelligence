@@ -1,18 +1,20 @@
 "use client";
 
-import type { CSSProperties } from "react";
 import { useEffect, useState, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { getApi } from "@/lib/api/client";
 import { downloadAoAAsXlsx } from "@/lib/download-xlsx";
+import { LenisScrollArea } from "@/components/lenis/lenis-scroll-area";
 import { cn } from "@/lib/utils";
+import { chartTooltipProps, useChartTheme } from "@/lib/use-chart-theme";
 import type { EscalationLeadItem, TeamOut, UserLeadCountOut } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Download, Info, Table2, Tags, Users } from "lucide-react";
+import { DateRangePair } from "@/components/ui/date-range-pair";
 import {
   XAxis,
   YAxis,
@@ -36,14 +38,6 @@ const LEAD_LABEL_FILL: Record<string, string> = {
   Warm: "#f97316",
   Cold: "#22c55e",
   Other: "#64748b",
-};
-
-const chartTooltipBox: CSSProperties = {
-  borderRadius: 12,
-  border: "1px solid rgba(148, 163, 184, 0.25)",
-  boxShadow: "0 12px 40px rgba(15, 23, 42, 0.1)",
-  padding: "10px 14px",
-  background: "rgba(255, 255, 255, 0.97)",
 };
 
 type ViewMode = "all" | "analytics" | "table";
@@ -83,6 +77,7 @@ export default function AdminLeadsPage() {
   const [viewMode, setViewMode] = useState<ViewMode>("all");
   const [dateRange, setDateRange] = useState<DateRange>("all");
   const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
   const [labelFilter, setLabelFilter] = useState<string>("");
   const [search, setSearch] = useState("");
   const [teamFilter, setTeamFilter] = useState<string>("");
@@ -104,6 +99,14 @@ export default function AdminLeadsPage() {
   const [chartLoading, setChartLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fromDate = dateRange === "custom" ? customFrom : getDateRangeFromPreset(dateRange);
+  const toDate =
+    dateRange === "custom"
+      ? customTo.trim() || undefined
+      : dateRange === "month" || dateRange === "year"
+        ? new Date().toISOString().slice(0, 10)
+        : undefined;
+  const chart = useChartTheme();
+  const tt = chartTooltipProps(chart);
 
   const teamNames = useMemo(() => teams.map((t) => t.name), [teams]);
   const selectedUser = useMemo(
@@ -133,6 +136,7 @@ export default function AdminLeadsPage() {
         label: labelFilter || undefined,
         team: teamFilter || undefined,
         from: fromDate || undefined,
+        to: toDate,
       })
       .then((r) => {
         setItems(r.leads);
@@ -152,6 +156,7 @@ export default function AdminLeadsPage() {
         page: retagPage,
         pageSize,
         from: fromDate || undefined,
+        to: toDate,
       })
       .then((r) => {
         setRetagItems(r.retagged);
@@ -172,6 +177,7 @@ export default function AdminLeadsPage() {
         label: labelFilter || undefined,
         team: teamFilter || undefined,
         from: fromDate || undefined,
+        to: toDate,
       })
       .then((r) => setChartItems(r.leads))
       .catch(() => {})
@@ -197,11 +203,11 @@ export default function AdminLeadsPage() {
 
   useEffect(() => {
     if (selectedUserEmail && mailKindTab === "leads") loadTable();
-  }, [status, api, selectedUserEmail, page, pageSize, labelFilter, teamFilter, fromDate, mailKindTab]);
+  }, [status, api, selectedUserEmail, page, pageSize, labelFilter, teamFilter, fromDate, toDate, mailKindTab]);
 
   useEffect(() => {
     if (selectedUserEmail && mailKindTab === "retag") loadAdminRetag();
-  }, [status, api, selectedUserEmail, mailKindTab, retagPage, pageSize, fromDate]);
+  }, [status, api, selectedUserEmail, mailKindTab, retagPage, pageSize, fromDate, toDate]);
 
   useEffect(() => {
     if (
@@ -211,7 +217,7 @@ export default function AdminLeadsPage() {
     ) {
       loadCharts();
     }
-  }, [status, api, selectedUserEmail, viewMode, labelFilter, teamFilter, fromDate, mailKindTab]);
+  }, [status, api, selectedUserEmail, viewMode, labelFilter, teamFilter, fromDate, toDate, mailKindTab]);
 
   useEffect(() => {
     if (status !== "authenticated" || !selectedUserEmail) return;
@@ -224,7 +230,7 @@ export default function AdminLeadsPage() {
       }
     }, 30000);
     return () => window.clearInterval(id);
-  }, [status, api, selectedUserEmail, page, pageSize, labelFilter, teamFilter, fromDate, viewMode, mailKindTab]);
+  }, [status, api, selectedUserEmail, page, pageSize, labelFilter, teamFilter, fromDate, toDate, viewMode, mailKindTab]);
 
   const filteredItems = useMemo(() => {
     let list = items;
@@ -368,15 +374,21 @@ export default function AdminLeadsPage() {
                   <SelectItem value="all">All time</SelectItem>
                   <SelectItem value="month">This month</SelectItem>
                   <SelectItem value="year">This year</SelectItem>
-                  <SelectItem value="custom">Custom from date</SelectItem>
+                  <SelectItem value="custom">Custom range</SelectItem>
                 </SelectContent>
               </Select>
               {dateRange === "custom" && (
-                <input
-                  type="date"
-                  className="h-10 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100"
-                  value={customFrom}
-                  onChange={(e) => (setCustomFrom(e.target.value), setPage(1))}
+                <DateRangePair
+                  from={customFrom}
+                  to={customTo}
+                  onFromChange={(v) => {
+                    setCustomFrom(v);
+                    setPage(1);
+                  }}
+                  onToChange={(v) => {
+                    setCustomTo(v);
+                    setPage(1);
+                  }}
                 />
               )}
             </div>
@@ -404,7 +416,10 @@ export default function AdminLeadsPage() {
             ) : userCounts.length === 0 ? (
               <p className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">No users found.</p>
             ) : (
-              <div className="overflow-x-auto rounded-xl border border-neutral-200/80 bg-white/40 dark:border-neutral-700 dark:bg-neutral-800/30">
+              <LenisScrollArea
+                axis="horizontal"
+                className="rounded-xl border border-neutral-200/80 bg-white/40 dark:border-neutral-700 dark:bg-neutral-800/30"
+              >
                 <table className="w-full text-left text-sm">
                   <thead className="border-b border-neutral-200 bg-neutral-50/90 dark:border-neutral-700 dark:bg-neutral-800/50">
                     <tr>
@@ -440,7 +455,7 @@ export default function AdminLeadsPage() {
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </LenisScrollArea>
             )}
           </CardContent>
         </section>
@@ -491,14 +506,27 @@ export default function AdminLeadsPage() {
                         <stop offset="100%" stopColor="#15803d" stopOpacity={0.02} />
                       </linearGradient>
                     </defs>
-                    <CartesianGrid strokeDasharray="4 14" vertical={false} stroke="#cbd5e1" strokeOpacity={0.45} />
-                    <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 11 }} dy={6} />
-                    <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11 }} allowDecimals={false} width={40} />
-                    <Tooltip
-                      contentStyle={chartTooltipBox}
-                      labelStyle={{ fontWeight: 600, marginBottom: 4 }}
-                      formatter={(v: number) => [`${v}`, "Leads"]}
+                    <CartesianGrid
+                      strokeDasharray="4 14"
+                      vertical={false}
+                      stroke={chart.gridSlate}
+                      strokeOpacity={chart.isDark ? 0.9 : 0.45}
                     />
+                    <XAxis
+                      dataKey="date"
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fontSize: 11, fill: chart.axis }}
+                      dy={6}
+                    />
+                    <YAxis
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fontSize: 11, fill: chart.axisMuted }}
+                      allowDecimals={false}
+                      width={40}
+                    />
+                    <Tooltip {...tt} formatter={(v: number) => [`${v}`, "Leads"]} />
                     <Area type="natural" dataKey="count" name="Volume" stroke="none" fill="url(#adminLeadsTimeFill)" isAnimationActive animationDuration={900} />
                     <Line
                       type="natural"
@@ -507,7 +535,12 @@ export default function AdminLeadsPage() {
                       stroke="#15803d"
                       strokeWidth={2.5}
                       dot={false}
-                      activeDot={{ r: 6, strokeWidth: 2, stroke: "#fff", fill: "#166534" }}
+                      activeDot={{
+                        r: 6,
+                        strokeWidth: 2,
+                        stroke: chart.isDark ? "#27272a" : "#fff",
+                        fill: "#166534",
+                      }}
                       isAnimationActive
                       animationDuration={1000}
                     />
@@ -540,19 +573,30 @@ export default function AdminLeadsPage() {
                           </linearGradient>
                         ))}
                       </defs>
-                      <CartesianGrid strokeDasharray="4 14" vertical={false} stroke="#cbd5e1" strokeOpacity={0.35} />
+                      <CartesianGrid
+                        strokeDasharray="4 14"
+                        vertical={false}
+                        stroke={chart.gridSlate}
+                        strokeOpacity={chart.isDark ? 0.85 : 0.35}
+                      />
                       <XAxis
                         dataKey="label"
                         axisLine={false}
                         tickLine={false}
-                        tick={{ fontSize: 11 }}
+                        tick={{ fontSize: 11, fill: chart.axis }}
                         interval={0}
                         angle={-12}
                         textAnchor="end"
                         height={44}
                       />
-                      <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11 }} allowDecimals={false} width={32} />
-                      <Tooltip contentStyle={chartTooltipBox} formatter={(v: number) => [`${v} leads`, "Count"]} />
+                      <YAxis
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fontSize: 11, fill: chart.axisMuted }}
+                        allowDecimals={false}
+                        width={32}
+                      />
+                      <Tooltip {...tt} formatter={(v: number) => [`${v} leads`, "Count"]} />
                       <Bar dataKey="count" name="Leads" radius={[10, 10, 0, 0]} maxBarSize={52} isAnimationActive animationDuration={750}>
                         {labelBarData.map((d, i) => (
                           <Cell key={d.label} fill={`url(#lead-label-col-${i})`} />
@@ -560,7 +604,7 @@ export default function AdminLeadsPage() {
                         <LabelList
                           dataKey="count"
                           position="top"
-                          fill="#475569"
+                          fill={chart.labelFill}
                           fontSize={11}
                           fontWeight={600}
                           formatter={(v: number) => (Number(v) > 0 ? String(v) : "")}
@@ -592,17 +636,28 @@ export default function AdminLeadsPage() {
                           <stop offset="100%" stopColor="#a855f7" />
                         </linearGradient>
                       </defs>
-                      <CartesianGrid strokeDasharray="4 14" horizontal={false} stroke="#cbd5e1" strokeOpacity={0.35} />
-                      <XAxis type="number" axisLine={false} tickLine={false} tick={{ fontSize: 11 }} allowDecimals={false} />
+                      <CartesianGrid
+                        strokeDasharray="4 14"
+                        horizontal={false}
+                        stroke={chart.gridSlate}
+                        strokeOpacity={chart.isDark ? 0.85 : 0.35}
+                      />
+                      <XAxis
+                        type="number"
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fontSize: 11, fill: chart.axisMuted }}
+                        allowDecimals={false}
+                      />
                       <YAxis
                         type="category"
                         dataKey="name"
                         width={92}
                         axisLine={false}
                         tickLine={false}
-                        tick={{ fontSize: 11 }}
+                        tick={{ fontSize: 11, fill: chart.axis }}
                       />
-                      <Tooltip contentStyle={chartTooltipBox} formatter={(v: number) => [`${v} leads`, "Volume"]} />
+                      <Tooltip {...tt} formatter={(v: number) => [`${v} leads`, "Volume"]} />
                       <Bar
                         dataKey="value"
                         name="Leads"
@@ -612,7 +667,14 @@ export default function AdminLeadsPage() {
                         isAnimationActive
                         animationDuration={750}
                       >
-                        <LabelList dataKey="value" position="right" fill="#475569" fontSize={11} fontWeight={600} formatter={(v: number) => (v > 0 ? String(v) : "")} />
+                        <LabelList
+                          dataKey="value"
+                          position="right"
+                          fill={chart.labelFill}
+                          fontSize={11}
+                          fontWeight={600}
+                          formatter={(v: number) => (v > 0 ? String(v) : "")}
+                        />
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>
@@ -692,7 +754,10 @@ export default function AdminLeadsPage() {
               <p className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">No leads found.</p>
             ) : (
               <>
-                <div className="overflow-x-auto rounded-xl border border-neutral-200/80 bg-white/30 dark:border-neutral-700 dark:bg-neutral-800/20">
+                <LenisScrollArea
+                  axis="horizontal"
+                  className="rounded-xl border border-neutral-200/80 bg-white/30 dark:border-neutral-700 dark:bg-neutral-800/20"
+                >
                   <table className="w-full text-left text-sm">
                     <thead className="border-b border-neutral-200 bg-neutral-50/90 dark:border-neutral-700 dark:bg-neutral-800/50">
                       <tr>
@@ -747,7 +812,7 @@ export default function AdminLeadsPage() {
                       ))}
                     </tbody>
                   </table>
-                </div>
+                </LenisScrollArea>
                 {(totalPages > 1 || total > 0) && (
                   <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
                     <p className="text-sm text-neutral-500 dark:text-neutral-400">
@@ -795,7 +860,10 @@ export default function AdminLeadsPage() {
             ) : retagItems.length === 0 ? (
               <p className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">No retagged mail.</p>
             ) : (
-              <div className="overflow-x-auto rounded-xl border border-neutral-200/80 bg-white/40 dark:border-neutral-700 dark:bg-neutral-800/30">
+              <LenisScrollArea
+                axis="horizontal"
+                className="rounded-xl border border-neutral-200/80 bg-white/40 dark:border-neutral-700 dark:bg-neutral-800/30"
+              >
                 <table className="w-full text-left text-sm">
                   <thead className="border-b border-neutral-200 bg-neutral-50/90 dark:border-neutral-700 dark:bg-neutral-800/50">
                     <tr>
@@ -824,7 +892,7 @@ export default function AdminLeadsPage() {
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </LenisScrollArea>
             )}
             {Math.ceil(retagTotal / pageSize) > 1 && (
               <div className="mt-4 flex justify-between">

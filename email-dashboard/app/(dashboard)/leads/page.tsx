@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { List, ChevronRight } from "lucide-react";
 import { RetagMailControl } from "@/components/escalations/retag-mail-control";
+import { DateRangePair } from "@/components/ui/date-range-pair";
 
 const PAGE_SIZE = 20;
 const LEAD_LABELS = ["Hot", "Warm", "Cold"] as const;
@@ -48,6 +49,7 @@ export default function LeadsPage() {
   const [page, setPage] = useState(1);
   const [labelFilter, setLabelFilter] = useState<string>("");
   const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -60,6 +62,7 @@ export default function LeadsPage() {
         page,
         pageSize: PAGE_SIZE,
         from: fromDate || undefined,
+        to: toDate || undefined,
         label: labelFilter || undefined,
         mine: true,
       })
@@ -73,7 +76,7 @@ export default function LeadsPage() {
 
   useEffect(() => {
     load();
-  }, [status, api, page, labelFilter, fromDate]);
+  }, [status, api, page, labelFilter, fromDate, toDate]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -96,11 +99,17 @@ export default function LeadsPage() {
             </option>
           ))}
         </select>
-        <input
-          type="date"
-          className="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
-          value={fromDate}
-          onChange={(e) => (setFromDate(e.target.value), setPage(1))}
+        <DateRangePair
+          from={fromDate}
+          to={toDate}
+          onFromChange={(v) => {
+            setFromDate(v);
+            setPage(1);
+          }}
+          onToChange={(v) => {
+            setToDate(v);
+            setPage(1);
+          }}
         />
       </div>
 

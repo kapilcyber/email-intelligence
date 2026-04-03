@@ -125,7 +125,7 @@ export default function AdminProjectWorkflowPage() {
                   does <strong>not</strong> use Admin → Workflow (org Manager/Member/team lead).
                 </>
               ) : (
-                <>Manager view is read-only. Project role and assignment changes can only be made by admins.</>
+                <>Project role and assignment changes can only be made by admins.</>
               )}
             </p>
           </div>

@@ -17,7 +17,7 @@ from app.api.admin_access import (
     manager_actor_row as _manager_actor_row,
 )
 from app.api.deps import get_admin_user, get_admin_or_manager_user, get_current_user_email
-from app.api.phase3 import _email_to_item, RetagEmailBody, _perform_retag
+from app.api.phase3 import _email_to_item, RetagEmailBody, _perform_retag, apply_received_at_date_range_filter
 from app.api.emails import (
     ConversationOut,
     ConversationsResponse,
@@ -510,21 +510,11 @@ def list_users(
 def list_login_events(
     db: Session = Depends(get_db),
     limit: int = Query(500, ge=1, le=2000),
-    _auth: str = Depends(get_admin_or_manager_user),
-    actor_email: str = Depends(get_current_user_email),
+    _auth: str = Depends(get_admin_user),
 ):
-    """Session rows (login → logout); newest first."""
+    """Session rows for all users (login → logout); newest first. Admin only."""
     try:
         q = db.query(UserLoginEvent, User).join(User, User.id == UserLoginEvent.user_id)
-        if not _is_admin_actor(db, actor_email):
-            mgr = _manager_actor_row(db, actor_email)
-            if mgr:
-                scope = actor_manager_scope_mailboxes(db, actor_email) or set()
-                if not scope:
-                    return []
-                q = q.filter(User.email.in_(list(scope)))
-            else:
-                return []
         rows = q.order_by(desc(UserLoginEvent.login_at)).limit(limit).all()
     except (OperationalError, ProgrammingError):
         return []
@@ -546,46 +536,13 @@ def list_login_events(
 @router.get("/login-sync-status", response_model=LoginSyncStatusOut)
 def login_sync_status(
     db: Session = Depends(get_db),
-    _auth: str = Depends(get_admin_or_manager_user),
-    actor_email: str = Depends(get_current_user_email),
+    _auth: str = Depends(get_admin_user),
 ):
-    """Quick diagnostics for auth->backend user sync health."""
+    """Org-wide diagnostics for auth→backend user sync. Admin only."""
     now = datetime.now(timezone.utc)
     cutoff = now.replace(microsecond=0) - timedelta(hours=24)
     user_q = db.query(User)
     event_q = db.query(UserLoginEvent)
-    if not _is_admin_actor(db, actor_email):
-        mgr = _manager_actor_row(db, actor_email)
-        if mgr:
-            scope = actor_manager_scope_mailboxes(db, actor_email) or set()
-            if not scope:
-                return LoginSyncStatusOut(
-                    totalUsers=0,
-                    usersWithLastLoginAt=0,
-                    usersMissingLastLoginAt=0,
-                    totalLoginEvents=0,
-                    activeSessions=0,
-                    oauthEvents24h=0,
-                    sessionEvents24h=0,
-                    lastOauthEventAt=None,
-                    lastAnyEventAt=None,
-                    syncHealth="healthy",
-                )
-            user_q = user_q.filter(User.email.in_(list(scope)))
-            event_q = event_q.join(User, User.id == UserLoginEvent.user_id).filter(User.email.in_(list(scope)))
-        else:
-            return LoginSyncStatusOut(
-                totalUsers=0,
-                usersWithLastLoginAt=0,
-                usersMissingLastLoginAt=0,
-                totalLoginEvents=0,
-                activeSessions=0,
-                oauthEvents24h=0,
-                sessionEvents24h=0,
-                lastOauthEventAt=None,
-                lastAnyEventAt=None,
-                syncHealth="healthy",
-            )
     total_users = user_q.count()
     users_with_last_login = user_q.filter(User.last_login_at.isnot(None)).count()
     users_missing_last_login = max(0, total_users - users_with_last_login)
@@ -1179,6 +1136,7 @@ def get_project_mailbox_conversation_emails(
                     aiProcessedAt=getattr(email, "ai_processed_at", None),
                     processingStatus=getattr(email, "processing_status", None),
                     aiErrorMessage=getattr(email, "ai_error_message", None),
+                    graphId=getattr(email, "graph_id", None),
                 )
             )
         return ThreadEmailsResponse(conversationId=conversation_id, emails=out)
@@ -1268,6 +1226,7 @@ def list_escalations_for_user(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=500),
     from_date: str | None = Query(None, alias="from"),
+    to_date: str | None = Query(None, alias="to"),
     team: str | None = Query(None, description="Filter by assigned team"),
     _auth: str = Depends(get_admin_or_manager_user),
     actor_email: str = Depends(get_current_user_email),
@@ -1281,12 +1240,7 @@ def list_escalations_for_user(
         if not hasattr(Email, "is_escalation"):
             return {"escalations": [], "total": 0, "page": page, "pageSize": page_size}
         q = db.query(Email).filter(Email.is_escalation == True, Email.mailbox_owner_email == mailbox)
-        if from_date:
-            try:
-                dt = datetime.fromisoformat(from_date.replace("Z", "+00:00"))
-                q = q.filter(Email.received_at >= dt)
-            except ValueError:
-                pass
+        q = apply_received_at_date_range_filter(q, Email.received_at, from_date, to_date)
         if team and team.strip() and hasattr(Email, "assigned_team"):
             q = q.filter(Email.assigned_team == team.strip())
         total = q.count()
@@ -1375,6 +1329,7 @@ def list_leads_for_user(
     page_size: int = Query(20, ge=1, le=500),
     label: str | None = Query(None, description="Filter by lead label: Hot, Warm, Cold"),
     from_date: str | None = Query(None, alias="from"),
+    to_date: str | None = Query(None, alias="to"),
     team: str | None = Query(None, description="Filter by assigned team"),
     _auth: str = Depends(get_admin_or_manager_user),
     actor_email: str = Depends(get_current_user_email),
@@ -1390,12 +1345,7 @@ def list_leads_for_user(
         q = db.query(Email).filter(Email.lead_label.isnot(None), Email.mailbox_owner_email == mailbox)
         if label and label.strip():
             q = q.filter(Email.lead_label == label.strip())
-        if from_date:
-            try:
-                dt = datetime.fromisoformat(from_date.replace("Z", "+00:00"))
-                q = q.filter(Email.received_at >= dt)
-            except ValueError:
-                pass
+        q = apply_received_at_date_range_filter(q, Email.received_at, from_date, to_date)
         if team and team.strip() and hasattr(Email, "assigned_team"):
             q = q.filter(Email.assigned_team == team.strip())
         total = q.count()
@@ -1417,6 +1367,7 @@ def admin_list_retagged_for_mailbox(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=500, alias="pageSize"),
     from_date: str | None = Query(None, alias="from"),
+    to_date: str | None = Query(None, alias="to"),
     _auth: str = Depends(get_admin_or_manager_user),
     actor_email: str = Depends(get_current_user_email),
 ):
@@ -1432,12 +1383,7 @@ def admin_list_retagged_for_mailbox(
             Email.retagged_at.isnot(None),
             Email.mailbox_owner_email == mailbox_l,
         )
-        if from_date:
-            try:
-                dt = datetime.fromisoformat(from_date.replace("Z", "+00:00"))
-                q = q.filter(Email.received_at >= dt)
-            except ValueError:
-                pass
+        q = apply_received_at_date_range_filter(q, Email.received_at, from_date, to_date)
         total = q.count()
         rows = q.order_by(Email.retagged_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
         return {

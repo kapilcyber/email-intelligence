@@ -2,9 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { ShieldCheck, Users, UserCircle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { getApi } from "@/lib/api/client";
+import { ME_UPDATED_EVENT } from "@/lib/me-sync-events";
 import { cn } from "@/lib/utils";
 
 type RoleTab = "user" | "manager" | "admin";
@@ -117,10 +120,67 @@ const TOUR_STEPS: TourStep[] = [
   },
 ];
 
+/** Manual tabs: admin → all three; manager → manager only; member → user only. */
+function visibleTabsForRoles(isAdmin: boolean, isManagerRole: boolean): RoleTab[] {
+  if (isAdmin) return ["user", "manager", "admin"];
+  if (isManagerRole) return ["manager"];
+  return ["user"];
+}
+
 export default function HowToUsePage() {
+  const { data: session, status } = useSession();
+  const api = useMemo(
+    () => getApi(session?.user?.email ?? null, session?.user?.name ?? null),
+    [session?.user?.email, session?.user?.name]
+  );
+  const adminEmailsEnv = process.env.NEXT_PUBLIC_ADMIN_EMAILS ?? "";
+  const adminEmailsList = useMemo(
+    () => adminEmailsEnv.split(",").map((e) => e.trim().toLowerCase()).filter(Boolean),
+    [adminEmailsEnv]
+  );
+
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [isManagerRole, setIsManagerRole] = useState(false);
+
   const [active, setActive] = useState<RoleTab>("user");
   const [tourOpen, setTourOpen] = useState(false);
   const [tourIndex, setTourIndex] = useState(0);
+
+  useEffect(() => {
+    if (status !== "authenticated" || !session?.user?.email) {
+      setIsAdmin(false);
+      setIsManagerRole(false);
+      return;
+    }
+    const userEmail = (session.user.email ?? "").trim().toLowerCase();
+    const isInEnvList = adminEmailsList.length > 0 && adminEmailsList.includes(userEmail);
+
+    const loadMe = () => {
+      api
+        .getMe()
+        .then((r) => {
+          const effectiveAdmin = r.isAdmin || isInEnvList;
+          setIsAdmin(effectiveAdmin);
+          setIsManagerRole((r.role ?? "").trim() === "Manager");
+        })
+        .catch(() => {
+          setIsAdmin(isInEnvList);
+          setIsManagerRole(false);
+        });
+    };
+
+    loadMe();
+    const onMeSync = () => loadMe();
+    window.addEventListener(ME_UPDATED_EVENT, onMeSync);
+    return () => window.removeEventListener(ME_UPDATED_EVENT, onMeSync);
+  }, [status, session?.user?.email, api, adminEmailsList]);
+
+  const visibleTabs = useMemo(() => visibleTabsForRoles(isAdmin, isManagerRole), [isAdmin, isManagerRole]);
+
+  useEffect(() => {
+    const tabs = visibleTabsForRoles(isAdmin, isManagerRole);
+    setActive((a) => (tabs.includes(a) ? a : tabs[0] ?? "user"));
+  }, [isAdmin, isManagerRole]);
 
   const visibleSteps = useMemo(
     () => TOUR_STEPS.filter((s) => s.role === "all" || s.role === active),
@@ -175,7 +235,7 @@ export default function HowToUsePage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-wrap gap-2">
-            {TABS.map((t) => {
+            {TABS.filter((t) => visibleTabs.includes(t.id)).map((t) => {
               const Icon = t.icon;
               return (
                 <Button

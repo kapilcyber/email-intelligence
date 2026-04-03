@@ -1,9 +1,11 @@
 import base64
 import csv
+import html
 import io
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from fastapi import APIRouter, Depends, Query, Body, Path, HTTPException
+from urllib.parse import quote
+from fastapi import APIRouter, Depends, Query, Body, Path, HTTPException, Header
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import OperationalError
@@ -120,6 +122,44 @@ def _display_category(row: Any) -> str | None:
     return None
 
 
+def _build_reply_comment_html(body: "GraphReplyAllBody") -> str:
+    ct = (body.content_type or "Text").strip().upper()
+    if ct == "HTML":
+        return body.comment
+    esc = html.escape(body.comment)
+    return (
+        f'<div style="font-family:Calibri,Arial,sans-serif;font-size:11pt">'
+        f"{esc.replace(chr(10), '<br/>').replace(chr(13), '')}</div>"
+    )
+
+
+def _graph_reply_all_delegated(graph_access_token: str, graph_message_id: str, comment_html: str) -> None:
+    """Send reply-all via delegated token (Graph /me = mailbox owner)."""
+    mid = quote(graph_message_id.strip(), safe="")
+    url = f"https://graph.microsoft.com/v1.0/me/messages/{mid}/replyAll"
+    with httpx_client(timeout=45.0) as client:
+        r = client.post(
+            url,
+            headers={
+                "Authorization": f"Bearer {graph_access_token}",
+                "Content-Type": "application/json",
+            },
+            json={"comment": comment_html},
+        )
+    if r.status_code in (200, 202):
+        return
+    msg = (r.text or "")[:800]
+    try:
+        err = r.json().get("error") or {}
+        if isinstance(err, dict) and err.get("message"):
+            msg = str(err.get("message"))[:800]
+    except Exception:
+        pass
+    if r.status_code in (401, 403):
+        raise HTTPException(status_code=401, detail=f"Microsoft Graph rejected the token or access: {msg}")
+    raise HTTPException(status_code=502, detail=f"Microsoft Graph error ({r.status_code}): {msg}")
+
+
 class BackfillBody(BaseModel):
     user_id: str | None = None  # If omitted, uses MAILBOX_EMAIL from .env
     folder_id: str = "inbox"
@@ -217,8 +257,18 @@ class EmailDetailOut(BaseModel):
     ai_processed_at: datetime | None = Field(None, alias="aiProcessedAt")
     processing_status: str | None = Field(None, alias="processingStatus")
     ai_error_message: str | None = Field(None, alias="aiErrorMessage")
+    graph_id: str | None = Field(None, alias="graphId")
 
     model_config = {"from_attributes": True, "populate_by_name": True}
+
+
+class GraphReplyAllBody(BaseModel):
+    """Body text for Microsoft Graph replyAll (delegated user token)."""
+
+    comment: str = Field(..., min_length=1, max_length=500_000)
+    content_type: str = Field("Text", alias="contentType")
+
+    model_config = {"populate_by_name": True}
 
 
 class ThreadEmailsResponse(BaseModel):
@@ -606,6 +656,7 @@ def get_conversation_emails(
                     aiProcessedAt=getattr(email, "ai_processed_at", None),
                     processingStatus=getattr(email, "processing_status", None),
                     aiErrorMessage=getattr(email, "ai_error_message", None),
+                    graphId=getattr(email, "graph_id", None),
                 )
             )
         return ThreadEmailsResponse(conversationId=conversation_id, emails=out)
@@ -655,11 +706,54 @@ def get_email(
             aiProcessedAt=getattr(email, "ai_processed_at", None),
             processingStatus=getattr(email, "processing_status", None),
             aiErrorMessage=getattr(email, "ai_error_message", None),
+            graphId=getattr(email, "graph_id", None),
         )
     except HTTPException:
         raise
     except (OperationalError, Exception):
         raise HTTPException(status_code=500, detail="Failed to load email")
+
+
+@router.post("/emails/{email_id}/reply-all")
+def post_email_reply_all(
+    email_id: str = Path(..., description="Email UUID"),
+    body: GraphReplyAllBody = Body(...),
+    current_user_email: str = Depends(get_current_user_email),
+    graph_access_token: str = Header(..., alias="X-Microsoft-Graph-Access-Token"),
+    db: Session = Depends(get_db),
+):
+    """
+    Send a reply-all using the signed-in user's Microsoft Graph delegated token.
+    Recipients/threading are handled by Graph (same as Outlook Reply All).
+    """
+    token = graph_access_token.strip()
+    if token.lower().startswith("bearer "):
+        token = token[7:].strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing Microsoft Graph access token")
+
+    email = db.query(Email).filter(Email.id == email_id).first()
+    if not email:
+        raise HTTPException(status_code=404, detail="Email not found")
+    if not _can_read_email_mailbox(email, current_user_email, db):
+        raise HTTPException(status_code=404, detail="Email not found")
+
+    owner = (email.mailbox_owner_email or "").strip().lower()
+    if owner != current_user_email.strip().lower():
+        raise HTTPException(
+            status_code=403,
+            detail="You can only send replies for emails in your own mailbox.",
+        )
+    gid = getattr(email, "graph_id", None)
+    if not gid or not str(gid).strip():
+        raise HTTPException(
+            status_code=400,
+            detail="This message has no Microsoft Graph id; reply is not available.",
+        )
+
+    comment_html = _build_reply_comment_html(body)
+    _graph_reply_all_delegated(token, str(gid).strip(), comment_html)
+    return {"ok": True}
 
 
 @router.get("/emails/{email_id}/attachments/{attachment_id}", response_class=Response)

@@ -1,9 +1,58 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
+import { LenisScrollArea } from "@/components/lenis/lenis-scroll-area";
 import { cn } from "@/lib/utils";
 
-const DropdownMenuContext = React.createContext<{ open: boolean; setOpen: (v: boolean) => void } | null>(null);
+const DROPDOWN_Z = 500;
+
+function mergeRefs<T>(...refs: Array<React.Ref<T> | undefined | null>) {
+  return (value: T | null) => {
+    refs.forEach((ref) => {
+      if (typeof ref === "function") ref(value);
+      else if (ref && typeof ref === "object" && "current" in ref) {
+        (ref as React.MutableRefObject<T | null>).current = value;
+      }
+    });
+  };
+}
+
+function computeDropdownPosition(
+  triggerEl: HTMLElement,
+  align: "start" | "end",
+  minWidthPx: number
+): { top: number; left: number; width: number; maxHeight: number } {
+  const rect = triggerEl.getBoundingClientRect();
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const gap = 4;
+  const desiredMax = 320;
+  const spaceBelow = vh - rect.bottom - gap - 8;
+  const spaceAbove = rect.top - gap - 8;
+  let top: number;
+  let maxHeight: number;
+  if (spaceBelow >= 120 || spaceBelow >= spaceAbove) {
+    top = rect.bottom + gap;
+    maxHeight = Math.min(desiredMax, Math.max(80, spaceBelow));
+  } else {
+    maxHeight = Math.min(desiredMax, Math.max(80, spaceAbove));
+    top = rect.top - gap - maxHeight;
+  }
+  const width = Math.max(rect.width, minWidthPx);
+  let left = align === "end" ? rect.right - width : rect.left;
+  if (left + width > vw - 8) left = Math.max(8, vw - width - 8);
+  if (left < 8) left = 8;
+  return { top, left, width, maxHeight };
+}
+
+type Ctx = {
+  open: boolean;
+  setOpen: (v: boolean) => void;
+  triggerRef: React.RefObject<HTMLElement | null>;
+};
+
+const DropdownMenuContext = React.createContext<Ctx | null>(null);
 
 export function DropdownMenu({
   children,
@@ -15,6 +64,7 @@ export function DropdownMenu({
   onOpenChange?: (open: boolean) => void;
 }) {
   const [internalOpen, setInternalOpen] = React.useState(false);
+  const triggerRef = React.useRef<HTMLElement | null>(null);
   const open = controlledOpen ?? internalOpen;
   const setOpen = React.useCallback(
     (v: boolean) => {
@@ -23,11 +73,8 @@ export function DropdownMenu({
     },
     [controlledOpen, onOpenChange]
   );
-  return (
-    <DropdownMenuContext.Provider value={{ open, setOpen }}>
-      <div className="relative inline-block text-left">{children}</div>
-    </DropdownMenuContext.Provider>
-  );
+  const value = React.useMemo(() => ({ open, setOpen, triggerRef }), [open, setOpen]);
+  return <DropdownMenuContext.Provider value={value}>{children}</DropdownMenuContext.Provider>;
 }
 
 export function DropdownMenuTrigger({
@@ -41,15 +88,33 @@ export function DropdownMenuTrigger({
 }) {
   const ctx = React.useContext(DropdownMenuContext);
   if (!ctx) return null;
-  const handleClick = () => ctx.setOpen(!ctx.open);
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    ctx.setOpen(!ctx.open);
+  };
   if (asChild && React.isValidElement(children)) {
-    return React.cloneElement(children as React.ReactElement<{ onClick?: () => void; className?: string }>, {
-      onClick: handleClick,
-      className: cn(className, (children as React.ReactElement).props?.className),
+    const child = children as React.ReactElement<{
+      onClick?: (e: React.MouseEvent) => void;
+      className?: string;
+      ref?: React.Ref<HTMLElement>;
+    }>;
+    return React.cloneElement(child, {
+      ref: mergeRefs(child.props.ref, ctx.triggerRef),
+      onClick: (e: React.MouseEvent) => {
+        child.props.onClick?.(e);
+        handleClick(e);
+      },
+      className: cn(className, child.props.className),
     });
   }
   return (
-    <button type="button" onClick={handleClick} className={className} aria-expanded={ctx.open}>
+    <button
+      ref={ctx.triggerRef as React.RefObject<HTMLButtonElement>}
+      type="button"
+      onClick={handleClick}
+      className={className}
+      aria-expanded={ctx.open}
+    >
       {children}
     </button>
   );
@@ -65,28 +130,75 @@ export function DropdownMenuContent({
   align?: "start" | "end";
 }) {
   const ctx = React.useContext(DropdownMenuContext);
-  const ref = React.useRef<HTMLDivElement>(null);
+  const [mounted, setMounted] = React.useState(false);
+  const [menuBox, setMenuBox] = React.useState<{ top: number; left: number; width: number; maxHeight: number } | null>(
+    null
+  );
+  const menuRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => setMounted(true), []);
+
+  const updatePosition = React.useCallback(() => {
+    const el = ctx?.triggerRef.current;
+    if (!el) return;
+    setMenuBox(computeDropdownPosition(el, align, 8 * 16));
+  }, [ctx?.triggerRef, align]);
+
+  React.useLayoutEffect(() => {
+    if (!ctx?.open) {
+      setMenuBox(null);
+      return;
+    }
+    updatePosition();
+    const onScrollOrResize = () => updatePosition();
+    window.addEventListener("resize", onScrollOrResize);
+    window.addEventListener("scroll", onScrollOrResize, true);
+    return () => {
+      window.removeEventListener("resize", onScrollOrResize);
+      window.removeEventListener("scroll", onScrollOrResize, true);
+    };
+  }, [ctx?.open, updatePosition]);
+
   React.useEffect(() => {
     if (!ctx?.open) return;
     const handleClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) ctx.setOpen(false);
+      const t = e.target as Node;
+      if (ctx.triggerRef.current?.contains(t)) return;
+      if (menuRef.current?.contains(t)) return;
+      ctx.setOpen(false);
     };
     document.addEventListener("click", handleClick);
     return () => document.removeEventListener("click", handleClick);
-  }, [ctx?.open]);
-  if (!ctx?.open) return null;
-  return (
-    <div
-      ref={ref}
-      className={cn(
-        "absolute z-50 mt-1 min-w-[8rem] overflow-hidden rounded-md border border-border bg-panel py-1 shadow-md",
-        align === "end" ? "right-0" : "left-0",
-        className
-      )}
-    >
-      {children}
-    </div>
-  );
+  }, [ctx]);
+
+  if (!ctx?.open || !mounted) return null;
+
+  const portal =
+    menuBox &&
+    createPortal(
+      <div
+        ref={menuRef}
+        role="menu"
+        className={cn(
+          "fixed flex flex-col overflow-hidden rounded-md border border-border bg-panel text-foreground shadow-lg outline-none",
+          className
+        )}
+        style={{
+          top: menuBox.top,
+          left: menuBox.left,
+          width: menuBox.width,
+          maxHeight: menuBox.maxHeight,
+          zIndex: DROPDOWN_Z,
+        }}
+      >
+        <LenisScrollArea className="min-h-0 max-h-full w-full" contentClassName="py-1">
+          {children}
+        </LenisScrollArea>
+      </div>,
+      document.body
+    );
+
+  return portal;
 }
 
 export function DropdownMenuItem({
@@ -103,7 +215,7 @@ export function DropdownMenuItem({
     <div
       role="menuitem"
       className={cn(
-        "relative flex cursor-pointer select-none items-center px-2 py-1.5 text-sm outline-none hover:bg-muted",
+        "relative flex cursor-pointer select-none items-center px-2 py-1.5 text-sm text-foreground outline-none hover:bg-muted",
         className
       )}
       onClick={() => {

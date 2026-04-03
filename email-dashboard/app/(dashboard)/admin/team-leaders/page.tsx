@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useCallback, useEffect, useState, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { getApi } from "@/lib/api/client";
-import type { UserOut, TeamOut, LoginEventOut, LoginSyncStatusOut } from "@/lib/types";
+import type { UserOut, TeamOut, LoginEventOut } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { LenisScrollArea } from "@/components/lenis/lenis-scroll-area";
 import { UserCircle, Users, LogIn } from "lucide-react";
 
 function activityTimestampMs(iso: string | null | undefined): number {
@@ -35,7 +36,6 @@ export default function AdminTeamLeadersPage() {
   const [error, setError] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [loginEvents, setLoginEvents] = useState<LoginEventOut[]>([]);
-  const [syncStatus, setSyncStatus] = useState<LoginSyncStatusOut | null>(null);
   const [me, setMe] = useState<{ userId?: string; isAdmin?: boolean; department?: string | null } | null>(null);
   const canEdit = !!me?.isAdmin;
   const loginRows = useMemo(() => {
@@ -68,29 +68,61 @@ export default function AdminTeamLeadersPage() {
     if (status !== "authenticated") return;
     setLoading(true);
     setError(null);
-    Promise.all([
-      api.getMe().catch(() => null),
-      api.getUsers({ role: "Manager" }),
-      api.getTeams(),
-      api.getUsers(),
-      api.getLoginEvents({ limit: 1000 }).catch(() => [] as LoginEventOut[]),
-      api.getLoginSyncStatus().catch(() => null as LoginSyncStatusOut | null),
-    ])
-      .then(([meResp, m, t, u, events, sync]) => {
+    api
+      .getMe()
+      .catch(() => null)
+      .then((meResp) => {
         setMe(meResp ? { userId: meResp.userId, isAdmin: meResp.isAdmin, department: meResp.department ?? null } : null);
-        setManagers(m);
-        setTeams(t);
-        setAllUsers(u);
-        setLoginEvents(events);
-        setSyncStatus(sync);
+        const isAdminUser = !!meResp?.isAdmin;
+        return Promise.all([
+          api.getUsers({ role: "Manager" }),
+          api.getTeams(),
+          api.getUsers(),
+          isAdminUser
+            ? api.getLoginEvents({ limit: 1000 }).catch(() => [] as LoginEventOut[])
+            : Promise.resolve([] as LoginEventOut[]),
+        ]).then(([m, t, u, events]) => {
+          setManagers(m);
+          setTeams(t);
+          setAllUsers(u);
+          setLoginEvents(events);
+        });
       })
       .catch(() => setError("Failed to load data"))
       .finally(() => setLoading(false));
   };
 
+  const refreshLoginAudit = useCallback(() => {
+    if (!me?.isAdmin) return;
+    api
+      .getLoginEvents({ limit: 1000 })
+      .catch(() => [] as LoginEventOut[])
+      .then(setLoginEvents);
+  }, [api, me?.isAdmin]);
+
   useEffect(() => {
     load();
   }, [status, api]);
+
+  /** Admins only: keep login table fresh while this page is open. */
+  useEffect(() => {
+    if (status !== "authenticated" || !me?.isAdmin) return;
+    const tick = () => {
+      if (document.visibilityState !== "visible") return;
+      refreshLoginAudit();
+    };
+    const id = window.setInterval(tick, 4000);
+    return () => window.clearInterval(id);
+  }, [status, me?.isAdmin, refreshLoginAudit]);
+
+  useEffect(() => {
+    if (!me?.isAdmin) return;
+    const onVis = () => {
+      if (document.visibilityState === "visible") refreshLoginAudit();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [me?.isAdmin, refreshLoginAudit]);
 
   const assignRole = (userId: string, role: string) => {
     if (!canEdit) return;
@@ -118,127 +150,9 @@ export default function AdminTeamLeadersPage() {
 
       <Card className="rounded-2xl">
         <CardHeader>
-          <CardTitle className="text-base">Sync status</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <Skeleton className="h-16 w-full rounded-lg" />
-          ) : !syncStatus ? (
-            <p className="text-sm text-neutral-500 dark:text-neutral-400">Status unavailable.</p>
-          ) : (
-            <div className="space-y-2 text-sm">
-              <p>
-                Health:{" "}
-                <span
-                  className={
-                    syncStatus.syncHealth === "healthy"
-                      ? "rounded bg-emerald-100 px-2 py-0.5 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"
-                      : syncStatus.syncHealth === "warning"
-                        ? "rounded bg-amber-100 px-2 py-0.5 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
-                        : "rounded bg-rose-100 px-2 py-0.5 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200"
-                  }
-                >
-                  {syncStatus.syncHealth}
-                </span>
-              </p>
-              <p className="text-neutral-600 dark:text-neutral-300">
-                Users: {syncStatus.totalUsers} · With last login: {syncStatus.usersWithLastLoginAt} · Missing last login:{" "}
-                {syncStatus.usersMissingLastLoginAt}
-              </p>
-              <p className="text-neutral-600 dark:text-neutral-300">
-                Active sessions: {syncStatus.activeSessions ?? 0} · Events (24h): oauth {syncStatus.oauthEvents24h} · session{" "}
-                {syncStatus.sessionEvents24h} · total rows {syncStatus.totalLoginEvents}
-              </p>
-              <p className="text-neutral-500 dark:text-neutral-400">
-                Last oauth event: {formatActivity(syncStatus.lastOauthEventAt)} · Last any event: {formatActivity(syncStatus.lastAnyEventAt)}
-              </p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card className="rounded-2xl">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <LogIn className="h-5 w-5" />
-            {canEdit ? "Login history" : "Login history (my department)"}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <Skeleton className="h-32 w-full rounded-lg" />
-          ) : loginRows.length === 0 ? (
-            <p className="py-4 text-center text-sm text-neutral-500 dark:text-neutral-400">
-              No login events yet. Users will appear here after sign-in.
-            </p>
-          ) : (
-            <div className="overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-700">
-              <table className="w-full text-left text-sm">
-                <thead className="border-b border-neutral-200 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800/50">
-                  <tr>
-                    <th className="px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">User</th>
-                    <th className="px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">Login source</th>
-                    <th className="px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">Login time</th>
-                    <th className="px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">Logout time</th>
-                    <th className="px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-neutral-200 dark:divide-neutral-700">
-                  {loginRows.map((row) => (
-                    <tr
-                      key={row.key}
-                      className={
-                        row.isOnline
-                          ? "bg-emerald-50/70 dark:bg-emerald-950/20"
-                          : "bg-white dark:bg-transparent"
-                      }
-                    >
-                      <td className="px-4 py-3">
-                        <p className="font-medium text-neutral-900 dark:text-neutral-50">{row.displayName}</p>
-                        <p className="text-xs text-neutral-500 dark:text-neutral-400">{row.email}</p>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={
-                            row.loginSource === "oauth"
-                              ? "rounded-md bg-emerald-100 px-1.5 py-0.5 text-xs text-emerald-900 dark:bg-emerald-900/40 dark:text-emerald-200"
-                              : "rounded-md bg-slate-200 px-1.5 py-0.5 text-xs text-slate-800 dark:bg-slate-700 dark:text-slate-200"
-                          }
-                        >
-                          {row.loginSource}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-xs text-neutral-800 dark:text-neutral-200">
-                        {formatActivity(row.loginAt)}
-                      </td>
-                      <td className="px-4 py-3 text-xs text-neutral-800 dark:text-neutral-200">
-                        {row.logoutAt ? formatActivity(row.logoutAt) : "—"}
-                      </td>
-                      <td className="px-4 py-3">
-                        {row.isOnline ? (
-                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">
-                            Logged in
-                          </span>
-                        ) : (
-                          <span className="rounded-full bg-neutral-200 px-2 py-0.5 text-xs font-medium text-neutral-700 dark:bg-neutral-700 dark:text-neutral-200">
-                            Logged out
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card className="rounded-2xl">
-        <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <UserCircle className="h-5 w-5" />
-            Managers {canEdit ? `(${managers.length})` : "(read only)"}
+            Managers ({managers.length})
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -285,7 +199,7 @@ export default function AdminTeamLeadersPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <Users className="h-5 w-5" />
-            {canEdit ? "All users — assign role or team (by recent activity)" : "Members assigned to me (read only)"}
+            {canEdit ? "All users — assign role or team (by recent activity)" : "Members assigned to me"}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -335,6 +249,91 @@ export default function AdminTeamLeadersPage() {
           )}
         </CardContent>
       </Card>
+
+      {me?.isAdmin && (
+        <Card className="rounded-2xl">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <LogIn className="h-5 w-5" />
+              Login history (all users)
+            </CardTitle>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+              Live updates every 4s when this tab is visible. New sign-ins and logouts appear automatically.
+            </p>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <Skeleton className="h-32 w-full rounded-lg" />
+            ) : loginRows.length === 0 ? (
+              <p className="py-4 text-center text-sm text-neutral-500 dark:text-neutral-400">
+                No login events yet. Users will appear here after sign-in.
+              </p>
+            ) : (
+              <LenisScrollArea
+                axis="horizontal"
+                className="rounded-lg border border-neutral-200 dark:border-neutral-700"
+              >
+                <table className="w-full text-left text-sm">
+                  <thead className="border-b border-neutral-200 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800/50">
+                    <tr>
+                      <th className="px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">User</th>
+                      <th className="px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">Login source</th>
+                      <th className="px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">Login time</th>
+                      <th className="px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">Logout time</th>
+                      <th className="px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-200 dark:divide-neutral-700">
+                    {loginRows.map((row) => (
+                      <tr
+                        key={row.key}
+                        className={
+                          row.isOnline
+                            ? "bg-emerald-50/70 dark:bg-emerald-950/20"
+                            : "bg-white dark:bg-transparent"
+                        }
+                      >
+                        <td className="px-4 py-3">
+                          <p className="font-medium text-neutral-900 dark:text-neutral-50">{row.displayName}</p>
+                          <p className="text-xs text-neutral-500 dark:text-neutral-400">{row.email}</p>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span
+                            className={
+                              row.loginSource === "oauth"
+                                ? "rounded-md bg-emerald-100 px-1.5 py-0.5 text-xs text-emerald-900 dark:bg-emerald-900/40 dark:text-emerald-200"
+                                : "rounded-md bg-slate-200 px-1.5 py-0.5 text-xs text-slate-800 dark:bg-slate-700 dark:text-slate-200"
+                            }
+                          >
+                            {row.loginSource}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-neutral-800 dark:text-neutral-200">
+                          {formatActivity(row.loginAt)}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-neutral-800 dark:text-neutral-200">
+                          {row.logoutAt ? formatActivity(row.logoutAt) : "—"}
+                        </td>
+                        <td className="px-4 py-3">
+                          {row.isOnline ? (
+                            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">
+                              Logged in
+                            </span>
+                          ) : (
+                            <span className="rounded-full bg-neutral-200 px-2 py-0.5 text-xs font-medium text-neutral-700 dark:bg-neutral-700 dark:text-neutral-200">
+                              Logged out
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </LenisScrollArea>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

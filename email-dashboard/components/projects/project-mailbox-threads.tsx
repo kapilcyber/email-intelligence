@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import { getApi } from "@/lib/api/client";
 import type { ConversationItem, EmailDetail } from "@/lib/types";
 import { ThreadEmailCard } from "@/components/threads/threads-view";
+import { LenisScrollArea } from "@/components/lenis/lenis-scroll-area";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Inbox, MessageSquare } from "lucide-react";
@@ -78,7 +79,7 @@ export function ProjectMailboxThreads({ projectId, projectName }: { projectId: s
       </div>
 
       <div className="grid gap-0 md:grid-cols-[minmax(0,340px)_1fr] md:divide-x md:divide-neutral-200 dark:md:divide-neutral-800">
-        <div className="max-h-[480px] overflow-y-auto border-b border-neutral-200 md:border-b-0 dark:border-neutral-800">
+        <LenisScrollArea className="max-h-[480px] min-h-0 border-b border-neutral-200 md:border-b-0 dark:border-neutral-800">
           {loading && (
             <div className="space-y-2 p-3">
               {[1, 2, 3, 4].map((i) => (
@@ -131,9 +132,9 @@ export function ProjectMailboxThreads({ projectId, projectName }: { projectId: s
               </Button>
             </div>
           )}
-        </div>
+        </LenisScrollArea>
 
-        <div className="min-h-[200px] max-h-[560px] overflow-y-auto p-4">
+        <LenisScrollArea className="min-h-[200px] max-h-[560px] min-h-0" contentClassName="p-4">
           {!selectedId && (
             <div className="flex flex-col items-center justify-center gap-2 py-12 text-center text-neutral-500">
               <MessageSquare className="h-10 w-10 text-neutral-300 dark:text-neutral-600" />
@@ -174,7 +175,7 @@ export function ProjectMailboxThreads({ projectId, projectName }: { projectId: s
               )}
             </>
           )}
-        </div>
+        </LenisScrollArea>
       </div>
     </div>
   );

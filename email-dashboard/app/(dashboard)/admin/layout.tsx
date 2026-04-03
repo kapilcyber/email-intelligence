@@ -1,20 +1,12 @@
 "use client";
 
 import { useSession } from "next-auth/react";
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { getApi } from "@/lib/api/client";
 import type { MeResponse } from "@/lib/types";
 
-const ADMIN_ONLY_PREFIXES_FOR_MANAGER = ["/admin/tracker", "/admin/review"];
-
-function isAdminOnlyPathForManager(pathname: string): boolean {
-  const p = pathname || "";
-  return ADMIN_ONLY_PREFIXES_FOR_MANAGER.some((prefix) => p === prefix || p.startsWith(`${prefix}/`));
-}
-
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname() || "";
   const router = useRouter();
   const { data: session, status } = useSession();
   const adminEmailsEnv = process.env.NEXT_PUBLIC_ADMIN_EMAILS ?? "";
@@ -89,18 +81,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     const isManager = (me?.role ?? "").trim() === "Manager";
     if (!isAdminEffective && !isManager) return "denied" as const;
 
-    const isManagerOnly = isManager && !isAdminEffective;
-    if (isManagerOnly && isAdminOnlyPathForManager(pathname)) return "denied-manager-route" as const;
-
     return "ok" as const;
-  }, [status, session?.user?.email, me, meLoading, meError, pathname, adminEmailsList]);
+  }, [status, session?.user?.email, me, meLoading, meError, adminEmailsList]);
 
   useEffect(() => {
     if (access === "unauthenticated") {
       router.replace("/signin");
       return;
     }
-    if (access === "denied" || access === "denied-manager-route" || access === "no-session") {
+    if (access === "denied" || access === "no-session") {
       router.replace("/dashboard");
     }
   }, [access, router]);

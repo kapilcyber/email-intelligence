@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { LenisScrollArea } from "@/components/lenis/lenis-scroll-area";
 import { cn } from "@/lib/utils";
 import { PriorityBadge } from "@/components/status/priority-badge";
 import { RetagMailControl } from "@/components/escalations/retag-mail-control";
@@ -100,7 +101,7 @@ export function EmailsTable({
 
   return (
     <div className={cn("glass-surface overflow-hidden rounded-2xl", className)}>
-      <div className="overflow-x-auto">
+      <LenisScrollArea axis="horizontal">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-panel-elevated/70">
@@ -169,7 +170,7 @@ export function EmailsTable({
             })}
           </tbody>
         </table>
-      </div>
+      </LenisScrollArea>
     </div>
   );
 }

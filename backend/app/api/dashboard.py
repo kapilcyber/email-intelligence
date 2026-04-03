@@ -5,10 +5,10 @@ import re
 import httpx
 from fastapi import APIRouter, Depends, Query, Header
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, func
+from sqlalchemy import and_, func, or_
 from sqlalchemy.exc import OperationalError
 from app.db.session import get_db
-from app.db.models import Email, DailySummary, User, TeamProject, ProjectAssignment, Team
+from app.db.models import Email, DailySummary, User, TeamProject, ProjectAssignment, Team, MomMeetingRecord
 from app.workers.tasks import get_queue_stats_for_user, generate_daily_summary_task
 from app.api.deps import get_current_user_email
 from app.graph.auth import get_auth_headers
@@ -672,14 +672,21 @@ def dashboard_calendar_events(
     return {"events": events, "error": err}
 
 
+def _notif_at_ts(iso_s: str) -> float:
+    try:
+        return datetime.fromisoformat(iso_s.replace("Z", "+00:00")).timestamp()
+    except Exception:
+        return 0.0
+
+
 @router.get("/notifications")
 def dashboard_notifications(
     current_user_email: str = Depends(get_current_user_email),
     db: Session = Depends(get_db),
 ):
     """
-    Bell notifications for current mailbox only (user/admin sees own mailbox).
-    Includes: new mail, meeting scheduled, AI pending/failed, unreplied mails, important upcoming dates.
+    Bell notifications for the current mailbox: escalations, leads, unreplied threads,
+    unread mail, AI backlog, recent arrivals, MOM follow-ups, upcoming meetings from mail.
     """
     now_utc = datetime.now(timezone.utc)
     mailbox = (current_user_email or "").strip().lower()
@@ -700,101 +707,70 @@ def dashboard_notifications(
         return {"items": [], "error": f"Could not load notifications: {e!s}"}
 
     items: list[dict] = []
+    unread_n = 0
 
-    # 1) New mail in last 6 hours
-    new_rows = [r for r in recent_rows if r.received_at and r.received_at >= now_utc - timedelta(hours=6)]
-    if new_rows:
+    # Open escalations (flagged, still in mailbox)
+    try:
+        esc_n = (
+            db.query(func.count(Email.id))
+            .filter(
+                func.lower(Email.mailbox_owner_email) == mailbox,
+                Email.is_escalation == True,  # noqa: E712
+            )
+            .scalar()
+        ) or 0
+    except (OperationalError, Exception):
+        esc_n = 0
+    if esc_n > 0:
         items.append(
             {
-                "id": "new-mail",
-                "kind": "new_mail",
-                "title": f"{len(new_rows)} new mail(s)",
-                "message": "New emails arrived in your mailbox.",
-                "level": "info",
-                "at": max(r.received_at for r in new_rows).isoformat(),
-                "count": len(new_rows),
-                "href": "/emails",
-            }
-        )
-
-    # 2) AI pending/failed in last 24h
-    pending_rows = [
-        r
-        for r in recent_rows
-        if (getattr(r, "ai_status", None) in ("pending", "failed")) and r.received_at and r.received_at >= now_utc - timedelta(days=1)
-    ]
-    if pending_rows:
-        items.append(
-            {
-                "id": "ai-pending",
-                "kind": "ai_pending",
-                "title": f"{len(pending_rows)} mail(s) not classified",
-                "message": "Some emails are pending/failed AI classification.",
+                "id": "escalations-open",
+                "kind": "escalation_open",
+                "group": "priority",
+                "title": f"{esc_n} escalation email{'s' if esc_n != 1 else ''}",
+                "message": "Flagged items need your attention.",
                 "level": "warning",
-                "at": max(r.received_at for r in pending_rows).isoformat(),
-                "count": len(pending_rows),
-                "href": "/emails",
+                "at": now_utc.isoformat(),
+                "count": esc_n,
+                "href": "/escalations",
             }
         )
 
-    # 3) Meeting schedules in next 14 days
-    meetings, _ = _calendar_events_from_synced_mail(db, mailbox, now_utc - timedelta(days=1), now_utc + timedelta(days=14))
-    upcoming_meetings = []
-    for ev in meetings:
-        try:
-            s = (ev.get("start") or {}).get("dateTime") or ""
-            dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
-            if dt >= now_utc:
-                upcoming_meetings.append((dt, ev))
-        except Exception:
-            continue
-    upcoming_meetings.sort(key=lambda x: x[0])
-    if upcoming_meetings:
-        dt, ev = upcoming_meetings[0]
+    # Open leads
+    try:
+        lead_n = (
+            db.query(func.count(Email.id))
+            .filter(
+                func.lower(Email.mailbox_owner_email) == mailbox,
+                Email.lead_label.isnot(None),
+                Email.lead_label != "",
+            )
+            .scalar()
+        ) or 0
+    except (OperationalError, Exception):
+        lead_n = 0
+    if lead_n > 0:
         items.append(
             {
-                "id": "meeting-next",
-                "kind": "meeting_scheduled",
-                "title": "Meeting scheduled",
-                "message": f"{ev.get('subject') or 'Meeting'} on {dt.strftime('%d %b %Y %H:%M UTC')}",
+                "id": "leads-open",
+                "kind": "lead_open",
+                "group": "sales",
+                "title": f"{lead_n} lead email{'s' if lead_n != 1 else ''}",
+                "message": "Hot / warm / cold opportunities in your mailbox.",
                 "level": "info",
-                "at": dt.isoformat(),
-                "count": len(upcoming_meetings),
-                "href": "/dashboard",
+                "at": now_utc.isoformat(),
+                "count": lead_n,
+                "href": "/leads",
             }
         )
 
-    # 4) Important upcoming dates (meeting dates in next 30 days, grouped by day)
-    important_days: dict[str, int] = {}
-    for dt, _ev in upcoming_meetings:
-        if dt > now_utc + timedelta(days=30):
-            continue
-        k = dt.strftime("%Y-%m-%d")
-        important_days[k] = (important_days.get(k) or 0) + 1
-    if important_days:
-        next_day = sorted(important_days.keys())[0]
-        items.append(
-            {
-                "id": "important-dates",
-                "kind": "important_date",
-                "title": "Important date from mail",
-                "message": f"{important_days[next_day]} item(s) on {next_day}",
-                "level": "info",
-                "at": f"{next_day}T00:00:00+00:00",
-                "count": sum(important_days.values()),
-                "href": "/dashboard",
-            }
-        )
-
-    # 5) Unreplied inbox mails (>24h old) by conversation
+    # Unreplied inbox threads (>24h) — same heuristic as before
     sent_cids = set()
     for r in recent_rows:
         folder = (getattr(r, "folder_name", None) or getattr(r, "folder_id", None) or "").lower()
         if "sent" in folder and (r.conversation_id or "").strip():
             sent_cids.add((r.conversation_id or "").strip())
-    unreplied = []
+    unreplied: list[Email] = []
     for r in recent_rows:
         folder = (getattr(r, "folder_name", None) or getattr(r, "folder_id", None) or "").lower()
         cid = (r.conversation_id or "").strip()
@@ -810,8 +786,9 @@ def dashboard_notifications(
             {
                 "id": "unreplied",
                 "kind": "unreplied_mail",
-                "title": f"{len(unreplied)} mail(s) awaiting reply",
-                "message": "Inbox mails older than 24h without a sent reply in thread.",
+                "group": "mail",
+                "title": f"{len(unreplied)} thread{'s' if len(unreplied) != 1 else ''} may need a reply",
+                "message": "Inbox messages older than 24h with no sent reply in the conversation.",
                 "level": "warning",
                 "at": max(r.received_at for r in unreplied).isoformat(),
                 "count": len(unreplied),
@@ -819,8 +796,140 @@ def dashboard_notifications(
             }
         )
 
-    items.sort(key=lambda x: x.get("at", ""), reverse=True)
-    return {"items": items[:15], "error": None}
+    # Unread mail (Graph is_read when synced)
+    try:
+        unread_n = (
+            db.query(func.count(Email.id))
+            .filter(
+                func.lower(Email.mailbox_owner_email) == mailbox,
+                Email.is_read == False,  # noqa: E712
+            )
+            .scalar()
+        ) or 0
+    except (OperationalError, Exception):
+        unread_n = 0
+    if unread_n > 0:
+        items.append(
+            {
+                "id": "unread-mail",
+                "kind": "unread_mail",
+                "group": "mail",
+                "title": f"{unread_n} unread email{'s' if unread_n != 1 else ''}",
+                "message": "Open History to read and triage.",
+                "level": "info",
+                "at": now_utc.isoformat(),
+                "count": unread_n,
+                "href": "/emails",
+            }
+        )
+
+    # AI pending/failed (last 24h window in recent sample)
+    pending_rows = [
+        r
+        for r in recent_rows
+        if (getattr(r, "ai_status", None) in ("pending", "failed"))
+        and r.received_at
+        and r.received_at >= now_utc - timedelta(days=1)
+    ]
+    if pending_rows:
+        items.append(
+            {
+                "id": "ai-pending",
+                "kind": "ai_pending",
+                "group": "ai",
+                "title": f"{len(pending_rows)} email{'s' if len(pending_rows) != 1 else ''} not classified",
+                "message": "AI classification is pending or failed — check History.",
+                "level": "warning",
+                "at": max(r.received_at for r in pending_rows).isoformat(),
+                "count": len(pending_rows),
+                "href": "/emails",
+            }
+        )
+
+    # Recent arrivals (6h) — only if we did not already surface unread totals
+    new_rows = [r for r in recent_rows if r.received_at and r.received_at >= now_utc - timedelta(hours=6)]
+    if unread_n == 0 and new_rows:
+        items.append(
+            {
+                "id": "new-mail",
+                "kind": "new_mail",
+                "group": "mail",
+                "title": f"{len(new_rows)} new email{'s' if len(new_rows) != 1 else ''} (6h)",
+                "message": "Recently arrived in your mailbox.",
+                "level": "info",
+                "at": max(r.received_at for r in new_rows).isoformat(),
+                "count": len(new_rows),
+                "href": "/emails",
+            }
+        )
+
+    # MOM: meetings ended, still snoozed / undecided
+    try:
+        mom_n = (
+            db.query(func.count(MomMeetingRecord.id))
+            .filter(
+                func.lower(MomMeetingRecord.mailbox_owner_email) == mailbox,
+                MomMeetingRecord.status == "snoozed",
+                MomMeetingRecord.end_at.isnot(None),
+                MomMeetingRecord.end_at < now_utc,
+                or_(MomMeetingRecord.snooze_until.is_(None), MomMeetingRecord.snooze_until <= now_utc),
+            )
+            .scalar()
+        ) or 0
+    except (OperationalError, Exception):
+        mom_n = 0
+    if mom_n > 0:
+        items.append(
+            {
+                "id": "mom-pending",
+                "kind": "mom_pending",
+                "group": "meetings",
+                "title": f"{mom_n} meeting minute{'s' if mom_n != 1 else ''} to complete",
+                "message": "Send or skip minutes for past meetings.",
+                "level": "info",
+                "at": now_utc.isoformat(),
+                "count": mom_n,
+                "href": "/mom",
+            }
+        )
+
+    # Upcoming meetings from synced mail (single summary row)
+    meetings, _ = _calendar_events_from_synced_mail(db, mailbox, now_utc - timedelta(days=1), now_utc + timedelta(days=14))
+    upcoming_meetings: list[tuple[datetime, dict]] = []
+    for ev in meetings:
+        try:
+            s = (ev.get("start") or {}).get("dateTime") or ""
+            dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            if dt >= now_utc:
+                upcoming_meetings.append((dt, ev))
+        except Exception:
+            continue
+    upcoming_meetings.sort(key=lambda x: x[0])
+    if upcoming_meetings:
+        dt, ev = upcoming_meetings[0]
+        n_up = len(upcoming_meetings)
+        subj = (ev.get("subject") or "Meeting").strip() or "Meeting"
+        items.append(
+            {
+                "id": "meetings-upcoming",
+                "kind": "meeting_upcoming",
+                "group": "meetings",
+                "title": f"{n_up} upcoming meeting{'s' if n_up != 1 else ''}",
+                "message": f"Next: {subj} · {dt.strftime('%d %b, %H:%M')}",
+                "level": "info",
+                "at": dt.isoformat(),
+                "count": n_up,
+                "href": "/dashboard",
+            }
+        )
+
+    level_rank = {"error": 0, "warning": 1, "info": 2}
+    items.sort(
+        key=lambda x: (level_rank.get(x.get("level") or "info", 3), -_notif_at_ts(x.get("at") or "")),
+    )
+    return {"items": items[:25], "error": None}
 
 
 @router.get("/my-projects")

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useState, useMemo, useRef } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -10,7 +11,6 @@ import {
   FolderOpen,
   List,
   PanelLeftClose,
-  PanelLeft,
   Users,
   Network,
   AlertCircle,
@@ -26,11 +26,17 @@ import {
   BookOpen,
   ShieldCheck,
 } from "lucide-react";
+import { LenisScrollArea } from "@/components/lenis/lenis-scroll-area";
 import { cn } from "@/lib/utils";
 import { getApi } from "@/lib/api/client";
 import { ME_UPDATED_EVENT } from "@/lib/me-sync-events";
 import { DEPARTMENT_CATEGORIES } from "@/lib/departments";
 import type { TeamOut } from "@/lib/types";
+
+/** Layout (width, padding): keep short; labels use opacity-only to avoid max-width layout thrash. */
+const SIDEBAR_LAYOUT_ANIM = "duration-200 ease-out motion-reduce:transition-none";
+/** Compositor-only fades for text (no max-width transition). */
+const SIDEBAR_LABEL_FADE = "duration-200 ease-out motion-reduce:transition-none";
 
 const navItemsTop = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -77,6 +83,116 @@ const ADMIN_ONLY_HREFS = new Set([
   "/admin/approvals",
 ]);
 
+const SIDEBAR_FLYOUT_Z = 500;
+
+function computeSidebarFlyoutPosition(
+  triggerEl: HTMLElement,
+  minWidthPx: number,
+  maxWidthPx: number
+): { top: number; left: number; width: number; maxHeight: number } {
+  const rect = triggerEl.getBoundingClientRect();
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const gap = 4;
+  const width = Math.min(maxWidthPx, Math.max(minWidthPx, Math.ceil(rect.width) + gap));
+  let left = rect.right + gap;
+  if (left + width > vw - 8) {
+    left = Math.max(8, rect.left - width - gap);
+  }
+  let top = rect.top;
+  const maxHeight = Math.min(vh * 0.7, vh - top - 8);
+  if (top + maxHeight > vh - 8) {
+    top = Math.max(8, vh - 8 - maxHeight);
+  }
+  return { top, left, width, maxHeight };
+}
+
+/** Renders next to collapsed sidebar icon; portaled so `overflow-auto` on nav does not clip. */
+function CollapsedSidebarFlyout({
+  open,
+  triggerRef,
+  onClose,
+  minWidthPx,
+  maxWidthPx,
+  children,
+}: {
+  open: boolean;
+  triggerRef: React.RefObject<HTMLElement | null>;
+  onClose: () => void;
+  minWidthPx: number;
+  maxWidthPx: number;
+  children: React.ReactNode;
+}) {
+  const [mounted, setMounted] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [box, setBox] = useState<{ top: number; left: number; width: number; maxHeight: number } | null>(null);
+
+  useEffect(() => setMounted(true), []);
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setBox(null);
+      return;
+    }
+    const upd = () => {
+      const el = triggerRef.current;
+      if (!el) return;
+      setBox(computeSidebarFlyoutPosition(el, minWidthPx, maxWidthPx));
+    };
+    upd();
+    window.addEventListener("resize", upd);
+    window.addEventListener("scroll", upd, true);
+    return () => {
+      window.removeEventListener("resize", upd);
+      window.removeEventListener("scroll", upd, true);
+    };
+  }, [open, triggerRef, minWidthPx, maxWidthPx]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (triggerRef.current?.contains(t)) return;
+      if (panelRef.current?.contains(t)) return;
+      onClose();
+    };
+    const tid = window.setTimeout(() => document.addEventListener("mousedown", onDoc), 0);
+    return () => {
+      clearTimeout(tid);
+      document.removeEventListener("mousedown", onDoc);
+    };
+  }, [open, onClose, triggerRef]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  if (!mounted || !open || !box) return null;
+
+  return createPortal(
+    <div
+      ref={panelRef}
+      className="fixed overflow-hidden rounded-xl border border-border bg-panel py-1 shadow-lg"
+      style={{
+        top: box.top,
+        left: box.left,
+        width: box.width,
+        maxHeight: box.maxHeight,
+        zIndex: SIDEBAR_FLYOUT_Z,
+      }}
+      role="menu"
+    >
+      {children}
+    </div>,
+    document.body
+  );
+}
+
 function DepartmentsNavSection({ collapsed }: { collapsed: boolean }) {
   const pathname = usePathname();
   const { data: session, status } = useSession();
@@ -89,7 +205,7 @@ function DepartmentsNavSection({ collapsed }: { collapsed: boolean }) {
   const [flyoutOpen, setFlyoutOpen] = useState(false);
   const [categoryCounts, setCategoryCounts] = useState<Record<string, number>>({});
   const [totalEmails, setTotalEmails] = useState(0);
-  const flyoutRef = useRef<HTMLDivElement>(null);
+  const deptFlyoutTriggerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (underDepartments) setAccordionOpen(true);
@@ -103,21 +219,8 @@ function DepartmentsNavSection({ collapsed }: { collapsed: boolean }) {
         setCategoryCounts(m.categoryCounts ?? {});
         setTotalEmails(m.totalEmails ?? 0);
       })
-      .catch(() => {});
+      .catch(() => { });
   }, [status, api]);
-
-  useEffect(() => {
-    if (!flyoutOpen) return;
-    const onDoc = (e: MouseEvent) => {
-      if (flyoutRef.current?.contains(e.target as Node)) return;
-      setFlyoutOpen(false);
-    };
-    const tid = window.setTimeout(() => document.addEventListener("mousedown", onDoc), 0);
-    return () => {
-      clearTimeout(tid);
-      document.removeEventListener("mousedown", onDoc);
-    };
-  }, [flyoutOpen]);
 
   const subLinks: { slug: string; label: string; count: number }[] = [
     { slug: "all", label: "All", count: totalEmails },
@@ -132,8 +235,9 @@ function DepartmentsNavSection({ collapsed }: { collapsed: boolean }) {
 
   if (collapsed) {
     return (
-      <div className="relative flex justify-center px-1" ref={flyoutRef}>
+      <div className="relative flex justify-center px-1">
         <button
+          ref={deptFlyoutTriggerRef}
           type="button"
           onClick={(e) => {
             e.stopPropagation();
@@ -142,7 +246,7 @@ function DepartmentsNavSection({ collapsed }: { collapsed: boolean }) {
           className={cn(
             "flex w-full items-center justify-center rounded-lg p-2.5 transition-colors",
             rowActive || flyoutOpen
-              ? "bg-black text-white"
+              ? "bg-foreground text-background"
               : "text-muted-foreground hover:bg-muted hover:text-foreground"
           )}
           aria-expanded={flyoutOpen}
@@ -151,40 +255,43 @@ function DepartmentsNavSection({ collapsed }: { collapsed: boolean }) {
         >
           <FolderOpen className="h-5 w-5 shrink-0" />
         </button>
-        {flyoutOpen && (
-          <div
-            className="absolute left-full top-0 z-50 ml-1 min-w-[11rem] rounded-xl border border-border bg-panel py-1 shadow-lg"
-            role="menu"
-          >
-            <p className="border-b border-border px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Departments
-            </p>
-            <ul className="max-h-[70vh] overflow-y-auto py-1">
-              {subLinks.map(({ slug, label, count }) => {
-                const href = `/departments/${slug}`;
-                const active = pathname === href;
-                return (
-                  <li key={slug}>
-                    <Link
-                      href={href}
-                      role="menuitem"
-                      onClick={() => setFlyoutOpen(false)}
-                      className={cn(
-                        "flex items-center justify-between gap-3 px-3 py-2 text-sm",
-                        active
-                          ? "bg-muted font-medium text-foreground"
-                          : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
-                      )}
-                    >
-                      <span>{label}</span>
-                      <span className="tabular-nums text-xs text-muted-foreground">{count}</span>
-                    </Link>
-                  </li>
-                );
-              })}
+        <CollapsedSidebarFlyout
+          open={flyoutOpen}
+          triggerRef={deptFlyoutTriggerRef}
+          onClose={() => setFlyoutOpen(false)}
+          minWidthPx={11 * 16}
+          maxWidthPx={18 * 16}
+        >
+          <p className="border-b border-border px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Departments
+          </p>
+          <LenisScrollArea className="max-h-[70vh] min-h-0 max-w-full">
+            <ul className="py-1">
+            {subLinks.map(({ slug, label, count }) => {
+              const href = `/departments/${slug}`;
+              const active = pathname === href;
+              return (
+                <li key={slug}>
+                  <Link
+                    href={href}
+                    role="menuitem"
+                    onClick={() => setFlyoutOpen(false)}
+                    className={cn(
+                      "flex items-center justify-between gap-3 px-3 py-2 text-sm",
+                      active
+                        ? "bg-muted font-medium text-foreground"
+                        : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+                    )}
+                  >
+                    <span>{label}</span>
+                    <span className="tabular-nums text-xs text-muted-foreground">{count}</span>
+                  </Link>
+                </li>
+              );
+            })}
             </ul>
-          </div>
-        )}
+          </LenisScrollArea>
+        </CollapsedSidebarFlyout>
       </div>
     );
   }
@@ -197,7 +304,7 @@ function DepartmentsNavSection({ collapsed }: { collapsed: boolean }) {
         className={cn(
           "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors",
           rowActive
-            ? "bg-black text-white"
+            ? "bg-foreground text-background"
             : "text-muted-foreground hover:bg-muted hover:text-foreground"
         )}
         aria-expanded={accordionOpen}
@@ -250,7 +357,7 @@ function AdminTeamsNavSection({ collapsed, allowedDepartment }: { collapsed: boo
   const [accordionOpen, setAccordionOpen] = useState(underAdminTeams);
   const [flyoutOpen, setFlyoutOpen] = useState(false);
   const [teams, setTeams] = useState<TeamOut[]>([]);
-  const flyoutRef = useRef<HTMLDivElement>(null);
+  const teamsFlyoutTriggerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (underAdminTeams) setAccordionOpen(true);
@@ -260,19 +367,6 @@ function AdminTeamsNavSection({ collapsed, allowedDepartment }: { collapsed: boo
     if (status !== "authenticated") return;
     api.getTeams().then(setTeams).catch(() => setTeams([]));
   }, [status, api]);
-
-  useEffect(() => {
-    if (!flyoutOpen) return;
-    const onDoc = (e: MouseEvent) => {
-      if (flyoutRef.current?.contains(e.target as Node)) return;
-      setFlyoutOpen(false);
-    };
-    const tid = window.setTimeout(() => document.addEventListener("mousedown", onDoc), 0);
-    return () => {
-      clearTimeout(tid);
-      document.removeEventListener("mousedown", onDoc);
-    };
-  }, [flyoutOpen]);
 
   const sorted = useMemo(() => {
     const dep = (allowedDepartment ?? "").trim();
@@ -284,8 +378,9 @@ function AdminTeamsNavSection({ collapsed, allowedDepartment }: { collapsed: boo
 
   if (collapsed) {
     return (
-      <div className="relative flex justify-center px-1" ref={flyoutRef}>
+      <div className="relative flex justify-center px-1">
         <button
+          ref={teamsFlyoutTriggerRef}
           type="button"
           onClick={(e) => {
             e.stopPropagation();
@@ -294,7 +389,7 @@ function AdminTeamsNavSection({ collapsed, allowedDepartment }: { collapsed: boo
           className={cn(
             "flex w-full items-center justify-center rounded-lg p-2.5 transition-colors",
             rowActive || flyoutOpen
-              ? "bg-black text-white"
+              ? "bg-foreground text-background"
               : "text-muted-foreground hover:bg-muted hover:text-foreground"
           )}
           aria-expanded={flyoutOpen}
@@ -303,58 +398,61 @@ function AdminTeamsNavSection({ collapsed, allowedDepartment }: { collapsed: boo
         >
           <Users className="h-5 w-5 shrink-0" />
         </button>
-        {flyoutOpen && (
-          <div
-            className="absolute left-full top-0 z-50 ml-1 min-w-[12rem] max-w-[18rem] rounded-xl border border-border bg-panel py-1 shadow-lg"
-            role="menu"
-          >
-            <p className="border-b border-border px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Teams
-            </p>
-            <ul className="max-h-[70vh] overflow-y-auto py-1">
-              {!allowedDepartment && (
-                <li>
+        <CollapsedSidebarFlyout
+          open={flyoutOpen}
+          triggerRef={teamsFlyoutTriggerRef}
+          onClose={() => setFlyoutOpen(false)}
+          minWidthPx={12 * 16}
+          maxWidthPx={18 * 16}
+        >
+          <p className="border-b border-border px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Teams
+          </p>
+          <LenisScrollArea className="max-h-[70vh] min-h-0 max-w-full">
+            <ul className="py-1">
+            {!allowedDepartment && (
+              <li>
+                <Link
+                  href="/admin/teams"
+                  role="menuitem"
+                  onClick={() => setFlyoutOpen(false)}
+                  className={cn(
+                    "flex items-center justify-between gap-3 px-3 py-2 text-sm",
+                    pathname === "/admin/teams"
+                      ? "bg-muted font-medium text-foreground"
+                      : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+                  )}
+                >
+                  <span>All teams</span>
+                </Link>
+              </li>
+            )}
+            {sorted.map((t) => {
+              const href = `/admin/teams/${t.id}`;
+              const active = pathname === href || pathname.startsWith(`${href}/`);
+              return (
+                <li key={t.id}>
                   <Link
-                    href="/admin/teams"
+                    href={href}
                     role="menuitem"
                     onClick={() => setFlyoutOpen(false)}
                     className={cn(
                       "flex items-center justify-between gap-3 px-3 py-2 text-sm",
-                      pathname === "/admin/teams"
+                      active
                         ? "bg-muted font-medium text-foreground"
                         : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
                     )}
+                    title={t.name}
                   >
-                    <span>All teams</span>
+                    <span className="truncate">{t.name}</span>
+                    <span className="shrink-0 tabular-nums text-xs text-muted-foreground">{t.memberCount}</span>
                   </Link>
                 </li>
-              )}
-              {sorted.map((t) => {
-                const href = `/admin/teams/${t.id}`;
-                const active = pathname === href || pathname.startsWith(`${href}/`);
-                return (
-                  <li key={t.id}>
-                    <Link
-                      href={href}
-                      role="menuitem"
-                      onClick={() => setFlyoutOpen(false)}
-                      className={cn(
-                        "flex items-center justify-between gap-3 px-3 py-2 text-sm",
-                        active
-                          ? "bg-muted font-medium text-foreground"
-                          : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
-                      )}
-                      title={t.name}
-                    >
-                      <span className="truncate">{t.name}</span>
-                      <span className="shrink-0 tabular-nums text-xs text-muted-foreground">{t.memberCount}</span>
-                    </Link>
-                  </li>
-                );
-              })}
+              );
+            })}
             </ul>
-          </div>
-        )}
+          </LenisScrollArea>
+        </CollapsedSidebarFlyout>
       </div>
     );
   }
@@ -367,7 +465,7 @@ function AdminTeamsNavSection({ collapsed, allowedDepartment }: { collapsed: boo
         className={cn(
           "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors",
           rowActive
-            ? "bg-black text-white"
+            ? "bg-foreground text-background"
             : "text-muted-foreground hover:bg-muted hover:text-foreground"
         )}
         aria-expanded={accordionOpen}
@@ -424,7 +522,18 @@ function AdminTeamsNavSection({ collapsed, allowedDepartment }: { collapsed: boo
   );
 }
 
-export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
+export function Sidebar({
+  collapsed,
+  onToggle,
+  navScrollRef,
+  navScrollContentRef,
+}: {
+  collapsed: boolean;
+  onToggle: () => void;
+  /** Scrollport for Lenis (dashboard layout); smooth scroll matches main content. */
+  navScrollRef?: React.Ref<HTMLElement>;
+  navScrollContentRef?: React.Ref<HTMLDivElement>;
+}) {
   const pathname = usePathname();
   const { data: session, status } = useSession();
   const api = useMemo(
@@ -434,6 +543,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
   const [isAdmin, setIsAdmin] = useState(false);
   const [isManagerRole, setIsManagerRole] = useState(false);
   const [managerDepartment, setManagerDepartment] = useState<string | null>(null);
+  const [roleDisplay, setRoleDisplay] = useState<string>("Member");
   const adminEmailsEnv = typeof window !== "undefined" ? (process.env.NEXT_PUBLIC_ADMIN_EMAILS ?? "") : (process.env.NEXT_PUBLIC_ADMIN_EMAILS ?? "");
   const adminEmailsList = useMemo(() => adminEmailsEnv.split(",").map((e) => e.trim().toLowerCase()).filter(Boolean), [adminEmailsEnv]);
   useEffect(() => {
@@ -441,6 +551,7 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
       setIsAdmin(false);
       setIsManagerRole(false);
       setManagerDepartment(null);
+      setRoleDisplay("Member");
       return;
     }
     const userEmail = (session.user.email ?? "").trim().toLowerCase();
@@ -450,14 +561,18 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
       api
         .getMe()
         .then((r) => {
-          setIsAdmin(r.isAdmin || isInEnvList);
+          const effectiveAdmin = r.isAdmin || isInEnvList;
+          setIsAdmin(effectiveAdmin);
           setIsManagerRole((r.role ?? "").trim() === "Manager");
           setManagerDepartment((r.department ?? "").trim() || null);
+          if (effectiveAdmin) setRoleDisplay("Admin");
+          else setRoleDisplay((r.role ?? "Member").trim() || "Member");
         })
         .catch(() => {
           setIsAdmin(isInEnvList);
           setIsManagerRole(false);
           setManagerDepartment(null);
+          setRoleDisplay(isInEnvList ? "Admin" : "Member");
         });
     };
 
@@ -470,7 +585,6 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
   const showFullAdminNav = isAdmin;
   const showElevatedAdminNav = showFullAdminNav || showManagerAdminNav;
   const name = session?.user?.name ?? session?.user?.email ?? "User";
-  const email = session?.user?.email ?? "";
 
   const renderNavLink = (href: string, label: string, Icon: typeof LayoutDashboard) => {
     let active = false;
@@ -483,16 +597,25 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
         key={href}
         href={href}
         className={cn(
-          "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+          "flex min-w-0 items-center overflow-hidden rounded-lg py-2.5 text-sm font-medium transition-[padding,gap,color,background-color] " +
+          SIDEBAR_LAYOUT_ANIM,
           active
-            ? "bg-black text-white"
+            ? "bg-foreground text-background"
             : "text-muted-foreground hover:bg-muted hover:text-foreground",
-          collapsed && "justify-center px-2"
+          collapsed ? "justify-center gap-0 px-2" : "gap-3 px-3"
         )}
         title={collapsed ? label : undefined}
       >
         <Icon className="h-5 w-5 shrink-0" />
-        {!collapsed && <span>{label}</span>}
+        <span
+          className={cn(
+            "truncate transition-opacity " + SIDEBAR_LABEL_FADE,
+            collapsed ? "w-0 shrink-0 overflow-hidden opacity-0" : "min-w-0 flex-1 opacity-100"
+          )}
+          aria-hidden={collapsed}
+        >
+          {label}
+        </span>
       </Link>
     );
   };
@@ -500,80 +623,107 @@ export function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle:
   return (
     <aside
       className={cn(
-        "flex flex-col border-r border-border bg-panel-elevated/70 backdrop-blur transition-[width] duration-200",
+        "flex shrink-0 flex-col overflow-x-hidden border-r border-border bg-panel-elevated transition-[width] [contain:layout] " +
+          SIDEBAR_LAYOUT_ANIM,
         collapsed ? "w-[4rem]" : "w-64"
       )}
     >
-      <div className={cn("border-b border-border", collapsed ? "p-2" : "p-4")}>
-        {!collapsed && (
-          <div className="flex items-center gap-3">
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold text-foreground">{name}</p>
-              <p className="truncate text-xs text-muted-foreground">{email}</p>
-            </div>
-            <button
-              type="button"
-              onClick={onToggle}
-              className="shrink-0 rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
-              aria-label="Collapse sidebar"
-            >
-              <PanelLeftClose className="h-5 w-5" />
-            </button>
-          </div>
+      <div
+        className={cn(
+          "flex h-16 shrink-0 items-center overflow-hidden border-b border-border bg-panel-elevated shadow-sm transition-[padding,gap] " +
+            SIDEBAR_LAYOUT_ANIM,
+          collapsed ? "justify-center px-2" : "gap-3 px-4"
         )}
-        {collapsed && (
-          <div className="flex flex-col items-center gap-2">
-            <button
-              type="button"
-              onClick={onToggle}
-              className="flex w-full items-center justify-center rounded-lg py-2 text-muted-foreground hover:bg-muted hover:text-foreground"
-              aria-label="Expand sidebar"
-            >
-              <PanelLeft className="h-5 w-5" />
-            </button>
-          </div>
-        )}
+      >
+        <div
+          className={cn(
+            "min-w-0 overflow-hidden leading-snug transition-opacity " + SIDEBAR_LABEL_FADE,
+            collapsed ? "w-0 shrink-0 opacity-0" : "max-w-[min(100%,12rem)] flex-1 opacity-100"
+          )}
+          aria-hidden={collapsed}
+        >
+          <p className="truncate text-base font-bold leading-snug tracking-tight text-foreground">{name}</p>
+          <p className="mt-1 truncate text-sm font-semibold leading-snug text-muted-foreground">{roleDisplay}</p>
+        </div>
+        <button
+          type="button"
+          onClick={onToggle}
+          className={cn(
+            "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors " +
+              SIDEBAR_LABEL_FADE,
+            "hover:bg-muted hover:text-foreground"
+          )}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          {collapsed ? (
+            <ChevronRight className="h-6 w-6" aria-hidden />
+          ) : (
+            <PanelLeftClose className="h-6 w-6" aria-hidden />
+          )}
+        </button>
       </div>
 
-      <nav className="flex-1 space-y-0.5 overflow-auto px-3 py-2">
-        {navItemsTop.map(({ href, label, icon }) => renderNavLink(href, label, icon))}
-        <DepartmentsNavSection collapsed={collapsed} />
-        {navItemsAfterDepartments.map(({ href, label, icon }) => renderNavLink(href, label, icon))}
-        {showElevatedAdminNav && (
-          <>
-            {!collapsed && (
-              <p className="mt-3 mb-1 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+      <nav
+        ref={navScrollRef}
+        className={cn(
+          "flex min-h-0 flex-1 overflow-auto py-2 transition-[padding] " + SIDEBAR_LAYOUT_ANIM,
+          collapsed ? "px-2" : "px-3"
+        )}
+      >
+        <div ref={navScrollContentRef} className="w-full space-y-0.5">
+          {navItemsTop.map(({ href, label, icon }) => renderNavLink(href, label, icon))}
+          <DepartmentsNavSection collapsed={collapsed} />
+          {navItemsAfterDepartments.map(({ href, label, icon }) => renderNavLink(href, label, icon))}
+          {showElevatedAdminNav && (
+            <>
+              <p
+                className={cn(
+                  "overflow-hidden px-3 py-2 text-sm font-semibold uppercase tracking-wider text-muted-foreground transition-opacity " +
+                    SIDEBAR_LABEL_FADE,
+                  collapsed ? "pointer-events-none mt-0 mb-0 h-0 py-0 opacity-0" : "mt-4 mb-2 h-auto opacity-100"
+                )}
+                aria-hidden={collapsed}
+              >
                 {showManagerAdminNav ? "Management" : "Admin"}
               </p>
-            )}
-            <AdminTeamsNavSection
-              collapsed={collapsed}
-              allowedDepartment={showManagerAdminNav ? managerDepartment : null}
-            />
-            {(showFullAdminNav ? adminNavItemsAll : managerAdminNavItems)
-              .filter((item) => showFullAdminNav || !ADMIN_ONLY_HREFS.has(item.href))
-              .map(({ href, label, icon: Icon }) => {
-                const isActive = pathname === href || pathname.startsWith(href + "/");
-                return (
-                  <Link
-                    key={href}
-                    href={href}
-                    className={cn(
-                      "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
-                      isActive
-                        ? "bg-black text-white"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                      collapsed && "justify-center px-2"
-                    )}
-                    title={collapsed ? label : undefined}
-                  >
-                    <Icon className="h-5 w-5 shrink-0" />
-                    {!collapsed && <span>{label}</span>}
-                  </Link>
-                );
-              })}
-          </>
-        )}
+              <AdminTeamsNavSection
+                collapsed={collapsed}
+                allowedDepartment={showManagerAdminNav ? managerDepartment : null}
+              />
+              {(showFullAdminNav ? adminNavItemsAll : managerAdminNavItems)
+                .filter((item) => showFullAdminNav || !ADMIN_ONLY_HREFS.has(item.href))
+                .map(({ href, label, icon: Icon }) => {
+                  const isActive = pathname === href || pathname.startsWith(href + "/");
+                  return (
+                    <Link
+                      key={href}
+                      href={href}
+                      className={cn(
+                        "flex min-w-0 items-center overflow-hidden rounded-lg py-2.5 text-sm font-medium transition-[padding,gap,color,background-color] " +
+                          SIDEBAR_LAYOUT_ANIM,
+                        isActive
+                          ? "bg-foreground text-background"
+                          : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                        collapsed ? "justify-center gap-0 px-2" : "gap-3 px-3"
+                      )}
+                      title={collapsed ? label : undefined}
+                    >
+                      <Icon className="h-5 w-5 shrink-0" />
+                      <span
+                        className={cn(
+                          "truncate transition-opacity " + SIDEBAR_LABEL_FADE,
+                          collapsed ? "w-0 shrink-0 overflow-hidden opacity-0" : "min-w-0 flex-1 opacity-100"
+                        )}
+                        aria-hidden={collapsed}
+                      >
+                        {label}
+                      </span>
+                    </Link>
+                  );
+                })}
+            </>
+          )}
+        </div>
       </nav>
     </aside>
   );

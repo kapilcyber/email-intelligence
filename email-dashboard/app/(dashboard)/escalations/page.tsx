@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertCircle, ChevronRight } from "lucide-react";
 import { RetagMailControl } from "@/components/escalations/retag-mail-control";
+import { DateRangePair } from "@/components/ui/date-range-pair";
 
 const PAGE_SIZE = 20;
 
@@ -32,6 +33,7 @@ export default function EscalationsPage() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -44,6 +46,7 @@ export default function EscalationsPage() {
         page,
         pageSize: PAGE_SIZE,
         from: fromDate || undefined,
+        to: toDate || undefined,
         mine: true,
       })
       .then((r) => {
@@ -56,7 +59,7 @@ export default function EscalationsPage() {
 
   useEffect(() => {
     load();
-  }, [status, api, page, fromDate]);
+  }, [status, api, page, fromDate, toDate]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -67,11 +70,17 @@ export default function EscalationsPage() {
       </div>
 
       <div data-tour-id="escalations-filters" className="flex flex-wrap items-center gap-2">
-        <input
-          type="date"
-          className="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
-          value={fromDate}
-          onChange={(e) => (setFromDate(e.target.value), setPage(1))}
+        <DateRangePair
+          from={fromDate}
+          to={toDate}
+          onFromChange={(v) => {
+            setFromDate(v);
+            setPage(1);
+          }}
+          onToChange={(v) => {
+            setToDate(v);
+            setPage(1);
+          }}
         />
       </div>
 
@@ -111,11 +120,6 @@ export default function EscalationsPage() {
                     </p>
                     {item.summary && (
                       <p className="mt-1 line-clamp-2 text-sm text-neutral-600 dark:text-neutral-300">{item.summary}</p>
-                    )}
-                    {item.escalationReasons && item.escalationReasons.length > 0 && (
-                      <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
-                        Reasons: {item.escalationReasons.join(", ")}
-                      </p>
                     )}
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-2 sm:flex-row sm:items-center">

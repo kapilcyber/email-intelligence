@@ -6,9 +6,16 @@ import Link from "next/link";
 import { getApi, getAttachmentUrl } from "@/lib/api/client";
 import type { ConversationItem, EmailDetail } from "@/lib/types";
 import { stripQuotedContentForThread } from "@/lib/email-body-strip-quotes";
+import {
+  emailBodySurfaceClassName,
+  emailHtmlProseClassName,
+  sanitizeEmailHtml,
+} from "@/lib/sanitize-email-html";
+import { LenisScrollArea } from "@/components/lenis/lenis-scroll-area";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Mail, Calendar, ChevronRight, Download } from "lucide-react";
+import { DateRangePair } from "@/components/ui/date-range-pair";
 
 const PAGE_SIZE = 25;
 
@@ -49,6 +56,7 @@ export function ThreadEmailCard({ email, index, responseTimeMs }: { email: Email
       ? stripQuotedContentForThread(rawBody, email.bodyContentType, index > 0)
       : null;
   const body = stripped != null && stripped.trim().length > 0 ? stripped : rawBody;
+  const htmlSafe = body && isHtml ? sanitizeEmailHtml(body) : body;
   const isFirst = index === 0;
   const replyLabel = index === 0 ? "Original" : `Reply ${index}`;
 
@@ -96,15 +104,19 @@ export function ThreadEmailCard({ email, index, responseTimeMs }: { email: Email
         </div>
       </header>
       <div className="px-4 py-3">
-        {body &&
-          (isHtml ? (
-            <div
-              className="prose prose-sm max-w-none dark:prose-invert"
-              dangerouslySetInnerHTML={{ __html: body }}
-            />
-          ) : (
-            <p className="whitespace-pre-wrap text-sm text-neutral-700 dark:text-neutral-300">{body}</p>
-          ))}
+        {body && (
+          <div className={emailBodySurfaceClassName}>
+            {isHtml ? (
+              <div
+                className={emailHtmlProseClassName}
+                style={{ overflowWrap: "break-word" }}
+                dangerouslySetInnerHTML={{ __html: htmlSafe as string }}
+              />
+            ) : (
+              <p className="whitespace-pre-wrap text-sm text-neutral-800">{body}</p>
+            )}
+          </div>
+        )}
         {email.attachments?.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-2">
             {email.attachments.map((a) => (
@@ -266,26 +278,13 @@ export function ThreadsView({ basePath }: ThreadsViewProps) {
           <div data-tour-id="threads-export" className="mt-4 rounded-lg border border-border bg-panel/75 p-3">
             <p className="text-xs font-semibold text-neutral-800 dark:text-neutral-200">Download reply report (CSV)</p>
             <div className="mt-2 flex flex-col gap-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <label className="flex flex-col gap-0.5 text-[10px] font-medium uppercase tracking-wide text-neutral-500">
-                  From
-                  <input
-                    type="date"
-                    value={exportFrom}
-                    onChange={(e) => setExportFrom(e.target.value)}
-                    className="rounded-md border border-neutral-200 bg-white px-2 py-1.5 text-xs dark:border-neutral-600 dark:bg-neutral-900"
-                  />
-                </label>
-                <label className="flex flex-col gap-0.5 text-[10px] font-medium uppercase tracking-wide text-neutral-500">
-                  To
-                  <input
-                    type="date"
-                    value={exportTo}
-                    onChange={(e) => setExportTo(e.target.value)}
-                    className="rounded-md border border-neutral-200 bg-white px-2 py-1.5 text-xs dark:border-neutral-600 dark:bg-neutral-900"
-                  />
-                </label>
-              </div>
+              <DateRangePair
+                from={exportFrom}
+                to={exportTo}
+                onFromChange={setExportFrom}
+                onToChange={setExportTo}
+                fieldClassName="relative min-w-0 flex-1"
+              />
               {selectedId && (
                 <label className="flex cursor-pointer items-center gap-2 text-xs text-neutral-600 dark:text-neutral-400">
                   <input
@@ -312,7 +311,7 @@ export function ThreadsView({ basePath }: ThreadsViewProps) {
             </div>
           </div>
         </div>
-        <div data-tour-id="threads-list" className="flex-1 overflow-y-auto">
+        <LenisScrollArea data-tour-id="threads-list" className="flex-1 min-h-0">
           {loading && (
             <div className="space-y-2 p-3">
               {[1, 2, 3, 4, 5].map((i) => (
@@ -374,7 +373,7 @@ export function ThreadsView({ basePath }: ThreadsViewProps) {
                 </div>
               </button>
             ))}
-        </div>
+        </LenisScrollArea>
         {total > PAGE_SIZE && (
           <div className="flex items-center justify-between border-t border-neutral-200 px-4 py-2 dark:border-neutral-700">
             <Button
@@ -416,7 +415,7 @@ export function ThreadsView({ basePath }: ThreadsViewProps) {
                 {selectedConversation?.subject ?? "Thread"}
               </h2>
             </div>
-            <div className="flex-1 overflow-y-auto p-4">
+            <LenisScrollArea className="flex-1 min-h-0" contentClassName="p-4">
               {threadLoading && (
                 <div className="space-y-3">
                   {[1, 2, 3].map((i) => (
@@ -447,7 +446,7 @@ export function ThreadsView({ basePath }: ThreadsViewProps) {
                   })}
                 </div>
               )}
-            </div>
+            </LenisScrollArea>
           </>
         )}
       </main>

@@ -10,6 +10,7 @@ import { getApi } from "@/lib/api/client";
 import type { EmailRecord } from "@/lib/types";
 import { Search } from "lucide-react";
 import { DEPARTMENT_CATEGORIES } from "@/lib/departments";
+import { DateRangePair } from "@/components/ui/date-range-pair";
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 200, 500];
 
@@ -135,22 +136,7 @@ export function EmailsView({
                 className="pl-9"
               />
             </div>
-            <div className="flex gap-2">
-              <Input
-                type="date"
-                placeholder="From"
-                value={from}
-                onChange={(e) => setFrom(e.target.value)}
-                className="w-full sm:w-36"
-              />
-              <Input
-                type="date"
-                placeholder="To"
-                value={to}
-                onChange={(e) => setTo(e.target.value)}
-                className="w-full sm:w-36"
-              />
-            </div>
+            <DateRangePair from={from} to={to} onFromChange={setFrom} onToChange={setTo} />
             <Button variant="outline" onClick={load}>
               Apply
             </Button>

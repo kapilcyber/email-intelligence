@@ -6,8 +6,26 @@ import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { getApi } from "@/lib/api/client";
 import type { EmailDetail } from "@/lib/types";
-import { Paperclip, Mail, Calendar, Users, Folder, ExternalLink, Download, Sparkles, MessageSquare, AlertTriangle, RefreshCw } from "lucide-react";
+import {
+  Paperclip,
+  Mail,
+  Calendar,
+  Users,
+  Folder,
+  ExternalLink,
+  Download,
+  Sparkles,
+  MessageSquare,
+  AlertTriangle,
+  RefreshCw,
+  Send,
+} from "lucide-react";
 import { PriorityBadge } from "@/components/status/priority-badge";
+import {
+  emailBodySurfaceClassName,
+  emailHtmlProseClassName,
+  sanitizeEmailHtml,
+} from "@/lib/sanitize-email-html";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleString(undefined, {
@@ -30,13 +48,6 @@ function folderLabel(folder: string | null | undefined) {
   return folder;
 }
 
-function sanitizeEmailHtml(html: string): string {
-  // Prevent email-provided global CSS from leaking into the app shell.
-  return html
-    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "")
-    .replace(/<link\b[^>]*rel=["']?stylesheet["']?[^>]*>/gi, "");
-}
-
 const AI_POLL_INTERVAL_MS = 2500;
 const AI_POLL_TIMEOUT_MS = 3 * 60 * 1000;
 const AI_POLL_MAX_FAILURES = 5;
@@ -54,6 +65,8 @@ export default function EmailDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [pollNotice, setPollNotice] = useState<string | null>(null);
+  const [sendReplyIndex, setSendReplyIndex] = useState<number | null>(null);
+  const [replyAllMessage, setReplyAllMessage] = useState<{ type: "ok" | "err"; text: string } | null>(null);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const clearAiPoll = () => {
@@ -123,28 +136,79 @@ export default function EmailDetailPage() {
   }
 
   const aiFailed = email.aiStatus === "failed";
+
+  const handleSendSuggestedReplyAll = async (replyText: string, index: number) => {
+    if (!id || !email.graphId) return;
+    setReplyAllMessage(null);
+    setSendReplyIndex(index);
+    try {
+      const res = await fetch(`/api/emails/${encodeURIComponent(id)}/reply-all`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ comment: replyText, contentType: "Text" }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        throw new Error(data.error || `Send failed (${res.status})`);
+      }
+      setReplyAllMessage({ type: "ok", text: "Reply all sent from your mailbox." });
+    } catch (e) {
+      setReplyAllMessage({
+        type: "err",
+        text: e instanceof Error ? e.message : "Could not send reply.",
+      });
+    } finally {
+      setSendReplyIndex(null);
+    }
+  };
+
   const handleRetryAi = () => {
     setPollNotice(null);
     setRetrying(true);
     const emailId = email.id;
+    /** Snapshot before re-queue — first GET after POST can still show stale "completed" from the prior run. */
+    const beforeProcessedAt = email.aiProcessedAt ?? null;
+    const beforeErrorMessage = email.aiErrorMessage ?? null;
+    const hadSummaryAtRetry = email.summary != null && String(email.summary).trim() !== "";
+
     clearAiPoll();
+    let sawPending = false;
+
+    const processPollResult = (data: EmailDetail): boolean => {
+      if (data.aiStatus === "pending") sawPending = true;
+
+      const procChanged = (data.aiProcessedAt ?? null) !== (beforeProcessedAt ?? null);
+      const summaryAppeared =
+        !!(data.summary && String(data.summary).trim()) && !hadSummaryAtRetry;
+      const errChanged = (data.aiErrorMessage ?? null) !== (beforeErrorMessage ?? null);
+
+      let done = false;
+      if (data.aiStatus === "pending") {
+        done = false;
+      } else if (data.aiStatus === "completed") {
+        done = procChanged || summaryAppeared;
+      } else if (data.aiStatus === "failed") {
+        done = sawPending || procChanged || errChanged;
+      } else {
+        done = false;
+      }
+
+      setEmail(data);
+      if (done) {
+        clearAiPoll();
+        setRetrying(false);
+      }
+      return done;
+    };
+
     api
       .retryAi(emailId)
-      .then(async () => {
-        let first: EmailDetail | null = null;
-        try {
-          first = await api.getEmail(emailId);
-          setEmail(first);
-        } catch {
-          /* first refresh optional; polling will retry */
-        }
-        if (first?.aiStatus === "completed" || first?.aiStatus === "failed") {
-          setRetrying(false);
-          return;
-        }
+      .then(() => {
         const startedAt = Date.now();
         let failures = 0;
-        pollIntervalRef.current = setInterval(() => {
+
+        const tick = () => {
           if (Date.now() - startedAt > AI_POLL_TIMEOUT_MS) {
             clearAiPoll();
             setRetrying(false);
@@ -155,11 +219,7 @@ export default function EmailDetailPage() {
             .getEmail(emailId)
             .then((data) => {
               failures = 0;
-              setEmail(data);
-              if (data.aiStatus === "completed" || data.aiStatus === "failed") {
-                clearAiPoll();
-                setRetrying(false);
-              }
+              processPollResult(data);
             })
             .catch(() => {
               failures += 1;
@@ -169,7 +229,10 @@ export default function EmailDetailPage() {
                 setPollNotice("Could not load updated AI results. Check your connection and try again.");
               }
             });
-        }, AI_POLL_INTERVAL_MS);
+        };
+
+        tick();
+        pollIntervalRef.current = setInterval(tick, AI_POLL_INTERVAL_MS);
       })
       .catch(() => setRetrying(false));
   };
@@ -186,7 +249,7 @@ export default function EmailDetailPage() {
             <div className="flex gap-3">
               <Mail className="mt-0.5 h-4 w-4 shrink-0 text-neutral-400" />
               <div>
-                <p className="text-xs font-medium uppercase tracking-wider text-neutral-400 dark:text-neutral-500">From</p>
+                <p className="text-xs font-medium uppercase tracking-wider text-neutral-500 dark:text-neutral-400">From</p>
                 <p className="mt-0.5 text-sm text-neutral-700 dark:text-neutral-200">
                   {email.senderDisplayName && email.senderDisplayName !== email.sender
                     ? `${email.senderDisplayName} <${email.sender}>`
@@ -197,7 +260,7 @@ export default function EmailDetailPage() {
             <div className="flex gap-3">
               <Users className="mt-0.5 h-4 w-4 shrink-0 text-neutral-400" />
               <div>
-                <p className="text-xs font-medium uppercase tracking-wider text-neutral-400 dark:text-neutral-500">To</p>
+                <p className="text-xs font-medium uppercase tracking-wider text-neutral-500 dark:text-neutral-400">To</p>
                 <p className="mt-0.5 break-words text-sm text-neutral-700 dark:text-neutral-200">
                   {formatRecipients(email.toRecipients)}
                 </p>
@@ -207,7 +270,7 @@ export default function EmailDetailPage() {
               <div className="flex gap-3 sm:col-span-2">
                 <Users className="mt-0.5 h-4 w-4 shrink-0 text-neutral-400" />
                 <div>
-                  <p className="text-xs font-medium uppercase tracking-wider text-neutral-400 dark:text-neutral-500">Cc</p>
+                  <p className="text-xs font-medium uppercase tracking-wider text-neutral-500 dark:text-neutral-400">Cc</p>
                   <p className="mt-0.5 break-words text-sm text-neutral-700 dark:text-neutral-200">
                     {formatRecipients(email.ccRecipients)}
                   </p>
@@ -218,7 +281,7 @@ export default function EmailDetailPage() {
               <div className="flex gap-3 sm:col-span-2">
                 <Users className="mt-0.5 h-4 w-4 shrink-0 text-neutral-400" />
                 <div>
-                  <p className="text-xs font-medium uppercase tracking-wider text-neutral-400 dark:text-neutral-500">Bcc</p>
+                  <p className="text-xs font-medium uppercase tracking-wider text-neutral-500 dark:text-neutral-400">Bcc</p>
                   <p className="mt-0.5 break-words text-sm text-neutral-700 dark:text-neutral-200">
                     {formatRecipients(email.bccRecipients)}
                   </p>
@@ -228,7 +291,7 @@ export default function EmailDetailPage() {
             <div className="flex gap-3">
               <Calendar className="mt-0.5 h-4 w-4 shrink-0 text-neutral-400" />
               <div>
-                <p className="text-xs font-medium uppercase tracking-wider text-neutral-400 dark:text-neutral-500">Date</p>
+                <p className="text-xs font-medium uppercase tracking-wider text-neutral-500 dark:text-neutral-400">Date</p>
                 <p className="mt-0.5 text-sm text-neutral-700 dark:text-neutral-200">{formatDate(email.receivedAt)}</p>
               </div>
             </div>
@@ -236,7 +299,7 @@ export default function EmailDetailPage() {
               <div className="flex gap-3">
                 <Folder className="mt-0.5 h-4 w-4 shrink-0 text-neutral-400" />
                 <div>
-                  <p className="text-xs font-medium uppercase tracking-wider text-neutral-400 dark:text-neutral-500">Folder</p>
+                  <p className="text-xs font-medium uppercase tracking-wider text-neutral-500 dark:text-neutral-400">Folder</p>
                   <p className="mt-0.5 text-sm text-neutral-700 dark:text-neutral-200">{displayFolder}</p>
                 </div>
               </div>
@@ -332,13 +395,47 @@ export default function EmailDetailPage() {
                   <MessageSquare className="h-3.5 w-3.5" />
                   Suggested replies
                 </div>
+                {!email.graphId && (
+                  <p className="mb-2 text-xs text-amber-700 dark:text-amber-300">
+                    Reply-all is unavailable: this message has no Microsoft Graph id (older sync). Re-sync or open from a
+                    freshly ingested mail.
+                  </p>
+                )}
+                {replyAllMessage && (
+                  <p
+                    className={`mb-2 text-xs ${replyAllMessage.type === "ok" ? "text-emerald-700 dark:text-emerald-400" : "text-red-600 dark:text-red-400"}`}
+                  >
+                    {replyAllMessage.text}
+                  </p>
+                )}
                 <ul className="space-y-1.5">
                   {email.suggestedReplies.map((reply, i) => (
                     <li
                       key={i}
-                      className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-700 dark:border-neutral-700 dark:bg-neutral-900/50 dark:text-neutral-300"
+                      className="flex items-start gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-700 dark:border-neutral-700 dark:bg-neutral-900/50 dark:text-neutral-300"
                     >
-                      {reply}
+                      <p className="min-w-0 flex-1 whitespace-pre-wrap">{reply}</p>
+                      {/* Reply-all Send: hidden for now — drop `hidden` from className to show again */}
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="hidden shrink-0 gap-1"
+                        disabled={!email.graphId || sendReplyIndex !== null}
+                        title={
+                          email.graphId
+                            ? "Send reply all from your mailbox (Microsoft 365)"
+                            : "Graph message id missing"
+                        }
+                        onClick={() => handleSendSuggestedReplyAll(reply, i)}
+                      >
+                        {sendReplyIndex === i ? (
+                          <RefreshCw className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                        ) : (
+                          <Send className="h-3.5 w-3.5" aria-hidden />
+                        )}
+                        Send
+                      </Button>
                     </li>
                   ))}
                 </ul>
@@ -394,17 +491,19 @@ export default function EmailDetailPage() {
 
         <div className="px-6 py-5">
           {bodyContent ? (
-            isHtml ? (
-              <div
-                className="prose prose-neutral dark:prose-invert prose-sm max-w-none prose-img:rounded-lg prose-a:text-blue-600 dark:prose-a:text-blue-400 [&_*]:max-w-full"
-                style={{ overflowWrap: "break-word" }}
-                dangerouslySetInnerHTML={{ __html: bodyContent }}
-              />
-            ) : (
-              <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-neutral-700 dark:text-neutral-300">
-                {bodyContent}
-              </pre>
-            )
+            <div className={emailBodySurfaceClassName}>
+              {isHtml ? (
+                <div
+                  className={emailHtmlProseClassName}
+                  style={{ overflowWrap: "break-word" }}
+                  dangerouslySetInnerHTML={{ __html: bodyContent }}
+                />
+              ) : (
+                <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-neutral-800">
+                  {bodyContent}
+                </pre>
+              )}
+            </div>
           ) : (
             <p className="text-neutral-500 dark:text-neutral-400">No body content.</p>
           )}

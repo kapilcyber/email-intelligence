@@ -35,7 +35,7 @@ export default function ManagerProjectsPage() {
       <div>
         <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-50">Projects</h1>
         <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-          Read-only projects for your department and assigned team members.
+          Projects for your department and assigned team members.
         </p>
       </div>
       {error && (

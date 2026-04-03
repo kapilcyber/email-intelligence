@@ -7,6 +7,7 @@ import { getApi } from "@/lib/api/client";
 import type { QueueStatusResponse } from "@/lib/types";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip } from "recharts";
+import { chartTooltipProps, useChartTheme } from "@/lib/use-chart-theme";
 
 function formatUptime(seconds: number) {
   const h = Math.floor(seconds / 3600);
@@ -24,6 +25,8 @@ export default function QueueMonitorPage() {
   const [data, setData] = useState<QueueStatusResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const chart = useChartTheme();
+  const tt = chartTooltipProps(chart);
 
   useEffect(() => {
     if (status !== "authenticated") return;
@@ -151,15 +154,10 @@ export default function QueueMonitorPage() {
             <div className="h-64 w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={data.taskDistribution} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
-                  <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                  <YAxis tick={{ fontSize: 12 }} />
-                  <Tooltip
-                    contentStyle={{
-                      borderRadius: "0.5rem",
-                      border: "1px solid var(--neutral-200)",
-                    }}
-                  />
-                  <Bar dataKey="count" fill="currentColor" className="fill-neutral-500 dark:fill-neutral-400" radius={[4, 4, 0, 0]} />
+                  <XAxis dataKey="name" tick={{ fontSize: 12, fill: chart.axis }} />
+                  <YAxis tick={{ fontSize: 12, fill: chart.axisMuted }} />
+                  <Tooltip {...tt} contentStyle={{ ...tt.contentStyle, borderRadius: "0.5rem" }} />
+                  <Bar dataKey="count" fill={chart.isDark ? "#a1a1aa" : "#64748b"} radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>

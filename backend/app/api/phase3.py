@@ -1,7 +1,7 @@
 """
 Phase 3 APIs: escalations, leads, routing (assign team).
 """
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import OperationalError
@@ -13,6 +13,31 @@ from app.api.deps import get_current_user_email_optional, get_current_user_email
 from app.config import get_settings
 
 router = APIRouter()
+
+
+def apply_received_at_date_range_filter(query, column, from_date: str | None, to_date: str | None):
+    """Narrow by received_at: optional inclusive calendar from/to (YYYY-MM-DD or ISO datetime)."""
+    if from_date and str(from_date).strip():
+        try:
+            s = str(from_date).strip()
+            dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+            if len(s) == 10:
+                dt = datetime.combine(dt.date(), datetime.min.time())
+            query = query.filter(column >= dt)
+        except ValueError:
+            pass
+    if to_date and str(to_date).strip():
+        try:
+            s = str(to_date).strip()
+            dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+            if len(s) == 10:
+                end = datetime.combine(dt.date(), datetime.min.time()) + timedelta(days=1)
+                query = query.filter(column < end)
+            else:
+                query = query.filter(column <= dt)
+        except ValueError:
+            pass
+    return query
 
 
 def _get_current_user_email_required():
@@ -82,6 +107,7 @@ def list_escalations(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     from_date: str | None = Query(None, alias="from"),
+    to_date: str | None = Query(None, alias="to"),
     team: str | None = Query(None, description="Filter by assigned team"),
     mine: bool = Query(False, description="If true, return only escalations in the current user's mailbox"),
     current_user_email: str | None = Depends(get_current_user_email_optional),
@@ -95,12 +121,7 @@ def list_escalations(
         q = db.query(Email).filter(Email.is_escalation == True)
         if mine and current_user_email and hasattr(Email, "mailbox_owner_email"):
             q = q.filter(Email.mailbox_owner_email == current_user_email)
-        if from_date:
-            try:
-                dt = datetime.fromisoformat(from_date.replace("Z", "+00:00"))
-                q = q.filter(Email.received_at >= dt)
-            except ValueError:
-                pass
+        q = apply_received_at_date_range_filter(q, Email.received_at, from_date, to_date)
         if team and team.strip() and hasattr(Email, "assigned_team"):
             q = q.filter(Email.assigned_team == team.strip())
         total = q.count()
@@ -152,6 +173,7 @@ def list_leads(
     label: str | None = Query(None, description="Filter by lead label: Hot, Warm, Cold"),
     team: str | None = Query(None, description="Filter by assigned team (team name from DB)"),
     from_date: str | None = Query(None, alias="from"),
+    to_date: str | None = Query(None, alias="to"),
     mine: bool = Query(False, description="If true, return only leads in the current user's mailbox"),
     current_user_email: str | None = Depends(get_current_user_email_optional),
 ):
@@ -168,12 +190,7 @@ def list_leads(
             q = q.filter(Email.lead_label == label.strip())
         if team and team.strip() and hasattr(Email, "assigned_team"):
             q = q.filter(Email.assigned_team == team.strip())
-        if from_date:
-            try:
-                dt = datetime.fromisoformat(from_date.replace("Z", "+00:00"))
-                q = q.filter(Email.received_at >= dt)
-            except ValueError:
-                pass
+        q = apply_received_at_date_range_filter(q, Email.received_at, from_date, to_date)
         total = q.count()
         rows = q.order_by(Email.received_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
         return {
@@ -408,6 +425,7 @@ def list_retagged_mails(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100, alias="pageSize"),
     from_date: str | None = Query(None, alias="from"),
+    to_date: str | None = Query(None, alias="to"),
     mine: bool = Query(True, description="If true, only retagged mail in the current user's mailbox"),
     current_user_email: str | None = Depends(get_current_user_email_optional),
 ):
@@ -420,12 +438,7 @@ def list_retagged_mails(
         q = db.query(Email).filter(Email.retagged_at.isnot(None))
         if mine and current_user_email and hasattr(Email, "mailbox_owner_email"):
             q = q.filter(Email.mailbox_owner_email == current_user_email)
-        if from_date:
-            try:
-                dt = datetime.fromisoformat(from_date.replace("Z", "+00:00"))
-                q = q.filter(Email.received_at >= dt)
-            except ValueError:
-                pass
+        q = apply_received_at_date_range_filter(q, Email.received_at, from_date, to_date)
         total = q.count()
         rows = q.order_by(Email.retagged_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
         return {

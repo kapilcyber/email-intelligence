@@ -48,13 +48,26 @@ export interface CalendarEventsResponse {
 
 export interface NotificationItem {
   id: string;
-  kind: "new_mail" | "meeting_scheduled" | "ai_pending" | "important_date" | "unreplied_mail" | string;
+  kind:
+    | "new_mail"
+    | "meeting_upcoming"
+    | "meeting_scheduled"
+    | "ai_pending"
+    | "important_date"
+    | "unreplied_mail"
+    | "unread_mail"
+    | "escalation_open"
+    | "lead_open"
+    | "mom_pending"
+    | string;
   title: string;
   message: string;
   level: "info" | "warning" | "error" | string;
   at: string;
   count?: number;
   href?: string;
+  /** UI grouping: priority | mail | sales | ai | meetings */
+  group?: string;
 }
 
 export interface NotificationsResponse {
@@ -213,6 +226,8 @@ export interface EmailDetail {
   aiProcessedAt?: string | null;
   processingStatus?: ProcessingStatus | null;
   aiErrorMessage?: string | null;
+  /** Microsoft Graph message id in the mailbox owner's mailbox; required for delegated reply-all. */
+  graphId?: string | null;
 }
 
 export interface WebhookSubscription {

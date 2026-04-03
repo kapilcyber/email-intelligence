@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { ChevronRight } from "lucide-react";
+import { LenisScrollArea } from "@/components/lenis/lenis-scroll-area";
 import { DEPARTMENT_CATEGORIES } from "@/lib/departments";
 
 const PROJECT_STATUS_OPTS = ["new", "planned", "running", "completed"] as const;
@@ -416,7 +417,10 @@ export default function AdminTeamProjectsPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="max-h-80 space-y-3 overflow-y-auto rounded-md border border-neutral-200 p-2 dark:border-neutral-700">
+            <LenisScrollArea
+              className="max-h-80 min-h-0 rounded-md border border-neutral-200 dark:border-neutral-700"
+              contentClassName="space-y-3 p-2"
+            >
               {filteredUsers.map((u) => {
                 const on = selectedMemberIds.includes(u.id);
                 const det = memberDetails[u.id] ?? defaultMemberRow();
@@ -491,7 +495,7 @@ export default function AdminTeamProjectsPage() {
                   </div>
                 );
               })}
-            </div>
+            </LenisScrollArea>
             <div className="flex gap-2">
               <Button onClick={saveProject} disabled={savingProject}>
                 {savingProject ? "Saving..." : editingProjectId ? "Update project" : "Create project"}

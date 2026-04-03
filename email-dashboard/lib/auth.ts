@@ -1,11 +1,54 @@
 import type { NextAuthOptions } from "next-auth";
+import type { JWT } from "next-auth/jwt";
 import AzureADProvider from "next-auth/providers/azure-ad";
 
+/** Delegated Graph send + OIDC; must match refresh_token request. */
+const AZURE_LOGIN_SCOPES =
+  "openid profile email offline_access https://graph.microsoft.com/Mail.Send";
+
+async function refreshAzureAccessToken(token: JWT): Promise<JWT> {
+  const tenantId = process.env.AZURE_TENANT_ID ?? "";
+  const clientId = process.env.AZURE_CLIENT_ID ?? "";
+  const clientSecret = process.env.AZURE_CLIENT_SECRET ?? "";
+  const refreshToken = token.refreshToken;
+  if (!refreshToken || !tenantId || !clientId || !clientSecret) {
+    return { ...token, error: "RefreshAccessTokenError" };
+  }
+  const url = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+      scope: AZURE_LOGIN_SCOPES,
+    }),
+  });
+  const data = (await res.json()) as {
+    access_token?: string;
+    refresh_token?: string;
+    expires_in?: number;
+    error?: string;
+  };
+  if (!res.ok || !data.access_token) {
+    console.warn("[auth] token refresh failed", data.error ?? res.status);
+    return { ...token, error: "RefreshAccessTokenError" };
+  }
+  const expiresIn = data.expires_in ?? 3600;
+  return {
+    ...token,
+    accessToken: data.access_token,
+    refreshToken: data.refresh_token ?? refreshToken,
+    expiresAt: Math.floor(Date.now() / 1000 + expiresIn),
+    error: undefined,
+  };
+}
+
 /**
- * Minimal login: `openid profile email` only (no Calendars.Read / User.Read on the consent screen).
- *
- * Overrides default Azure AD `profile` so we do NOT call Graph `/me/photos` during sign-in (that call
- * expects broader Graph rights and can break or push admin-consent flows). OIDC claims only for now.
+ * Azure AD sign-in with delegated Mail.Send for reply-all from the user's mailbox.
+ * Overrides default `profile` so we do NOT call Graph `/me/photos` during sign-in.
  */
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -15,7 +58,7 @@ export const authOptions: NextAuthOptions = {
       tenantId: process.env.AZURE_TENANT_ID,
       authorization: {
         params: {
-          scope: "openid profile email",
+          scope: AZURE_LOGIN_SCOPES,
           prompt: "select_account",
         },
       },
@@ -40,6 +83,39 @@ export const authOptions: NextAuthOptions = {
     signIn: "/signin",
   },
   trustHost: true,
+  callbacks: {
+    async jwt({ token, account }): Promise<JWT> {
+      if (account) {
+        const acc = account as {
+          access_token?: string;
+          refresh_token?: string;
+          expires_at?: number;
+        };
+        const exp =
+          typeof acc.expires_at === "number"
+            ? acc.expires_at
+            : Math.floor(Date.now() / 1000 + 3600);
+        return {
+          ...token,
+          accessToken: acc.access_token,
+          refreshToken: acc.refresh_token,
+          expiresAt: exp,
+          error: undefined,
+        };
+      }
+      if (token.error === "RefreshAccessTokenError") {
+        return token;
+      }
+      const expAt = token.expiresAt;
+      if (typeof expAt === "number" && token.refreshToken) {
+        const refreshIfBefore = expAt * 1000 - 120_000;
+        if (Date.now() >= refreshIfBefore) {
+          return refreshAzureAccessToken(token);
+        }
+      }
+      return token;
+    },
+  },
   events: {
     /**
      * Ensure backend `users` row exists on every successful sign-in.

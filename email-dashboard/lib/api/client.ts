@@ -236,11 +236,19 @@ function createApi(userEmail: string | null, userDisplayName?: string | null) {
       withUser<{ ok: boolean; message?: string; emailId?: string }>(`/api/emails/${emailId}/retry-ai`, { method: "POST" }),
     getSystemHealth: () => withUser<SystemHealthResponse>("/api/system/health"),
     // Phase 3 — Escalations & Leads
-    getEscalations: (params?: { page?: number; pageSize?: number; from?: string; team?: string; mine?: boolean }) => {
+    getEscalations: (params?: {
+      page?: number;
+      pageSize?: number;
+      from?: string;
+      to?: string;
+      team?: string;
+      mine?: boolean;
+    }) => {
       const searchParams = new URLSearchParams();
       if (params?.page != null) searchParams.set("page", String(params.page));
       if (params?.pageSize != null) searchParams.set("pageSize", String(params.pageSize));
       if (params?.from) searchParams.set("from", params.from);
+      if (params?.to) searchParams.set("to", params.to);
       if (params?.team) searchParams.set("team", params.team);
       if (params?.mine === true) searchParams.set("mine", "true");
       const q = searchParams.toString();
@@ -255,6 +263,7 @@ function createApi(userEmail: string | null, userDisplayName?: string | null) {
       page?: number;
       pageSize?: number;
       from?: string;
+      to?: string;
       team?: string;
     }) => {
       const searchParams = new URLSearchParams();
@@ -262,16 +271,26 @@ function createApi(userEmail: string | null, userDisplayName?: string | null) {
       if (params?.page != null) searchParams.set("page", String(params.page));
       if (params?.pageSize != null) searchParams.set("pageSize", String(params.pageSize));
       if (params?.from) searchParams.set("from", params.from);
+      if (params?.to) searchParams.set("to", params.to);
       if (params?.team) searchParams.set("team", params.team);
       return withUser<EscalationsResponse>(`/api/admin/escalations?${searchParams.toString()}`);
     },
-    getLeads: (params?: { page?: number; pageSize?: number; label?: string; team?: string; from?: string; mine?: boolean }) => {
+    getLeads: (params?: {
+      page?: number;
+      pageSize?: number;
+      label?: string;
+      team?: string;
+      from?: string;
+      to?: string;
+      mine?: boolean;
+    }) => {
       const searchParams = new URLSearchParams();
       if (params?.page != null) searchParams.set("page", String(params.page));
       if (params?.pageSize != null) searchParams.set("pageSize", String(params.pageSize));
       if (params?.label) searchParams.set("label", params.label);
       if (params?.team) searchParams.set("team", params.team);
       if (params?.from) searchParams.set("from", params.from);
+      if (params?.to) searchParams.set("to", params.to);
       if (params?.mine === true) searchParams.set("mine", "true");
       const q = searchParams.toString();
       return withUser<LeadsResponse>(`/api/leads${q ? `?${q}` : ""}`);
@@ -286,6 +305,7 @@ function createApi(userEmail: string | null, userDisplayName?: string | null) {
       pageSize?: number;
       label?: string;
       from?: string;
+      to?: string;
       team?: string;
     }) => {
       const searchParams = new URLSearchParams();
@@ -294,6 +314,7 @@ function createApi(userEmail: string | null, userDisplayName?: string | null) {
       if (params?.pageSize != null) searchParams.set("pageSize", String(params.pageSize));
       if (params?.label) searchParams.set("label", params.label);
       if (params?.from) searchParams.set("from", params.from);
+      if (params?.to) searchParams.set("to", params.to);
       if (params?.team) searchParams.set("team", params.team);
       return withUser<LeadsResponse>(`/api/admin/leads?${searchParams.toString()}`);
     },
@@ -311,12 +332,13 @@ function createApi(userEmail: string | null, userDisplayName?: string | null) {
     /** Departments for retag dropdown (signed-in user). */
     getRetagDepartmentOptions: () =>
       withUser<{ departments: string[] }>("/api/retag/department-options"),
-    getRetagged: (params?: { page?: number; pageSize?: number; from?: string }) => {
+    getRetagged: (params?: { page?: number; pageSize?: number; from?: string; to?: string }) => {
       const searchParams = new URLSearchParams();
       searchParams.set("mine", "true");
       if (params?.page != null) searchParams.set("page", String(params.page));
       if (params?.pageSize != null) searchParams.set("pageSize", String(params.pageSize));
       if (params?.from) searchParams.set("from", params.from);
+      if (params?.to) searchParams.set("to", params.to);
       return withUser<RetaggedResponse>(`/api/retagged?${searchParams.toString()}`);
     },
     getMyRetagRequests: (params?: { page?: number; pageSize?: number }) => {
@@ -328,16 +350,17 @@ function createApi(userEmail: string | null, userDisplayName?: string | null) {
     },
     /** Admin: retag mail in another user's mailbox */
     retagEmailAdmin: (emailId: string, mailbox: string, assignedTeam: string) =>
-      withUser<{ ok: boolean; emailId: string; assignedTeam: string | null }>(
+      withUser<RetagActionResponse>(
         `/api/admin/emails/${emailId}/retag?mailbox=${encodeURIComponent(mailbox)}`,
         { method: "PATCH", body: JSON.stringify({ assignedTeam }) }
       ),
-    getAdminRetagged: (params: { mailbox: string; page?: number; pageSize?: number; from?: string }) => {
+    getAdminRetagged: (params: { mailbox: string; page?: number; pageSize?: number; from?: string; to?: string }) => {
       const searchParams = new URLSearchParams();
       searchParams.set("mailbox", params.mailbox);
       if (params.page != null) searchParams.set("page", String(params.page));
       if (params.pageSize != null) searchParams.set("pageSize", String(params.pageSize));
       if (params.from) searchParams.set("from", params.from);
+      if (params.to) searchParams.set("to", params.to);
       return withUser<RetaggedResponse>(`/api/admin/retagged?${searchParams.toString()}`);
     },
     getRetagApprovals: (params?: { status?: "pending" | "approved" | "rejected"; page?: number; pageSize?: number }) => {

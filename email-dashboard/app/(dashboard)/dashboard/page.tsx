@@ -1,11 +1,14 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { Suspense, useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
+import { DateRangePair } from "@/components/ui/date-range-pair";
 import { getApi } from "@/lib/api/client";
+import { LenisScrollArea } from "@/components/lenis/lenis-scroll-area";
 import { cn } from "@/lib/utils";
+import { chartTooltipProps, useChartTheme } from "@/lib/use-chart-theme";
 import { formatMomTimeRange } from "@/lib/mom-eligibility";
 import type {
   DashboardMetrics,
@@ -241,6 +244,8 @@ function DashboardAiCharts({
 }) {
   const [escalationByUser, setEscalationByUser] = useState<UserEscalationCountOut[] | null>(null);
   const [leadCountsByUser, setLeadCountsByUser] = useState<UserLeadCountOut[] | null>(null);
+  const chart = useChartTheme();
+  const tt = chartTooltipProps(chart);
 
   useEffect(() => {
     setEscalationByUser(null);
@@ -370,34 +375,49 @@ function DashboardAiCharts({
           <div className="h-80">
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={categoryKpiData} margin={{ top: 8, right: 32, bottom: 8, left: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} className="dark:stroke-neutral-700" />
+                <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} vertical={false} />
                 <XAxis
                   dataKey="category"
-                  tick={{ fontSize: 10 }}
-                  className="text-neutral-600 dark:text-neutral-400"
+                  tick={{ fontSize: 10, fill: chart.axis }}
                 />
                 <YAxis
                   yAxisId="left"
                   orientation="left"
-                  tick={{ fontSize: 10 }}
-                  className="text-neutral-500 dark:text-neutral-500"
-                  label={{ value: "Email count", angle: -90, position: "insideLeft", fontSize: 10 }}
+                  tick={{ fontSize: 10, fill: chart.axisMuted }}
+                  label={{
+                    value: "Email count",
+                    angle: -90,
+                    position: "insideLeft",
+                    fontSize: 10,
+                    fill: chart.axisMuted,
+                  }}
                 />
                 <YAxis
                   yAxisId="right"
                   orientation="right"
-                  tick={{ fontSize: 10 }}
+                  tick={{ fontSize: 10, fill: chart.axisMuted }}
                   domain={[0, 100]}
                   tickFormatter={(v) => `${v}%`}
-                  className="text-neutral-500 dark:text-neutral-500"
-                  label={{ value: "% of total", angle: 90, position: "insideRight", fontSize: 10 }}
+                  label={{
+                    value: "% of total",
+                    angle: 90,
+                    position: "insideRight",
+                    fontSize: 10,
+                    fill: chart.axisMuted,
+                  }}
                 />
                 <Tooltip
-                  contentStyle={{ borderRadius: "8px" }}
+                  {...tt}
+                  contentStyle={{ ...tt.contentStyle, borderRadius: 8 }}
                   formatter={(value: number, name: string) => [name === "pct" ? `${value}%` : value, name === "pct" ? "% of total" : "Email count"]}
                   labelFormatter={(label) => `Category: ${label}`}
                 />
-                <Legend layout="horizontal" align="right" verticalAlign="top" wrapperStyle={{ paddingBottom: 8 }} />
+                <Legend
+                  layout="horizontal"
+                  align="right"
+                  verticalAlign="top"
+                  wrapperStyle={{ paddingBottom: 8, color: chart.axis }}
+                />
                 <Bar
                   yAxisId="left"
                   dataKey="count"
@@ -435,21 +455,22 @@ function DashboardAiCharts({
                 <AreaChart data={prioritySeriesData} margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
                   <defs>
                     <linearGradient id="priority-area-fill" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#8b5cf6" stopOpacity={0.45} />
-                      <stop offset="100%" stopColor="#8b5cf6" stopOpacity={0.08} />
+                      <stop offset="0%" stopColor="#8b5cf6" stopOpacity={chart.isDark ? 0.55 : 0.45} />
+                      <stop offset="100%" stopColor="#8b5cf6" stopOpacity={chart.isDark ? 0.12 : 0.08} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-neutral-200 dark:stroke-neutral-700" />
-                  <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-                  <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chart.grid} />
+                  <XAxis dataKey="name" tick={{ fontSize: 10, fill: chart.axis }} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: chart.axisMuted }} />
                   <Tooltip
-                    contentStyle={{ borderRadius: "8px" }}
+                    {...tt}
+                    contentStyle={{ ...tt.contentStyle, borderRadius: 8 }}
                     formatter={(value: number, _name: string, props: { payload?: { name?: string } }) => [
                       value,
                       props.payload?.name ?? "Priority",
                     ]}
                   />
-                  <Legend />
+                  <Legend wrapperStyle={{ color: chart.axis }} />
                   <Area
                     type="monotone"
                     dataKey="count"
@@ -503,28 +524,33 @@ function DashboardAiCharts({
                   <LineChart data={memberEscalationChartData} margin={{ top: 8, right: 8, left: 8, bottom: 56 }}>
                     <defs>
                       <linearGradient id="esc-line-fill" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#f97316" stopOpacity={0.35} />
-                        <stop offset="100%" stopColor="#f97316" stopOpacity={0.05} />
+                        <stop offset="0%" stopColor="#f97316" stopOpacity={chart.isDark ? 0.45 : 0.35} />
+                        <stop offset="100%" stopColor="#f97316" stopOpacity={chart.isDark ? 0.1 : 0.05} />
                       </linearGradient>
                     </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-neutral-200 dark:stroke-neutral-700" />
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chart.grid} />
                     <XAxis
                       dataKey="name"
-                      tick={{ fontSize: 10 }}
+                      tick={{ fontSize: 10, fill: chart.axis }}
                       angle={-40}
                       textAnchor="end"
                       height={56}
                       interval={0}
-                      className="text-neutral-600 dark:text-neutral-400"
                     />
                     <YAxis
-                      tick={{ fontSize: 10 }}
+                      tick={{ fontSize: 10, fill: chart.axisMuted }}
                       allowDecimals={false}
-                      className="text-neutral-500"
-                      label={{ value: "Count", angle: -90, position: "insideLeft", fontSize: 10 }}
+                      label={{
+                        value: "Count",
+                        angle: -90,
+                        position: "insideLeft",
+                        fontSize: 10,
+                        fill: chart.axisMuted,
+                      }}
                     />
                     <Tooltip
-                      contentStyle={{ borderRadius: "8px" }}
+                      {...tt}
+                      contentStyle={{ ...tt.contentStyle, borderRadius: 8 }}
                       formatter={(value: number, _n: string, item: { payload?: { email?: string } }) => [
                         `${value}`,
                         item.payload?.email ? `${item.payload.email}` : "Escalations",
@@ -577,11 +603,12 @@ function DashboardAiCharts({
               <div className="h-80">
                 <ResponsiveContainer width="100%" height="100%">
                   <RadarChart data={memberLeadChartData} outerRadius="72%">
-                    <PolarGrid stroke="#dbeafe" />
-                    <PolarAngleAxis dataKey="name" tick={{ fontSize: 10 }} />
-                    <PolarRadiusAxis allowDecimals={false} tick={{ fontSize: 10 }} />
+                    <PolarGrid stroke={chart.polarGrid} />
+                    <PolarAngleAxis dataKey="name" tick={{ fontSize: 10, fill: chart.axis }} />
+                    <PolarRadiusAxis allowDecimals={false} tick={{ fontSize: 10, fill: chart.axisMuted }} />
                     <Tooltip
-                      contentStyle={{ borderRadius: "8px" }}
+                      {...tt}
+                      contentStyle={{ ...tt.contentStyle, borderRadius: 8 }}
                       formatter={(_value: number, _n: string, item: { payload?: { count?: number; email?: string } }) => [
                         `${item.payload?.count ?? 0}`,
                         item.payload?.email ? `${item.payload.email}` : "Leads",
@@ -606,7 +633,7 @@ function DashboardAiCharts({
   );
 }
 
-export default function DashboardPage() {
+function DashboardPageContent() {
   const { data: session, status } = useSession();
   const searchParams = useSearchParams();
   const api = useMemo(
@@ -1013,14 +1040,14 @@ export default function DashboardPage() {
         target: activityMapRef,
       },
       {
-        title: "Departments and teams",
-        description: "Use this card to expand each department and see members, reporting structure, and team distribution.",
-        target: departmentsCardRef,
-      },
-      {
         title: "Meetings and calendar",
         description: "This calendar panel shows meeting invites. Use Refresh, month navigation, and date selection to review schedules.",
         target: meetingsCardRef,
+      },
+      {
+        title: "Departments and teams",
+        description: "Use this card to expand each department and see members, reporting structure, and team distribution.",
+        target: departmentsCardRef,
       },
     ],
     []
@@ -1167,42 +1194,14 @@ export default function DashboardPage() {
               </div>
               <span className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">Sync mails by date range</span>
             </div>
-            <div className="flex min-w-0 flex-wrap items-center gap-2 sm:flex-nowrap">
-              <div className="relative min-w-0 flex-1">
-                {!syncFromDate && (
-                  <span className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-sm text-neutral-500 dark:text-neutral-400">
-                    From
-                  </span>
-                )}
-                <input
-                  type="date"
-                  value={syncFromDate}
-                  onChange={(e) => setSyncFromDate(e.target.value)}
-                  className={cn(
-                    "h-10 min-w-0 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100",
-                    !syncFromDate && "text-transparent"
-                  )}
-                  aria-label="Mail sync from date"
-                />
-              </div>
-              <div className="relative min-w-0 flex-1">
-                {!syncToDate && (
-                  <span className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-sm text-neutral-500 dark:text-neutral-400">
-                    To
-                  </span>
-                )}
-                <input
-                  type="date"
-                  value={syncToDate}
-                  onChange={(e) => setSyncToDate(e.target.value)}
-                  className={cn(
-                    "h-10 min-w-0 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100",
-                    !syncToDate && "text-transparent"
-                  )}
-                  aria-label="Mail sync to date"
-                />
-              </div>
-            </div>
+            <DateRangePair
+              from={syncFromDate}
+              to={syncToDate}
+              onFromChange={setSyncFromDate}
+              onToChange={setSyncToDate}
+              className="min-w-0 w-full"
+              fieldClassName="relative min-w-0 flex-1"
+            />
             <Button
               type="button"
               onClick={onSyncByDateRange}
@@ -1323,13 +1322,165 @@ export default function DashboardPage() {
               </ul>
             </div>
           )}
+          <div
+            ref={meetingsCardRef}
+            className={cn(
+              "overflow-hidden rounded-3xl border border-sky-100 bg-gradient-to-br from-white via-sky-50 to-cyan-50 p-5 shadow-md shadow-sky-100/60 dark:border-neutral-700 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 dark:shadow-none",
+              isActiveTourSection(3) && "ring-2 ring-sky-400/70",
+              isBlurredTourSection(3) && "opacity-55"
+            )}
+          >
+            <div className="mb-4 flex items-start justify-between gap-3 border-b border-sky-100/90 pb-3 dark:border-neutral-700">
+              <div className="min-w-0 flex-1">
+                <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">Meetings</h2>
+              </div>
+              <button
+                type="button"
+                className="shrink-0 rounded-lg border border-sky-200 bg-white/80 p-2 text-sky-600 shadow-sm transition hover:bg-sky-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
+                aria-label="Refresh calendar"
+                onClick={refreshMeetingsFromMailbox}
+              >
+                <RefreshCw className={`h-4 w-4 ${calendarLoading ? "animate-spin" : ""}`} />
+              </button>
+            </div>
+            {calendarError && (
+              <p className="mb-3 rounded-xl border border-amber-200/90 bg-amber-50/90 px-3 py-2 text-[11px] text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+                {calendarError}
+              </p>
+            )}
+            {calendarLoading && calendarEvents.length === 0 && !calendarError && (
+              <div className="space-y-2">
+                <div className="h-14 animate-pulse rounded-xl bg-sky-100/80 dark:bg-neutral-700" />
+                <div className="h-10 animate-pulse rounded-xl bg-sky-50 dark:bg-neutral-800" />
+              </div>
+            )}
+            {!(calendarLoading && calendarEvents.length === 0 && !calendarError) && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    className="rounded-lg border border-sky-200 bg-white/80 px-2.5 py-1 text-xs font-medium text-sky-700 hover:bg-sky-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100 dark:hover:bg-neutral-700"
+                    onClick={() =>
+                      setCalendarMonthStart((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1))
+                    }
+                  >
+                    Prev
+                  </button>
+                  <p className="text-xs font-semibold text-sky-900 dark:text-neutral-100">
+                    {calendarMonthStart.toLocaleDateString(undefined, { month: "long", year: "numeric" })}
+                  </p>
+                  <button
+                    type="button"
+                    className="rounded-lg border border-sky-200 bg-white/80 px-2.5 py-1 text-xs font-medium text-sky-700 hover:bg-sky-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100 dark:hover:bg-neutral-700"
+                    onClick={() =>
+                      setCalendarMonthStart((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1))
+                    }
+                  >
+                    Next
+                  </button>
+                </div>
+                <div className="grid grid-cols-7 gap-1 rounded-lg bg-sky-100/70 px-1 py-1 text-center text-[10px] font-semibold uppercase tracking-wide text-sky-800 dark:border dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100">
+                  {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((wd) => (
+                    <div key={wd} className="py-1">{wd}</div>
+                  ))}
+                </div>
+                <div className="grid grid-cols-7 gap-1">
+                  {calendarDays.map((d) => {
+                    const isSelected = d.key === selectedMeetingDateKey;
+                    const isToday = d.key === toDateKey(new Date());
+                    return (
+                      <button
+                        key={d.key}
+                        type="button"
+                        onClick={() => setSelectedMeetingDateKey(d.key)}
+                        className={`relative min-h-[46px] rounded-lg border px-1 py-1 text-left text-[11px] transition ${d.inMonth
+                          ? "border-sky-200 bg-white/90 text-neutral-800 shadow-[0_1px_0_rgba(14,165,233,0.08)] dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100"
+                          : "border-sky-100/90 bg-sky-50/60 text-sky-500 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-500"
+                          } ${isSelected
+                            ? "ring-2 ring-sky-500 ring-offset-1 ring-offset-white dark:border-sky-500/50 dark:bg-neutral-700 dark:ring-offset-neutral-900"
+                            : "hover:border-sky-300 hover:bg-sky-50/80 dark:hover:border-neutral-500 dark:hover:bg-neutral-700"
+                          }`}
+                      >
+                        <span className={`${isToday ? "font-bold text-sky-700 dark:text-sky-300" : ""}`}>
+                          {d.date.getDate()}
+                        </span>
+                        {d.count > 0 && (
+                          <span className="absolute bottom-1 right-1 rounded-full bg-gradient-to-r from-sky-500 to-indigo-500 px-1.5 text-[10px] font-medium text-white shadow-sm">
+                            {d.count}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+                <LenisScrollArea className="max-h-56 min-h-0 pr-1" contentClassName="space-y-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-sky-800 dark:text-neutral-200">
+                    {selectedMeetings.length > 0
+                      ? `Meetings on ${selectedMeetingDateKey}`
+                      : `No meetings on ${selectedMeetingDateKey}`}
+                  </p>
+                  {selectedMeetings.map((ev) => (
+                    <li
+                      key={ev.id ?? `${ev.subject}-${ev.start?.dateTime}`}
+                      className={`list-none rounded-xl border border-sky-100/90 bg-white/75 p-3 shadow-sm dark:border-neutral-700 dark:bg-neutral-800/60 ${ev.isCancelled ? "opacity-75" : ""
+                        }`}
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <p
+                          className={`min-w-0 flex-1 text-sm font-medium text-neutral-900 dark:text-neutral-100 ${ev.isCancelled ? "line-through" : ""
+                            }`}
+                        >
+                          {ev.subject}
+                        </p>
+                        {!ev.isCancelled && (
+                          <span className="shrink-0 rounded-md bg-gradient-to-r from-sky-500 to-indigo-500 px-1.5 py-0.5 text-[10px] font-semibold text-white shadow-sm">
+                            {formatMeetingTimeRange(ev)}
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-1 text-xs font-medium text-neutral-700 dark:text-neutral-300">
+                        Scheduled: {formatMomTimeRange(ev)}
+                      </p>
+                      {ev.location ? (
+                        <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">{ev.location}</p>
+                      ) : null}
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {ev.joinUrl && !ev.isCancelled && (
+                          <a
+                            href={ev.joinUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 rounded-md bg-gradient-to-r from-sky-600 to-indigo-600 px-2 py-1 text-[11px] font-semibold text-white shadow-sm hover:from-sky-700 hover:to-indigo-700 dark:from-sky-500 dark:to-indigo-500"
+                          >
+                            <Video className="h-3 w-3" />
+                            {onlineMeetingLinkLabel(ev.joinUrl)}
+                          </a>
+                        )}
+                        {ev.webLink && (
+                          <a
+                            href={ev.webLink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-700 hover:underline dark:text-neutral-200"
+                          >
+                            <ExternalLink className="h-3 w-3" />
+                            Open in Outlook
+                          </a>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </LenisScrollArea>
+              </div>
+            )}
+          </div>
           {me?.isAdmin ? (
             <div
               ref={departmentsCardRef}
               className={cn(
                 "overflow-hidden rounded-3xl border border-indigo-100 bg-gradient-to-br from-white via-indigo-50/80 to-violet-50/90 p-5 shadow-md shadow-indigo-100/50 dark:border-neutral-700 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 dark:shadow-none",
-                isActiveTourSection(3) && "ring-2 ring-indigo-400/70",
-                isBlurredTourSection(3) && "opacity-55"
+                isActiveTourSection(4) && "ring-2 ring-indigo-400/70",
+                isBlurredTourSection(4) && "opacity-55"
               )}
             >
               <div className="mb-4 flex items-start justify-between gap-3 border-b border-indigo-100/90 pb-3 dark:border-neutral-700">
@@ -1418,14 +1569,13 @@ export default function DashboardPage() {
               ref={departmentsCardRef}
               className={cn(
                 "overflow-hidden rounded-3xl border border-indigo-100 bg-gradient-to-br from-white via-indigo-50/80 to-violet-50/90 p-5 shadow-md shadow-indigo-100/50 dark:border-neutral-700 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 dark:shadow-none",
-                isActiveTourSection(3) && "ring-2 ring-indigo-400/70",
-                isBlurredTourSection(3) && "opacity-55"
+                isActiveTourSection(4) && "ring-2 ring-indigo-400/70",
+                isBlurredTourSection(4) && "opacity-55"
               )}
             >
               <div className="mb-4 flex items-start justify-between gap-3 border-b border-indigo-100/90 pb-3 dark:border-neutral-700">
                 <div>
                   <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">Reporting manager</h2>
-                  <p className="mt-0.5 text-[11px] text-indigo-700/80 dark:text-neutral-300">Your org line and department.</p>
                 </div>
                 <button
                   type="button"
@@ -1451,165 +1601,16 @@ export default function DashboardPage() {
               </div>
             </div>
           )}
-          <div
-            ref={meetingsCardRef}
-            className={cn(
-              "overflow-hidden rounded-3xl border border-sky-100 bg-gradient-to-br from-white via-sky-50 to-cyan-50 p-5 shadow-md shadow-sky-100/60 dark:border-neutral-700 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 dark:shadow-none",
-              isActiveTourSection(4) && "ring-2 ring-sky-400/70",
-              isBlurredTourSection(4) && "opacity-55"
-            )}
-          >
-            <div className="mb-4 flex items-start justify-between gap-3 border-b border-sky-100/90 pb-3 dark:border-neutral-700">
-              <div className="min-w-0 flex-1">
-                <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">Meetings</h2>
-              </div>
-              <button
-                type="button"
-                className="shrink-0 rounded-lg border border-sky-200 bg-white/80 p-2 text-sky-600 shadow-sm transition hover:bg-sky-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
-                aria-label="Refresh calendar"
-                onClick={refreshMeetingsFromMailbox}
-              >
-                <RefreshCw className={`h-4 w-4 ${calendarLoading ? "animate-spin" : ""}`} />
-              </button>
-            </div>
-            {calendarError && (
-              <p className="mb-3 rounded-xl border border-amber-200/90 bg-amber-50/90 px-3 py-2 text-[11px] text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
-                {calendarError}
-              </p>
-            )}
-            {calendarLoading && calendarEvents.length === 0 && !calendarError && (
-              <div className="space-y-2">
-                <div className="h-14 animate-pulse rounded-xl bg-sky-100/80 dark:bg-neutral-700" />
-                <div className="h-10 animate-pulse rounded-xl bg-sky-50 dark:bg-neutral-800" />
-              </div>
-            )}
-            {!calendarLoading && !calendarError && displayedCalendarEvents.length === 0 && (
-              <p className="rounded-xl border border-sky-100/80 bg-white/60 px-3 py-2.5 text-xs text-sky-900/80 dark:border-neutral-700 dark:bg-neutral-800/50 dark:text-neutral-300">
-                No meeting invites found for this window. Sync mail from History so invites can appear here.
-              </p>
-            )}
-            {displayedCalendarEvents.length > 0 && (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between gap-2">
-                  <button
-                    type="button"
-                    className="rounded-lg border border-sky-200 bg-white/80 px-2.5 py-1 text-xs font-medium text-sky-700 hover:bg-sky-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100 dark:hover:bg-neutral-700"
-                    onClick={() =>
-                      setCalendarMonthStart((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1))
-                    }
-                  >
-                    Prev
-                  </button>
-                  <p className="text-xs font-semibold text-sky-900 dark:text-neutral-100">
-                    {calendarMonthStart.toLocaleDateString(undefined, { month: "long", year: "numeric" })}
-                  </p>
-                  <button
-                    type="button"
-                    className="rounded-lg border border-sky-200 bg-white/80 px-2.5 py-1 text-xs font-medium text-sky-700 hover:bg-sky-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100 dark:hover:bg-neutral-700"
-                    onClick={() =>
-                      setCalendarMonthStart((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1))
-                    }
-                  >
-                    Next
-                  </button>
-                </div>
-                <div className="grid grid-cols-7 gap-1 rounded-lg bg-sky-100/70 px-1 py-1 text-center text-[10px] font-semibold uppercase tracking-wide text-sky-800 dark:border dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100">
-                  {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((wd) => (
-                    <div key={wd} className="py-1">{wd}</div>
-                  ))}
-                </div>
-                <div className="grid grid-cols-7 gap-1">
-                  {calendarDays.map((d) => {
-                    const isSelected = d.key === selectedMeetingDateKey;
-                    const isToday = d.key === toDateKey(new Date());
-                    return (
-                      <button
-                        key={d.key}
-                        type="button"
-                        onClick={() => setSelectedMeetingDateKey(d.key)}
-                        className={`relative min-h-[46px] rounded-lg border px-1 py-1 text-left text-[11px] transition ${d.inMonth
-                          ? "border-sky-200 bg-white/90 text-neutral-800 shadow-[0_1px_0_rgba(14,165,233,0.08)] dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100"
-                          : "border-sky-100/90 bg-sky-50/60 text-sky-500 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-500"
-                          } ${isSelected
-                            ? "ring-2 ring-sky-500 ring-offset-1 ring-offset-white dark:border-sky-500/50 dark:bg-neutral-700 dark:ring-offset-neutral-900"
-                            : "hover:border-sky-300 hover:bg-sky-50/80 dark:hover:border-neutral-500 dark:hover:bg-neutral-700"
-                          }`}
-                      >
-                        <span className={`${isToday ? "font-bold text-sky-700 dark:text-sky-300" : ""}`}>
-                          {d.date.getDate()}
-                        </span>
-                        {d.count > 0 && (
-                          <span className="absolute bottom-1 right-1 rounded-full bg-gradient-to-r from-sky-500 to-indigo-500 px-1.5 text-[10px] font-medium text-white shadow-sm">
-                            {d.count}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-                <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-sky-800 dark:text-neutral-200">
-                    {selectedMeetings.length > 0
-                      ? `Meetings on ${selectedMeetingDateKey}`
-                      : `No meetings on ${selectedMeetingDateKey}`}
-                  </p>
-                  {selectedMeetings.map((ev) => (
-                    <li
-                      key={ev.id ?? `${ev.subject}-${ev.start?.dateTime}`}
-                      className={`list-none rounded-xl border border-sky-100/90 bg-white/75 p-3 shadow-sm dark:border-neutral-700 dark:bg-neutral-800/60 ${ev.isCancelled ? "opacity-75" : ""
-                        }`}
-                    >
-                      <div className="flex flex-wrap items-start justify-between gap-2">
-                        <p
-                          className={`min-w-0 flex-1 text-sm font-medium text-neutral-900 dark:text-neutral-100 ${ev.isCancelled ? "line-through" : ""
-                            }`}
-                        >
-                          {ev.subject}
-                        </p>
-                        {!ev.isCancelled && (
-                          <span className="shrink-0 rounded-md bg-gradient-to-r from-sky-500 to-indigo-500 px-1.5 py-0.5 text-[10px] font-semibold text-white shadow-sm">
-                            {formatMeetingTimeRange(ev)}
-                          </span>
-                        )}
-                      </div>
-                      <p className="mt-1 text-xs font-medium text-neutral-700 dark:text-neutral-300">
-                        Scheduled: {formatMomTimeRange(ev)}
-                      </p>
-                      {ev.location ? (
-                        <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">{ev.location}</p>
-                      ) : null}
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {ev.joinUrl && !ev.isCancelled && (
-                          <a
-                            href={ev.joinUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 rounded-md bg-gradient-to-r from-sky-600 to-indigo-600 px-2 py-1 text-[11px] font-semibold text-white shadow-sm hover:from-sky-700 hover:to-indigo-700 dark:from-sky-500 dark:to-indigo-500"
-                          >
-                            <Video className="h-3 w-3" />
-                            {onlineMeetingLinkLabel(ev.joinUrl)}
-                          </a>
-                        )}
-                        {ev.webLink && (
-                          <a
-                            href={ev.webLink}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-700 hover:underline dark:text-neutral-200"
-                          >
-                            <ExternalLink className="h-3 w-3" />
-                            Open in Outlook
-                          </a>
-                        )}
-                      </div>
-                    </li>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
         </div>
       </div>
     </div>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-sm text-neutral-500">Loading…</div>}>
+      <DashboardPageContent />
+    </Suspense>
   );
 }
