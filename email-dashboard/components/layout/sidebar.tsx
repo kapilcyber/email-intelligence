@@ -193,7 +193,7 @@ function CollapsedSidebarFlyout({
   );
 }
 
-function DepartmentsNavSection({ collapsed }: { collapsed: boolean }) {
+function DepartmentsNavSection({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }) {
   const pathname = usePathname();
   const { data: session, status } = useSession();
   const api = useMemo(
@@ -275,7 +275,10 @@ function DepartmentsNavSection({ collapsed }: { collapsed: boolean }) {
                   <Link
                     href={href}
                     role="menuitem"
-                    onClick={() => setFlyoutOpen(false)}
+                    onClick={() => {
+                      setFlyoutOpen(false);
+                      onNavigate?.();
+                    }}
                     className={cn(
                       "flex items-center justify-between gap-3 px-3 py-2 text-sm",
                       active
@@ -328,6 +331,7 @@ function DepartmentsNavSection({ collapsed }: { collapsed: boolean }) {
               <li key={slug}>
                 <Link
                   href={href}
+                  onClick={() => onNavigate?.()}
                   className={cn(
                     "flex items-center justify-between gap-2 rounded-md px-2 py-2 text-sm transition-colors",
                     active ? "bg-accent font-medium text-accent-foreground" : "text-muted-foreground hover:bg-muted"
@@ -346,7 +350,15 @@ function DepartmentsNavSection({ collapsed }: { collapsed: boolean }) {
 }
 
 /** Admin/Manager: expandable Teams filtered by allowed department when provided. */
-function AdminTeamsNavSection({ collapsed, allowedDepartment }: { collapsed: boolean; allowedDepartment?: string | null }) {
+function AdminTeamsNavSection({
+  collapsed,
+  allowedDepartment,
+  onNavigate,
+}: {
+  collapsed: boolean;
+  allowedDepartment?: string | null;
+  onNavigate?: () => void;
+}) {
   const pathname = usePathname();
   const { data: session, status } = useSession();
   const api = useMemo(
@@ -415,7 +427,10 @@ function AdminTeamsNavSection({ collapsed, allowedDepartment }: { collapsed: boo
                 <Link
                   href="/admin/teams"
                   role="menuitem"
-                  onClick={() => setFlyoutOpen(false)}
+                  onClick={() => {
+                    setFlyoutOpen(false);
+                    onNavigate?.();
+                  }}
                   className={cn(
                     "flex items-center justify-between gap-3 px-3 py-2 text-sm",
                     pathname === "/admin/teams"
@@ -435,7 +450,10 @@ function AdminTeamsNavSection({ collapsed, allowedDepartment }: { collapsed: boo
                   <Link
                     href={href}
                     role="menuitem"
-                    onClick={() => setFlyoutOpen(false)}
+                    onClick={() => {
+                      setFlyoutOpen(false);
+                      onNavigate?.();
+                    }}
                     className={cn(
                       "flex items-center justify-between gap-3 px-3 py-2 text-sm",
                       active
@@ -486,6 +504,7 @@ function AdminTeamsNavSection({ collapsed, allowedDepartment }: { collapsed: boo
             <li>
               <Link
                 href="/admin/teams"
+                onClick={() => onNavigate?.()}
                 className={cn(
                   "flex items-center justify-between gap-2 rounded-md px-2 py-2 text-sm transition-colors",
                   pathname === "/admin/teams"
@@ -504,6 +523,7 @@ function AdminTeamsNavSection({ collapsed, allowedDepartment }: { collapsed: boo
               <li key={t.id}>
                 <Link
                   href={href}
+                  onClick={() => onNavigate?.()}
                   className={cn(
                     "flex items-center justify-between gap-2 rounded-md px-2 py-2 text-sm transition-colors",
                     active ? "bg-accent font-medium text-accent-foreground" : "text-muted-foreground hover:bg-muted"
@@ -527,12 +547,18 @@ export function Sidebar({
   onToggle,
   navScrollRef,
   navScrollContentRef,
+  isMobile = false,
+  mobileOpen = false,
+  onMobileClose,
 }: {
   collapsed: boolean;
   onToggle: () => void;
   /** Scrollport for Lenis (dashboard layout); smooth scroll matches main content. */
   navScrollRef?: React.Ref<HTMLElement>;
   navScrollContentRef?: React.Ref<HTMLDivElement>;
+  isMobile?: boolean;
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
 }) {
   const pathname = usePathname();
   const { data: session, status } = useSession();
@@ -585,6 +611,7 @@ export function Sidebar({
   const showFullAdminNav = isAdmin;
   const showElevatedAdminNav = showFullAdminNav || showManagerAdminNav;
   const name = session?.user?.name ?? session?.user?.email ?? "User";
+  const navCollapsed = collapsed && !isMobile;
 
   const renderNavLink = (href: string, label: string, Icon: typeof LayoutDashboard) => {
     let active = false;
@@ -596,23 +623,24 @@ export function Sidebar({
       <Link
         key={href}
         href={href}
+        onClick={() => isMobile && onMobileClose?.()}
         className={cn(
           "flex min-w-0 items-center overflow-hidden rounded-lg py-2.5 text-sm font-medium transition-[padding,gap,color,background-color] " +
           SIDEBAR_LAYOUT_ANIM,
           active
             ? "bg-foreground text-background"
             : "text-muted-foreground hover:bg-muted hover:text-foreground",
-          collapsed ? "justify-center gap-0 px-2" : "gap-3 px-3"
+          navCollapsed ? "justify-center gap-0 px-2" : "gap-3 px-3"
         )}
-        title={collapsed ? label : undefined}
+        title={navCollapsed ? label : undefined}
       >
         <Icon className="h-5 w-5 shrink-0" />
         <span
           className={cn(
             "truncate transition-opacity " + SIDEBAR_LABEL_FADE,
-            collapsed ? "w-0 shrink-0 overflow-hidden opacity-0" : "min-w-0 flex-1 opacity-100"
+            navCollapsed ? "w-0 shrink-0 overflow-hidden opacity-0" : "min-w-0 flex-1 opacity-100"
           )}
-          aria-hidden={collapsed}
+          aria-hidden={navCollapsed}
         >
           {label}
         </span>
@@ -623,39 +651,48 @@ export function Sidebar({
   return (
     <aside
       className={cn(
-        "flex shrink-0 flex-col overflow-x-hidden border-r border-border bg-panel-elevated transition-[width] [contain:layout] " +
+        "flex shrink-0 flex-col overflow-x-hidden border-r border-border bg-panel-elevated [contain:layout] " +
           SIDEBAR_LAYOUT_ANIM,
-        collapsed ? "w-[4rem]" : "w-64"
+        isMobile
+          ? cn(
+              "fixed inset-y-0 left-0 z-[560] w-[min(18rem,88vw)] pt-[env(safe-area-inset-top,0px)] shadow-xl transition-transform motion-reduce:transition-none",
+              mobileOpen ? "translate-x-0" : "-translate-x-full pointer-events-none"
+            )
+          : cn("transition-[width]", navCollapsed ? "w-[4rem]" : "w-64")
       )}
+      aria-hidden={isMobile && !mobileOpen}
     >
       <div
         className={cn(
           "flex h-16 shrink-0 items-center overflow-hidden border-b border-border bg-panel-elevated shadow-sm transition-[padding,gap] " +
             SIDEBAR_LAYOUT_ANIM,
-          collapsed ? "justify-center px-2" : "gap-3 px-4"
+          navCollapsed ? "justify-center px-2" : "gap-3 px-4"
         )}
       >
         <div
           className={cn(
             "min-w-0 overflow-hidden leading-snug transition-opacity " + SIDEBAR_LABEL_FADE,
-            collapsed ? "w-0 shrink-0 opacity-0" : "max-w-[min(100%,12rem)] flex-1 opacity-100"
+            navCollapsed ? "w-0 shrink-0 opacity-0" : "max-w-[min(100%,12rem)] flex-1 opacity-100"
           )}
-          aria-hidden={collapsed}
+          aria-hidden={navCollapsed}
         >
           <p className="truncate text-base font-bold leading-snug tracking-tight text-foreground">{name}</p>
           <p className="mt-1 truncate text-sm font-semibold leading-snug text-muted-foreground">{roleDisplay}</p>
         </div>
         <button
           type="button"
-          onClick={onToggle}
+          onClick={() => {
+            if (isMobile) onMobileClose?.();
+            else onToggle();
+          }}
           className={cn(
             "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors " +
               SIDEBAR_LABEL_FADE,
             "hover:bg-muted hover:text-foreground"
           )}
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-label={isMobile ? "Close navigation menu" : navCollapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
-          {collapsed ? (
+          {navCollapsed && !isMobile ? (
             <ChevronRight className="h-6 w-6" aria-hidden />
           ) : (
             <PanelLeftClose className="h-6 w-6" aria-hidden />
@@ -667,12 +704,15 @@ export function Sidebar({
         ref={navScrollRef}
         className={cn(
           "flex min-h-0 flex-1 overflow-auto py-2 transition-[padding] " + SIDEBAR_LAYOUT_ANIM,
-          collapsed ? "px-2" : "px-3"
+          navCollapsed ? "px-2" : "px-3"
         )}
       >
         <div ref={navScrollContentRef} className="w-full space-y-0.5">
           {navItemsTop.map(({ href, label, icon }) => renderNavLink(href, label, icon))}
-          <DepartmentsNavSection collapsed={collapsed} />
+          <DepartmentsNavSection
+            collapsed={navCollapsed}
+            onNavigate={isMobile ? onMobileClose : undefined}
+          />
           {navItemsAfterDepartments.map(({ href, label, icon }) => renderNavLink(href, label, icon))}
           {showElevatedAdminNav && (
             <>
@@ -680,15 +720,16 @@ export function Sidebar({
                 className={cn(
                   "overflow-hidden px-3 py-2 text-sm font-semibold uppercase tracking-wider text-muted-foreground transition-opacity " +
                     SIDEBAR_LABEL_FADE,
-                  collapsed ? "pointer-events-none mt-0 mb-0 h-0 py-0 opacity-0" : "mt-4 mb-2 h-auto opacity-100"
+                  navCollapsed ? "pointer-events-none mt-0 mb-0 h-0 py-0 opacity-0" : "mt-4 mb-2 h-auto opacity-100"
                 )}
-                aria-hidden={collapsed}
+                aria-hidden={navCollapsed}
               >
                 {showManagerAdminNav ? "Management" : "Admin"}
               </p>
               <AdminTeamsNavSection
-                collapsed={collapsed}
+                collapsed={navCollapsed}
                 allowedDepartment={showManagerAdminNav ? managerDepartment : null}
+                onNavigate={isMobile ? onMobileClose : undefined}
               />
               {(showFullAdminNav ? adminNavItemsAll : managerAdminNavItems)
                 .filter((item) => showFullAdminNav || !ADMIN_ONLY_HREFS.has(item.href))
@@ -698,23 +739,24 @@ export function Sidebar({
                     <Link
                       key={href}
                       href={href}
+                      onClick={() => isMobile && onMobileClose?.()}
                       className={cn(
                         "flex min-w-0 items-center overflow-hidden rounded-lg py-2.5 text-sm font-medium transition-[padding,gap,color,background-color] " +
                           SIDEBAR_LAYOUT_ANIM,
                         isActive
                           ? "bg-foreground text-background"
                           : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                        collapsed ? "justify-center gap-0 px-2" : "gap-3 px-3"
+                        navCollapsed ? "justify-center gap-0 px-2" : "gap-3 px-3"
                       )}
-                      title={collapsed ? label : undefined}
+                      title={navCollapsed ? label : undefined}
                     >
                       <Icon className="h-5 w-5 shrink-0" />
                       <span
                         className={cn(
                           "truncate transition-opacity " + SIDEBAR_LABEL_FADE,
-                          collapsed ? "w-0 shrink-0 overflow-hidden opacity-0" : "min-w-0 flex-1 opacity-100"
+                          navCollapsed ? "w-0 shrink-0 overflow-hidden opacity-0" : "min-w-0 flex-1 opacity-100"
                         )}
-                        aria-hidden={collapsed}
+                        aria-hidden={navCollapsed}
                       >
                         {label}
                       </span>

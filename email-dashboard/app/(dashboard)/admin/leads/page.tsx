@@ -303,24 +303,25 @@ export default function AdminLeadsPage() {
   };
 
   return (
-    <div className="flex w-full min-w-0 flex-col gap-6 md:gap-8">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <header className="min-w-0">
-          <h1 className="text-2xl font-bold tracking-tight text-neutral-900 dark:text-neutral-100">Leads</h1>
+    <div className="flex w-full min-w-0 max-w-full flex-col gap-4 md:gap-6 lg:gap-8">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+        <header className="min-w-0 flex-1">
+          <h1 className="text-xl font-bold tracking-tight text-neutral-900 dark:text-neutral-100 sm:text-2xl">Leads</h1>
           {selectedUserEmail && (
-            <p className="mt-1 truncate text-sm text-neutral-500 dark:text-neutral-400">
-              Mailbox: <span className="font-medium text-neutral-700 dark:text-neutral-300">{selectedUserEmail}</span>
+            <p className="mt-1 break-words text-xs leading-relaxed text-neutral-500 dark:text-neutral-400 sm:text-sm">
+              Mailbox:{" "}
+              <span className="font-medium text-neutral-700 dark:text-neutral-300">{selectedUserEmail}</span>
             </p>
           )}
         </header>
         {selectedUserEmail && (
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex rounded-lg border border-neutral-200 p-0.5 dark:border-neutral-600">
+          <div className="flex w-full min-w-0 flex-col gap-3 sm:w-auto sm:shrink-0 sm:items-end">
+            <div className="grid w-full grid-cols-2 gap-2 rounded-lg border border-neutral-200 p-1 dark:border-neutral-600 sm:flex sm:w-auto sm:gap-0 sm:p-0.5">
               <button
                 type="button"
                 onClick={() => (setMailKindTab("leads"), setPage(1))}
                 className={cn(
-                  "rounded-md px-3 py-1.5 text-xs font-medium sm:text-sm",
+                  "min-h-10 rounded-md px-3 py-2 text-xs font-medium sm:min-h-0 sm:py-1.5 sm:text-sm",
                   mailKindTab === "leads"
                     ? "bg-[#1E1E1E] text-white dark:bg-neutral-700"
                     : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-700"
@@ -332,34 +333,36 @@ export default function AdminLeadsPage() {
                 type="button"
                 onClick={() => (setMailKindTab("retag"), setRetagPage(1))}
                 className={cn(
-                  "flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-medium sm:text-sm",
+                  "flex min-h-10 items-center justify-center gap-1 rounded-md px-3 py-2 text-xs font-medium sm:min-h-0 sm:py-1.5 sm:text-sm",
                   mailKindTab === "retag"
                     ? "bg-[#1E1E1E] text-white dark:bg-neutral-700"
                     : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-700"
                 )}
               >
-                <Tags className="h-3.5 w-3.5" />
+                <Tags className="h-3.5 w-3.5 shrink-0" />
                 ReTag
               </button>
             </div>
-            <div className="flex rounded-lg border border-neutral-200 p-0.5 dark:border-neutral-600">
-              {(["all", "analytics", "table"] as const).map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  onClick={() => setViewMode(mode)}
-                  className={cn(
-                    "rounded-md px-3 py-1.5 text-xs font-medium capitalize sm:text-sm",
-                    viewMode === mode
-                      ? "bg-[#1E1E1E] text-white dark:bg-neutral-700"
-                      : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-700"
-                  )}
-                >
-                  {mode === "all" ? "All" : mode === "analytics" ? "Analytics only" : "Table only"}
-                </button>
-              ))}
-            </div>
-            <div className="flex items-center gap-2">
+            {mailKindTab === "leads" && (
+              <div className="flex w-full flex-col gap-1 rounded-lg border border-neutral-200 p-1 dark:border-neutral-600 sm:w-auto sm:inline-flex sm:flex-row sm:flex-wrap sm:p-0.5">
+                {(["all", "analytics", "table"] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setViewMode(mode)}
+                    className={cn(
+                      "min-h-10 w-full rounded-md px-3 py-2 text-left text-xs font-medium capitalize sm:min-h-0 sm:w-auto sm:py-1.5 sm:text-sm",
+                      viewMode === mode
+                        ? "bg-[#1E1E1E] text-white dark:bg-neutral-700"
+                        : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-700"
+                    )}
+                  >
+                    {mode === "all" ? "All" : mode === "analytics" ? "Analytics only" : "Table only"}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="flex w-full min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
               <Select
                 value={dateRange}
                 onValueChange={(v) => {
@@ -367,7 +370,7 @@ export default function AdminLeadsPage() {
                   setPage(1);
                 }}
               >
-                <SelectTrigger className="h-10 w-[160px] rounded-lg border-neutral-300 dark:border-neutral-600">
+                <SelectTrigger className="h-10 w-full min-w-0 rounded-lg border-neutral-300 dark:border-neutral-600 sm:w-[160px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -378,18 +381,22 @@ export default function AdminLeadsPage() {
                 </SelectContent>
               </Select>
               {dateRange === "custom" && (
-                <DateRangePair
-                  from={customFrom}
-                  to={customTo}
-                  onFromChange={(v) => {
-                    setCustomFrom(v);
-                    setPage(1);
-                  }}
-                  onToChange={(v) => {
-                    setCustomTo(v);
-                    setPage(1);
-                  }}
-                />
+                <div className="glass-surface w-full min-w-0 rounded-xl p-2 sm:p-3">
+                  <DateRangePair
+                    from={customFrom}
+                    to={customTo}
+                    onFromChange={(v) => {
+                      setCustomFrom(v);
+                      setPage(1);
+                    }}
+                    onToChange={(v) => {
+                      setCustomTo(v);
+                      setPage(1);
+                    }}
+                    className="w-full min-w-0"
+                    fieldClassName="relative min-w-0 flex-1"
+                  />
+                </div>
               )}
             </div>
           </div>
@@ -398,64 +405,104 @@ export default function AdminLeadsPage() {
 
       {error && (
         <div className="rounded-xl border border-red-200/80 bg-red-50/90 p-3 text-sm text-red-800 backdrop-blur-sm dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">
-          {error}
+          <p className="break-words">{error}</p>
         </div>
       )}
 
       {!selectedUserEmail && (
-        <section className="overflow-hidden rounded-3xl border border-indigo-100 bg-gradient-to-br from-white via-indigo-50/80 to-violet-50/90 p-5 shadow-md shadow-indigo-100/50 dark:border-neutral-700 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 dark:shadow-none sm:p-6">
-          <CardHeader className="p-0 pb-4">
+        <section className="min-w-0 overflow-hidden rounded-3xl border border-indigo-100 bg-gradient-to-br from-white via-indigo-50/80 to-violet-50/90 p-4 shadow-md shadow-indigo-100/50 dark:border-neutral-700 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 dark:shadow-none sm:p-6">
+          <CardHeader className="p-0 pb-3 sm:pb-4">
             <CardTitle className="flex items-center gap-2 text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-              <Users className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+              <Users className="h-5 w-5 shrink-0 text-indigo-600 dark:text-indigo-400" />
               Users
             </CardTitle>
+            <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400 md:hidden">Tap a user to open their mailbox leads.</p>
           </CardHeader>
           <CardContent className="p-0">
             {userCountsLoading ? (
-              <Skeleton className="h-64 w-full rounded-lg" />
+              <Skeleton className="h-48 w-full rounded-lg sm:h-64" />
             ) : userCounts.length === 0 ? (
               <p className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">No users found.</p>
             ) : (
-              <LenisScrollArea
-                axis="horizontal"
-                className="rounded-xl border border-neutral-200/80 bg-white/40 dark:border-neutral-700 dark:bg-neutral-800/30"
-              >
-                <table className="w-full text-left text-sm">
-                  <thead className="border-b border-neutral-200 bg-neutral-50/90 dark:border-neutral-700 dark:bg-neutral-800/50">
-                    <tr>
-                      <th className="px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">User</th>
-                      <th className="px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">Email</th>
-                      <th className="px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">Lead count</th>
-                      <th className="px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-neutral-200 dark:divide-neutral-700">
-                    {userCounts.map((u) => (
-                      <tr
-                        key={u.email}
-                        className="cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/50"
+              <>
+                <ul className="divide-y divide-neutral-200 rounded-xl border border-neutral-200/80 bg-white/50 dark:divide-neutral-700 dark:border-neutral-700 dark:bg-neutral-800/20 md:hidden">
+                  {userCounts.map((u) => (
+                    <li key={u.email}>
+                      <button
+                        type="button"
+                        className="flex w-full min-w-0 flex-col gap-2 p-3 text-left transition-colors hover:bg-neutral-50 active:bg-neutral-100 dark:hover:bg-neutral-800/50 dark:active:bg-neutral-800"
                         onClick={() => {
                           setPage(1);
                           setSelectedUserEmail(u.email);
                         }}
                       >
-                        <td className="px-4 py-3 font-medium text-neutral-900 dark:text-neutral-50">
-                          {u.displayName ?? u.email.split("@")[0]}
-                        </td>
-                        <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400">{u.email}</td>
-                        <td className="px-4 py-3">
-                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
-                            {u.leadCount}
+                        <div className="min-w-0">
+                          <p className="break-words font-medium text-neutral-900 dark:text-neutral-50">
+                            {u.displayName ?? u.email.split("@")[0]}
+                          </p>
+                          <p className="break-words text-xs text-neutral-600 dark:text-neutral-400">{u.email}</p>
+                        </div>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium tabular-nums text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
+                            {u.leadCount} leads
                           </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="text-xs text-blue-600 dark:text-blue-400">View leads →</span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </LenisScrollArea>
+                          <span className="shrink-0 text-xs font-medium text-blue-600 dark:text-blue-400">View →</span>
+                        </div>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                <div className="hidden min-w-0 md:block">
+                  <LenisScrollArea
+                    axis="horizontal"
+                    className="rounded-xl border border-neutral-200/80 bg-white/40 [-webkit-overflow-scrolling:touch] dark:border-neutral-700 dark:bg-neutral-800/30"
+                  >
+                    <table className="min-w-[640px] w-full text-left text-sm">
+                      <thead className="border-b border-neutral-200 bg-neutral-50/90 dark:border-neutral-700 dark:bg-neutral-800/50">
+                        <tr>
+                          <th className="whitespace-nowrap px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">
+                            User
+                          </th>
+                          <th className="whitespace-nowrap px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">
+                            Email
+                          </th>
+                          <th className="whitespace-nowrap px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">
+                            Lead count
+                          </th>
+                          <th className="whitespace-nowrap px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">
+                            Action
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-neutral-200 dark:divide-neutral-700">
+                        {userCounts.map((u) => (
+                          <tr
+                            key={u.email}
+                            className="cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800/50"
+                            onClick={() => {
+                              setPage(1);
+                              setSelectedUserEmail(u.email);
+                            }}
+                          >
+                            <td className="px-4 py-3 font-medium text-neutral-900 dark:text-neutral-50">
+                              {u.displayName ?? u.email.split("@")[0]}
+                            </td>
+                            <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400">{u.email}</td>
+                            <td className="px-4 py-3">
+                              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
+                                {u.leadCount}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className="text-xs text-blue-600 dark:text-blue-400">View leads →</span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </LenisScrollArea>
+                </div>
+              </>
             )}
           </CardContent>
         </section>
@@ -463,19 +510,19 @@ export default function AdminLeadsPage() {
 
       {selectedUserEmail && mailKindTab === "leads" && (
         <>
-      <section className="grid gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3">
-        <div className="relative rounded-2xl border border-white/80 bg-gradient-to-br from-[#1e3a8a] via-[#2563eb] to-[#0ea5e9] p-5 text-white shadow-lg shadow-blue-200/70 transition-transform duration-300 hover:-translate-y-0.5 dark:border-neutral-700 dark:bg-neutral-900/60 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-900 dark:shadow-none">
+      <section className="grid min-w-0 gap-3 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3">
+        <div className="relative min-w-0 rounded-2xl border border-white/80 bg-gradient-to-br from-[#1e3a8a] via-[#2563eb] to-[#0ea5e9] p-4 text-white shadow-lg shadow-blue-200/70 transition-transform duration-300 hover:-translate-y-0.5 dark:border-neutral-700 dark:bg-neutral-900/60 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-900 dark:shadow-none sm:p-5">
           <p className="text-sm font-medium text-white/80 dark:text-neutral-400">Total leads</p>
           <p className="mt-1 text-3xl font-semibold text-white dark:text-neutral-100">{total}</p>
           <p className="mt-0.5 text-xs text-white/75 dark:text-neutral-400">In selected mailbox</p>
           <Info className="absolute right-4 top-4 h-5 w-5 text-white/50 dark:text-neutral-500" aria-hidden />
         </div>
-        <div className="relative rounded-2xl border border-white/80 bg-gradient-to-br from-[#1e3a8a] via-[#2563eb] to-[#0ea5e9] p-5 text-white shadow-lg shadow-blue-200/70 transition-transform duration-300 hover:-translate-y-0.5 dark:border-neutral-700 dark:bg-neutral-900/60 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-900 dark:shadow-none">
+        <div className="relative min-w-0 rounded-2xl border border-white/80 bg-gradient-to-br from-[#1e3a8a] via-[#2563eb] to-[#0ea5e9] p-4 text-white shadow-lg shadow-blue-200/70 transition-transform duration-300 hover:-translate-y-0.5 dark:border-neutral-700 dark:bg-neutral-900/60 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-900 dark:shadow-none sm:p-5">
           <p className="text-sm font-medium text-white/80 dark:text-neutral-400">By label</p>
           <p className="mt-1 text-3xl font-semibold text-white dark:text-neutral-100">{labelPieData.length}</p>
           <p className="mt-0.5 text-xs text-white/75 dark:text-neutral-400">Labels with leads in range</p>
         </div>
-        <div className="relative rounded-2xl border border-white/80 bg-gradient-to-br from-[#1e3a8a] via-[#2563eb] to-[#0ea5e9] p-5 text-white shadow-lg shadow-blue-200/70 transition-transform duration-300 hover:-translate-y-0.5 dark:border-neutral-700 dark:bg-neutral-900/60 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-900 dark:shadow-none sm:col-span-2 lg:col-span-1">
+        <div className="relative min-w-0 rounded-2xl border border-white/80 bg-gradient-to-br from-[#1e3a8a] via-[#2563eb] to-[#0ea5e9] p-4 text-white shadow-lg shadow-blue-200/70 transition-transform duration-300 hover:-translate-y-0.5 dark:border-neutral-700 dark:bg-neutral-900/60 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-900 dark:shadow-none sm:col-span-2 sm:p-5 lg:col-span-1">
           <p className="text-sm font-medium text-white/80 dark:text-neutral-400">Teams</p>
           <p className="mt-1 text-3xl font-semibold text-white dark:text-neutral-100">{teamNameValueData.length}</p>
           <p className="mt-0.5 text-xs text-white/75 dark:text-neutral-400">Assigned teams in range</p>
@@ -483,22 +530,24 @@ export default function AdminLeadsPage() {
       </section>
 
       {(viewMode === "all" || viewMode === "analytics") && (
-        <div className="flex flex-col gap-6 md:gap-8">
-          <section className="rounded-3xl border border-slate-100 bg-gradient-to-br from-white to-[#f7fbff] p-5 shadow-md shadow-slate-100/70 dark:border-neutral-700 dark:from-neutral-900 dark:to-neutral-900 dark:shadow-none sm:p-6">
+        <div className="flex min-w-0 flex-col gap-6 md:gap-8">
+          <section className="min-w-0 rounded-3xl border border-slate-100 bg-gradient-to-br from-white to-[#f7fbff] p-4 shadow-md shadow-slate-100/70 dark:border-neutral-700 dark:from-neutral-900 dark:to-neutral-900 dark:shadow-none sm:p-6">
             <h3 className="mb-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-neutral-400">
               Leads over time
             </h3>
-            <p className="mb-4 text-[11px] text-slate-400 dark:text-neutral-500">Volume trend across the selected range</p>
+            <p className="mb-3 text-[11px] text-slate-400 dark:text-neutral-500 sm:mb-4">
+              Volume trend across the selected range
+            </p>
             {chartLoading ? (
-              <Skeleton className="h-[300px] w-full rounded-xl" />
+              <Skeleton className="h-[220px] w-full rounded-xl sm:h-[300px]" />
             ) : lineData.length === 0 ? (
-              <p className="flex h-[300px] items-center justify-center text-sm text-neutral-500 dark:text-neutral-400">
+              <p className="flex h-[220px] items-center justify-center text-sm text-neutral-500 dark:text-neutral-400 sm:h-[300px]">
                 No data for selected range
               </p>
             ) : (
-              <div className="h-[300px] w-full [&_.recharts-cartesian-axis-tick_text]:fill-slate-500 dark:[&_.recharts-cartesian-axis-tick_text]:fill-neutral-400">
+              <div className="h-[220px] w-full min-w-0 sm:h-[300px] [&_.recharts-cartesian-axis-tick_text]:fill-slate-500 dark:[&_.recharts-cartesian-axis-tick_text]:fill-neutral-400">
                 <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={lineData} margin={{ top: 16, right: 24, left: 8, bottom: 8 }}>
+                  <ComposedChart data={lineData} margin={{ top: 14, right: 14, left: 4, bottom: 6 }}>
                     <defs>
                       <linearGradient id="adminLeadsTimeFill" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0%" stopColor="#22c55e" stopOpacity={0.5} />
@@ -549,22 +598,24 @@ export default function AdminLeadsPage() {
               </div>
             )}
           </section>
-          <div className="grid gap-6 lg:grid-cols-2 lg:gap-8">
-            <section className="rounded-3xl border border-orange-100 bg-gradient-to-br from-white via-orange-50 to-amber-50 p-5 shadow-md shadow-orange-100/60 dark:border-neutral-800 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 dark:shadow-none sm:p-6">
+          <div className="grid min-w-0 gap-6 lg:grid-cols-2 lg:gap-8">
+            <section className="min-w-0 rounded-3xl border border-orange-100 bg-gradient-to-br from-white via-orange-50 to-amber-50 p-4 shadow-md shadow-orange-100/60 dark:border-neutral-800 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 dark:shadow-none sm:p-6">
               <h3 className="mb-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-neutral-400">
                 By lead label
               </h3>
-              <p className="mb-4 text-[11px] text-slate-400 dark:text-neutral-500">Volume by label — column view</p>
+              <p className="mb-3 text-[11px] text-slate-400 dark:text-neutral-500 sm:mb-4">
+                Volume by label — column view
+              </p>
               {chartLoading ? (
-                <Skeleton className="h-[280px] w-full rounded-xl" />
+                <Skeleton className="h-[220px] w-full rounded-xl sm:h-[280px]" />
               ) : labelPieData.length === 0 ? (
-                <p className="flex h-[280px] items-center justify-center text-sm text-neutral-500 dark:text-neutral-400">
+                <p className="flex h-[220px] items-center justify-center text-sm text-neutral-500 dark:text-neutral-400 sm:h-[280px]">
                   No leads in selected range
                 </p>
               ) : (
-                <div className="h-[280px] w-full [&_.recharts-cartesian-axis-tick_text]:fill-slate-500 dark:[&_.recharts-cartesian-axis-tick_text]:fill-neutral-400">
+                <div className="h-[220px] w-full min-w-0 sm:h-[280px] [&_.recharts-cartesian-axis-tick_text]:fill-slate-500 dark:[&_.recharts-cartesian-axis-tick_text]:fill-neutral-400">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={labelBarData} margin={{ top: 20, right: 12, left: -8, bottom: 4 }} barCategoryGap="18%">
+                    <BarChart data={labelBarData} margin={{ top: 16, right: 8, left: -12, bottom: 4 }} barCategoryGap="18%">
                       <defs>
                         {labelBarData.map((d, i) => (
                           <linearGradient key={d.label} id={`lead-label-col-${i}`} x1="0" y1="1" x2="0" y2="0">
@@ -615,21 +666,28 @@ export default function AdminLeadsPage() {
                 </div>
               )}
             </section>
-            <section className="rounded-3xl border border-violet-100 bg-gradient-to-br from-white via-violet-50 to-fuchsia-50 p-5 shadow-md shadow-violet-100/60 dark:border-neutral-800 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 dark:shadow-none sm:p-6">
+            <section className="min-w-0 rounded-3xl border border-violet-100 bg-gradient-to-br from-white via-violet-50 to-fuchsia-50 p-4 shadow-md shadow-violet-100/60 dark:border-neutral-800 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 dark:shadow-none sm:p-6">
               <h3 className="mb-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-neutral-400">
                 By assigned team
               </h3>
-              <p className="mb-4 text-[11px] text-slate-400 dark:text-neutral-500">Ranked volume — horizontal comparison</p>
+              <p className="mb-3 text-[11px] text-slate-400 dark:text-neutral-500 sm:mb-4">
+                Ranked volume — horizontal comparison
+              </p>
               {chartLoading ? (
-                <Skeleton className="h-[280px] w-full rounded-xl" />
+                <Skeleton className="h-[220px] w-full rounded-xl sm:h-[280px]" />
               ) : teamNameValueData.length === 0 ? (
-                <p className="flex h-[280px] items-center justify-center text-sm text-neutral-500 dark:text-neutral-400">
+                <p className="flex h-[220px] items-center justify-center text-sm text-neutral-500 dark:text-neutral-400 sm:h-[280px]">
                   No data for selected range
                 </p>
               ) : (
-                <div className="h-[280px] w-full [&_.recharts-cartesian-axis-tick_text]:fill-slate-500 dark:[&_.recharts-cartesian-axis-tick_text]:fill-neutral-400">
+                <div className="h-[220px] w-full min-w-0 overflow-hidden sm:h-[280px] [&_.recharts-cartesian-axis-tick_text]:fill-slate-500 dark:[&_.recharts-cartesian-axis-tick_text]:fill-neutral-400">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart layout="vertical" data={teamBarChartData} margin={{ top: 8, right: 36, left: 4, bottom: 8 }} barCategoryGap={14}>
+                    <BarChart
+                      layout="vertical"
+                      data={teamBarChartData}
+                      margin={{ top: 8, right: 32, left: 4, bottom: 8 }}
+                      barCategoryGap={14}
+                    >
                       <defs>
                         <linearGradient id="adminLeadsTeamBar" x1="0" y1="0" x2="1" y2="0">
                           <stop offset="0%" stopColor="#6366f1" />
@@ -687,14 +745,14 @@ export default function AdminLeadsPage() {
 
       {/* Table */}
       {(viewMode === "all" || viewMode === "table") && (
-        <Card className="overflow-hidden">
-          <CardHeader className="pb-4">
+        <Card className="min-w-0 max-w-full overflow-hidden rounded-2xl border-border">
+          <CardHeader className="space-y-4 p-4 pb-4 sm:p-6">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <CardTitle className="flex items-center gap-2 text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-                <Table2 className="h-5 w-5 text-sky-600 dark:text-sky-400" />
-                Leads table
+              <CardTitle className="flex min-w-0 items-center gap-2 text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                <Table2 className="h-5 w-5 shrink-0 text-sky-600 dark:text-sky-400" />
+                <span className="min-w-0 break-words">Leads table</span>
               </CardTitle>
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="grid w-full min-w-0 grid-cols-1 gap-2 sm:flex sm:max-w-none sm:flex-wrap sm:items-center">
                 <Select
                   value={String(pageSize)}
                   onValueChange={(v) => {
@@ -702,7 +760,7 @@ export default function AdminLeadsPage() {
                     setPage(1);
                   }}
                 >
-                  <SelectTrigger className="h-10 w-[120px] rounded-lg border-neutral-300 dark:border-neutral-600">
+                  <SelectTrigger className="h-10 w-full min-w-0 rounded-lg border-neutral-300 dark:border-neutral-600 sm:w-[120px]">
                     <SelectValue placeholder="Rows" />
                   </SelectTrigger>
                   <SelectContent>
@@ -712,110 +770,190 @@ export default function AdminLeadsPage() {
                   </SelectContent>
                 </Select>
                 <Select value={labelFilter || "all"} onValueChange={(v) => (setLabelFilter(v === "all" ? "" : v), setPage(1))}>
-                  <SelectTrigger className="h-10 w-[140px] rounded-lg border-neutral-300 dark:border-neutral-600">
+                  <SelectTrigger className="h-10 w-full min-w-0 rounded-lg border-neutral-300 dark:border-neutral-600 sm:w-[140px]">
                     <SelectValue placeholder="Lead label" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All labels</SelectItem>
                     {LEAD_LABELS.map((l) => (
-                      <SelectItem key={l} value={l}>{l}</SelectItem>
+                      <SelectItem key={l} value={l}>
+                        {l}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
                 <Select value={teamFilter || "all"} onValueChange={(v) => (setTeamFilter(v === "all" ? "" : v), setPage(1))}>
-                  <SelectTrigger className="h-10 w-[140px] rounded-lg border-neutral-300 dark:border-neutral-600">
+                  <SelectTrigger className="h-10 w-full min-w-0 rounded-lg border-neutral-300 dark:border-neutral-600 sm:w-[140px]">
                     <SelectValue placeholder="Team" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All teams</SelectItem>
                     {teamNames.map((name) => (
-                      <SelectItem key={name} value={name}>{name}</SelectItem>
+                      <SelectItem key={name} value={name}>
+                        {name}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
                 <input
                   type="search"
-                  placeholder="Search"
-                  className="h-10 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100"
+                  placeholder="Search subject, sender, id…"
+                  className="h-10 w-full min-w-0 rounded-lg border border-neutral-300 bg-white px-3 text-sm dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100 sm:max-w-[200px]"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
-                <Button variant="outline" size="sm" onClick={handleExportTable} className="gap-2">
-                  <Download className="h-4 w-4" />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleExportTable}
+                  className="h-10 w-full gap-2 sm:h-9 sm:w-auto"
+                >
+                  <Download className="h-4 w-4 shrink-0" />
                   Export data
                 </Button>
               </div>
             </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
             {loading ? (
-              <Skeleton className="h-64 w-full rounded-lg" />
+              <Skeleton className="h-48 w-full rounded-lg sm:h-64" />
             ) : filteredItems.length === 0 ? (
               <p className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">No leads found.</p>
             ) : (
               <>
-                <LenisScrollArea
-                  axis="horizontal"
-                  className="rounded-xl border border-neutral-200/80 bg-white/30 dark:border-neutral-700 dark:bg-neutral-800/20"
-                >
-                  <table className="w-full text-left text-sm">
-                    <thead className="border-b border-neutral-200 bg-neutral-50/90 dark:border-neutral-700 dark:bg-neutral-800/50">
-                      <tr>
-                        <th className="px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">ID</th>
-                        <th className="px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">Lead</th>
-                        <th className="px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">Type</th>
-                        <th className="px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">Created by</th>
-                        <th className="px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">Mail type</th>
-                        <th className="px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">Status</th>
-                        <th className="px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">Date</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-neutral-200 dark:divide-neutral-700">
-                      {filteredItems.map((item) => (
-                        <tr key={item.id} className="hover:bg-neutral-50 dark:hover:bg-neutral-800/50">
-                          <td className="px-4 py-3 font-mono text-xs text-neutral-500">{item.id.slice(0, 8)}</td>
-                          <td className="px-4 py-3">
-                            <Link
-                              href={`/emails/${item.id}`}
-                              className="font-medium text-neutral-900 hover:underline dark:text-neutral-50"
-                            >
-                              {item.subject || "(No subject)"}
-                            </Link>
-                            {item.leadLabel && (
-                              <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
-                                {item.leadLabel}
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3">{item.priorityLabel ?? "—"}</td>
-                          <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400">
-                            {item.mailboxOwner ? item.mailboxOwner.split("@")[0] : item.sender ?? "—"}
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs dark:bg-neutral-700">
-                              {item.mailType ?? "—"}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3">
-                            <span
-                              className={`rounded-full px-2 py-0.5 text-xs ${
-                                item.isRead
-                                  ? "bg-neutral-100 text-neutral-600 dark:bg-neutral-700 dark:text-neutral-400"
-                                  : "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300"
-                              }`}
-                            >
-                              {item.isRead ? "Read" : "Unread"}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-neutral-500">{formatDate(item.receivedAt)}</td>
+                <ul className="divide-y divide-neutral-200 rounded-xl border border-neutral-200/80 dark:divide-neutral-700 dark:border-neutral-700 md:hidden">
+                  {filteredItems.map((item) => (
+                    <li key={item.id} className="min-w-0 space-y-2 p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <Link
+                          href={`/emails/${item.id}`}
+                          className="min-w-0 flex-1 text-sm font-medium leading-snug text-neutral-900 hover:underline dark:text-neutral-50"
+                        >
+                          <span className="line-clamp-2">{item.subject || "(No subject)"}</span>
+                        </Link>
+                        <span className="shrink-0 font-mono text-[10px] text-neutral-400">{item.id.slice(0, 8)}</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5 text-xs text-neutral-600 dark:text-neutral-400">
+                        {item.leadLabel && (
+                          <span className="rounded-md bg-amber-100 px-1.5 py-0.5 font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                            {item.leadLabel}
+                          </span>
+                        )}
+                        <span className="rounded-md bg-neutral-100 px-1.5 py-0.5 dark:bg-neutral-800">
+                          {item.priorityLabel ?? "—"}
+                        </span>
+                        <span className="rounded-md bg-neutral-100 px-1.5 py-0.5 dark:bg-neutral-800">
+                          {item.mailType ?? "—"}
+                        </span>
+                        <span
+                          className={`rounded-md px-1.5 py-0.5 ${
+                            item.isRead
+                              ? "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400"
+                              : "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300"
+                          }`}
+                        >
+                          {item.isRead ? "Read" : "Unread"}
+                        </span>
+                      </div>
+                      <p className="break-words text-xs text-neutral-500 dark:text-neutral-400">
+                        <span className="font-medium text-neutral-600 dark:text-neutral-300">From:</span>{" "}
+                        {item.mailboxOwner ? item.mailboxOwner.split("@")[0] : item.sender ?? "—"}
+                      </p>
+                      <p className="text-xs tabular-nums text-neutral-500 dark:text-neutral-400">
+                        {formatDate(item.receivedAt)}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+                <div className="hidden min-w-0 md:block">
+                  <LenisScrollArea
+                    axis="horizontal"
+                    className="rounded-xl border border-neutral-200/80 bg-white/30 [-webkit-overflow-scrolling:touch] dark:border-neutral-700 dark:bg-neutral-800/20"
+                  >
+                    <table className="min-w-[720px] w-full text-left text-sm">
+                      <thead className="border-b border-neutral-200 bg-neutral-50/90 dark:border-neutral-700 dark:bg-neutral-800/50">
+                        <tr>
+                          <th className="whitespace-nowrap px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">
+                            ID
+                          </th>
+                          <th className="whitespace-nowrap px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">
+                            Lead
+                          </th>
+                          <th className="whitespace-nowrap px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">
+                            Type
+                          </th>
+                          <th className="whitespace-nowrap px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">
+                            Created by
+                          </th>
+                          <th className="whitespace-nowrap px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">
+                            Mail type
+                          </th>
+                          <th className="whitespace-nowrap px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">
+                            Status
+                          </th>
+                          <th className="whitespace-nowrap px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">
+                            Date
+                          </th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </LenisScrollArea>
+                      </thead>
+                      <tbody className="divide-y divide-neutral-200 dark:divide-neutral-700">
+                        {filteredItems.map((item) => (
+                          <tr key={item.id} className="hover:bg-neutral-50 dark:hover:bg-neutral-800/50">
+                            <td className="px-4 py-3 font-mono text-xs text-neutral-500">{item.id.slice(0, 8)}</td>
+                            <td className="px-4 py-3">
+                              <Link
+                                href={`/emails/${item.id}`}
+                                className="font-medium text-neutral-900 hover:underline dark:text-neutral-50"
+                              >
+                                {item.subject || "(No subject)"}
+                              </Link>
+                              {item.leadLabel && (
+                                <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                                  {item.leadLabel}
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3">{item.priorityLabel ?? "—"}</td>
+                            <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400">
+                              {item.mailboxOwner ? item.mailboxOwner.split("@")[0] : item.sender ?? "—"}
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs dark:bg-neutral-700">
+                                {item.mailType ?? "—"}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3">
+                              <span
+                                className={`rounded-full px-2 py-0.5 text-xs ${
+                                  item.isRead
+                                    ? "bg-neutral-100 text-neutral-600 dark:bg-neutral-700 dark:text-neutral-400"
+                                    : "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300"
+                                }`}
+                              >
+                                {item.isRead ? "Read" : "Unread"}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-neutral-500">{formatDate(item.receivedAt)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </LenisScrollArea>
+                </div>
                 {(totalPages > 1 || total > 0) && (
-                  <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-sm text-neutral-500 dark:text-neutral-400">
+                  <div className="mt-4 grid grid-cols-1 gap-2 border-t border-neutral-200 pt-4 dark:border-neutral-800 sm:flex sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:border-t-0 sm:pt-0">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="w-full sm:order-1 sm:w-auto"
+                      disabled={page <= 1}
+                      onClick={() => setPage((p) => p - 1)}
+                    >
+                      Previous
+                    </Button>
+                    <p className="py-0.5 text-center text-sm text-neutral-500 dark:text-neutral-400 sm:order-2 sm:flex-1 sm:py-0">
                       {total > 0 ? (
                         <>
                           Showing {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} of {total}
@@ -825,14 +963,16 @@ export default function AdminLeadsPage() {
                         `Page ${page} of ${totalPages}`
                       )}
                     </p>
-                    <div className="flex gap-2">
-                      <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-                        Previous
-                      </Button>
-                      <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
-                        Next
-                      </Button>
-                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="w-full sm:order-3 sm:w-auto"
+                      disabled={page >= totalPages}
+                      onClick={() => setPage((p) => p + 1)}
+                    >
+                      Next
+                    </Button>
                   </div>
                 )}
               </>
@@ -844,64 +984,100 @@ export default function AdminLeadsPage() {
       )}
 
       {selectedUserEmail && mailKindTab === "retag" && (
-        <section className="overflow-hidden rounded-3xl border border-cyan-100 bg-gradient-to-br from-white to-[#edf8ff] p-5 shadow-md shadow-cyan-100/60 dark:border-neutral-700 dark:from-neutral-900 dark:to-neutral-900 dark:shadow-none sm:p-6">
-          <CardHeader className="p-0 pb-4">
-            <CardTitle className="flex items-center gap-2 text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-              <Tags className="h-5 w-5 text-cyan-600 dark:text-cyan-400" />
-              ReTag — {selectedUserEmail} ({retagTotal})
+        <section className="min-w-0 overflow-hidden rounded-3xl border border-cyan-100 bg-gradient-to-br from-white to-[#edf8ff] p-4 shadow-md shadow-cyan-100/60 dark:border-neutral-700 dark:from-neutral-900 dark:to-neutral-900 dark:shadow-none sm:p-6">
+          <CardHeader className="p-0 pb-3 sm:pb-4">
+            <CardTitle className="flex flex-wrap items-center gap-2 text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+              <Tags className="h-5 w-5 shrink-0 text-cyan-600 dark:text-cyan-400" />
+              <span className="min-w-0 break-words">
+                ReTag — <span className="tabular-nums">{retagTotal}</span>
+              </span>
             </CardTitle>
-            <p className="pt-1 text-sm text-neutral-500 dark:text-neutral-400">
-              Mail this user retagged from escalation/lead into another department.
+            <p className="mt-1 break-words text-xs text-neutral-500 dark:text-neutral-400 sm:text-sm">
+              {selectedUserEmail} — mail this user retagged from escalation/lead into another department.
             </p>
           </CardHeader>
           <CardContent className="p-0">
             {loading ? (
-              <Skeleton className="h-64 w-full rounded-lg" />
+              <Skeleton className="h-48 w-full rounded-lg sm:h-64" />
             ) : retagItems.length === 0 ? (
               <p className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">No retagged mail.</p>
             ) : (
-              <LenisScrollArea
-                axis="horizontal"
-                className="rounded-xl border border-neutral-200/80 bg-white/40 dark:border-neutral-700 dark:bg-neutral-800/30"
-              >
-                <table className="w-full text-left text-sm">
-                  <thead className="border-b border-neutral-200 bg-neutral-50/90 dark:border-neutral-700 dark:bg-neutral-800/50">
-                    <tr>
-                      <th className="px-4 py-3">Subject</th>
-                      <th className="px-4 py-3">Department</th>
-                      <th className="px-4 py-3">Retagged</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-neutral-200 dark:divide-neutral-700">
-                    {retagItems.map((item) => (
-                      <tr key={item.id}>
-                        <td className="px-4 py-3">
-                          <Link
-                            href={`/emails/${item.id}`}
-                            className="font-medium text-neutral-900 hover:underline dark:text-neutral-50"
-                          >
-                            {item.subject || "(No subject)"}
-                          </Link>
-                        </td>
-                        <td className="px-4 py-3">{item.assignedTeam ?? "—"}</td>
-                        <td className="px-4 py-3 text-xs text-neutral-500">
-                          {item.retaggedAt ? formatDate(item.retaggedAt) : "—"}
-                          {item.retagPreviousSummary ? ` · ${item.retagPreviousSummary}` : ""}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </LenisScrollArea>
+              <>
+                <ul className="divide-y divide-neutral-200 rounded-xl border border-neutral-200/80 dark:divide-neutral-700 dark:border-neutral-700 md:hidden">
+                  {retagItems.map((item) => (
+                    <li key={item.id} className="min-w-0 space-y-2 p-3">
+                      <Link
+                        href={`/emails/${item.id}`}
+                        className="block text-sm font-medium leading-snug text-neutral-900 hover:underline dark:text-neutral-50"
+                      >
+                        <span className="line-clamp-2">{item.subject || "(No subject)"}</span>
+                      </Link>
+                      <p className="text-xs text-neutral-600 dark:text-neutral-400">
+                        <span className="font-medium">Department:</span> {item.assignedTeam ?? "—"}
+                      </p>
+                      <p className="break-words text-xs tabular-nums text-neutral-500 dark:text-neutral-400">
+                        {item.retaggedAt ? formatDate(item.retaggedAt) : "—"}
+                        {item.retagPreviousSummary ? (
+                          <span className="mt-1 block font-normal">{item.retagPreviousSummary}</span>
+                        ) : null}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+                <div className="hidden min-w-0 md:block">
+                  <LenisScrollArea
+                    axis="horizontal"
+                    className="rounded-xl border border-neutral-200/80 bg-white/40 [-webkit-overflow-scrolling:touch] dark:border-neutral-700 dark:bg-neutral-800/30"
+                  >
+                    <table className="min-w-[560px] w-full text-left text-sm">
+                      <thead className="border-b border-neutral-200 bg-neutral-50/90 dark:border-neutral-700 dark:bg-neutral-800/50">
+                        <tr>
+                          <th className="whitespace-nowrap px-4 py-3">Subject</th>
+                          <th className="whitespace-nowrap px-4 py-3">Department</th>
+                          <th className="whitespace-nowrap px-4 py-3">Retagged</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-neutral-200 dark:divide-neutral-700">
+                        {retagItems.map((item) => (
+                          <tr key={item.id}>
+                            <td className="px-4 py-3">
+                              <Link
+                                href={`/emails/${item.id}`}
+                                className="font-medium text-neutral-900 hover:underline dark:text-neutral-50"
+                              >
+                                {item.subject || "(No subject)"}
+                              </Link>
+                            </td>
+                            <td className="px-4 py-3">{item.assignedTeam ?? "—"}</td>
+                            <td className="px-4 py-3 text-xs text-neutral-500">
+                              {item.retaggedAt ? formatDate(item.retaggedAt) : "—"}
+                              {item.retagPreviousSummary ? ` · ${item.retagPreviousSummary}` : ""}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </LenisScrollArea>
+                </div>
+              </>
             )}
             {Math.ceil(retagTotal / pageSize) > 1 && (
-              <div className="mt-4 flex justify-between">
-                <Button variant="outline" size="sm" disabled={retagPage <= 1} onClick={() => setRetagPage((p) => p - 1)}>
+              <div className="mt-4 grid grid-cols-1 gap-2 sm:flex sm:justify-between">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-9 w-full sm:w-auto"
+                  disabled={retagPage <= 1}
+                  onClick={() => setRetagPage((p) => p - 1)}
+                >
                   Previous
                 </Button>
                 <Button
+                  type="button"
                   variant="outline"
                   size="sm"
+                  className="h-9 w-full sm:w-auto"
                   disabled={retagPage >= Math.ceil(retagTotal / pageSize)}
                   onClick={() => setRetagPage((p) => p + 1)}
                 >

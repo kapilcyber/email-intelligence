@@ -12,9 +12,10 @@ import {
   sanitizeEmailHtml,
 } from "@/lib/sanitize-email-html";
 import { LenisScrollArea } from "@/components/lenis/lenis-scroll-area";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Mail, Calendar, ChevronRight, Download } from "lucide-react";
+import { Mail, Calendar, ChevronRight, Download, ArrowLeft } from "lucide-react";
 import { DateRangePair } from "@/components/ui/date-range-pair";
 
 const PAGE_SIZE = 25;
@@ -62,58 +63,61 @@ export function ThreadEmailCard({ email, index, responseTimeMs }: { email: Email
 
   return (
     <article
-      className={`relative rounded-lg border bg-white dark:bg-neutral-900/50 dark:border-neutral-700 ${
-        isFirst ? "border-neutral-200" : "border-l-2 border-l-neutral-300 dark:border-l-neutral-600 ml-4 pl-4 dark:bg-neutral-900/30"
+      className={`relative min-w-0 rounded-lg border bg-white dark:bg-neutral-900/50 dark:border-neutral-700 ${
+        isFirst
+          ? "border-neutral-200"
+          : "ml-2 border-l-2 border-l-neutral-300 pl-2 dark:border-l-neutral-600 dark:bg-neutral-900/30 sm:ml-4 sm:pl-4"
       }`}
     >
-      <header className="flex flex-wrap items-start justify-between gap-2 border-b border-neutral-100 px-4 py-3 dark:border-neutral-800">
-        <div className="flex min-w-0 flex-1 items-center gap-2">
+      <header className="flex flex-col gap-2 border-b border-neutral-100 px-3 py-2.5 dark:border-neutral-800 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:gap-2 sm:px-4 sm:py-3">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 sm:gap-2">
           <span className="shrink-0 rounded bg-neutral-200 px-2 py-0.5 text-xs font-medium text-neutral-600 dark:bg-neutral-700 dark:text-neutral-300">
             {replyLabel}
           </span>
           {responseTimeMs != null && responseTimeMs >= 0 && (
-            <span className="shrink-0 rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800 dark:bg-blue-900/50 dark:text-blue-300" title="Time since previous message">
+            <span
+              className="shrink-0 rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800 dark:bg-blue-900/50 dark:text-blue-300"
+              title="Time since previous message"
+            >
               Replied in {formatResponseTime(responseTimeMs)}
             </span>
           )}
           <Mail className="h-4 w-4 shrink-0 text-neutral-400" />
-          <div className="min-w-0">
-            <p className="truncate text-sm font-medium text-neutral-900 dark:text-neutral-100">
+          <div className="min-w-0 flex-1 basis-[min(100%,12rem)]">
+            <p className="break-words text-sm font-medium text-neutral-900 dark:text-neutral-100">
               {email.senderDisplayName && email.senderDisplayName !== email.sender
                 ? `${email.senderDisplayName} <${email.sender}>`
                 : email.sender}
             </p>
-            <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
+            <p className="break-words text-xs text-neutral-500 dark:text-neutral-400">
               To: {formatRecipients(email.toRecipients)}
             </p>
             {email.ccRecipients && email.ccRecipients.length > 0 && (
-              <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
+              <p className="break-words text-xs text-neutral-500 dark:text-neutral-400">
                 Cc: {formatRecipients(email.ccRecipients)}
               </p>
             )}
             {email.bccRecipients && email.bccRecipients.length > 0 && (
-              <p className="truncate text-xs text-neutral-500 dark:text-neutral-400">
+              <p className="break-words text-xs text-neutral-500 dark:text-neutral-400">
                 Bcc: {formatRecipients(email.bccRecipients)}
               </p>
             )}
           </div>
         </div>
-        <div className="flex items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400">
-          <Calendar className="h-3.5 w-3.5" />
-          {formatDate(email.receivedAt)}
+        <div className="flex shrink-0 items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400 sm:justify-end">
+          <Calendar className="h-3.5 w-3.5 shrink-0" />
+          <span className="tabular-nums">{formatDate(email.receivedAt)}</span>
         </div>
       </header>
-      <div className="px-4 py-3">
+      <div className="min-w-0 px-3 py-2.5 sm:px-4 sm:py-3">
         {body && (
           <div className={emailBodySurfaceClassName}>
             {isHtml ? (
-              <div
-                className={emailHtmlProseClassName}
-                style={{ overflowWrap: "break-word" }}
-                dangerouslySetInnerHTML={{ __html: htmlSafe as string }}
-              />
+              <div className={emailHtmlProseClassName} dangerouslySetInnerHTML={{ __html: htmlSafe as string }} />
             ) : (
-              <p className="whitespace-pre-wrap text-sm text-neutral-800">{body}</p>
+              <p className="min-w-0 max-w-full whitespace-pre-wrap break-words text-sm text-neutral-800 dark:text-neutral-200">
+                {body}
+              </p>
             )}
           </div>
         )}
@@ -125,7 +129,7 @@ export function ThreadEmailCard({ email, index, responseTimeMs }: { email: Email
                 href={getAttachmentUrl(email.id, a.id, true)}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 rounded border border-neutral-200 px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-800"
+                className="inline-flex max-w-full items-center gap-1 break-all rounded border border-neutral-200 px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-800"
               >
                 {a.name}
               </a>
@@ -257,11 +261,23 @@ export function ThreadsView({ basePath }: ThreadsViewProps) {
   }
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] flex-col md:flex-row">
-      <aside className="glass-surface-strong flex w-full flex-col md:w-96">
-        <div className="border-b border-border p-4">
+    <div
+      className={cn(
+        "flex w-full min-w-0 max-w-full flex-col md:h-[calc(100dvh-5.5rem)] md:flex-row md:overflow-hidden",
+        selectedId && "max-md:min-h-[calc(100dvh-7rem)] max-md:flex-1"
+      )}
+    >
+      <aside
+        className={cn(
+          "glass-surface-strong flex w-full shrink-0 flex-col border-b border-border md:h-full md:min-h-0 md:w-96 md:border-b-0 md:border-r md:border-border",
+          selectedId ? "hidden md:flex" : "flex max-h-[min(48vh,440px)] md:max-h-none"
+        )}
+      >
+        <div className="border-b border-border p-3 sm:p-4">
           <div data-tour-id="threads-sidebar">
-            <h1 className="text-2xl font-bold tracking-tight text-neutral-900 dark:text-neutral-100">Threads</h1>
+            <h1 className="text-xl font-bold tracking-tight text-neutral-900 dark:text-neutral-100 sm:text-2xl">
+              Threads
+            </h1>
             <div className="mt-3">
               <input
                 type="search"
@@ -275,14 +291,15 @@ export function ThreadsView({ basePath }: ThreadsViewProps) {
               />
             </div>
           </div>
-          <div data-tour-id="threads-export" className="mt-4 rounded-lg border border-border bg-panel/75 p-3">
+          <div data-tour-id="threads-export" className="mt-3 rounded-lg border border-border bg-panel/75 p-3 sm:mt-4">
             <p className="text-xs font-semibold text-neutral-800 dark:text-neutral-200">Download reply report (CSV)</p>
-            <div className="mt-2 flex flex-col gap-2">
+            <div className="mt-2 flex min-w-0 flex-col gap-2">
               <DateRangePair
                 from={exportFrom}
                 to={exportTo}
                 onFromChange={setExportFrom}
                 onToChange={setExportTo}
+                className="w-full min-w-0"
                 fieldClassName="relative min-w-0 flex-1"
               />
               {selectedId && (
@@ -359,10 +376,10 @@ export function ThreadsView({ basePath }: ThreadsViewProps) {
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium text-neutral-900 dark:text-neutral-100">
+                    <p className="line-clamp-2 font-medium text-neutral-900 dark:text-neutral-100 sm:line-clamp-none sm:truncate">
                       {c.subject || "(No subject)"}
                     </p>
-                    <p className="mt-0.5 truncate text-xs text-neutral-500 dark:text-neutral-400">
+                    <p className="mt-0.5 line-clamp-2 text-xs text-neutral-500 dark:text-neutral-400 sm:line-clamp-none sm:truncate">
                       {c.participantsPreview || "—"}
                     </p>
                     <p className="mt-1 text-xs text-neutral-400 dark:text-neutral-500">
@@ -375,21 +392,25 @@ export function ThreadsView({ basePath }: ThreadsViewProps) {
             ))}
         </LenisScrollArea>
         {total > PAGE_SIZE && (
-          <div className="flex items-center justify-between border-t border-neutral-200 px-4 py-2 dark:border-neutral-700">
+          <div className="grid grid-cols-1 gap-2 border-t border-neutral-200 px-3 py-2 dark:border-neutral-700 sm:flex sm:flex-row sm:items-center sm:justify-between sm:gap-2 sm:px-4">
             <Button
+              type="button"
               variant="ghost"
               size="sm"
+              className="w-full sm:w-auto"
               disabled={page <= 1}
               onClick={() => setPage((p) => Math.max(1, p - 1))}
             >
               Previous
             </Button>
-            <span className="text-xs text-neutral-500">
+            <span className="py-0.5 text-center text-xs text-neutral-500 sm:order-none sm:flex-1 sm:py-0">
               {((page - 1) * PAGE_SIZE) + 1}–{Math.min(page * PAGE_SIZE, total)} of {total}
             </span>
             <Button
+              type="button"
               variant="ghost"
               size="sm"
+              className="w-full sm:w-auto"
               disabled={page * PAGE_SIZE >= total}
               onClick={() => setPage((p) => p + 1)}
             >
@@ -399,23 +420,41 @@ export function ThreadsView({ basePath }: ThreadsViewProps) {
         )}
       </aside>
 
-      <main data-tour-id="threads-detail" className="glass-surface flex flex-1 flex-col overflow-hidden">
+      <main
+        data-tour-id="threads-detail"
+        className={cn(
+          "glass-surface flex min-w-0 flex-1 flex-col overflow-hidden md:min-h-0",
+          selectedId
+            ? "max-md:flex-1 max-md:min-h-0"
+            : "min-h-[min(40vh,360px)] max-md:min-h-[min(36vh,280px)]"
+        )}
+      >
         {!selectedId && (
-          <div className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center">
+          <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center sm:p-8">
             <p className="text-sm font-medium text-neutral-600 dark:text-neutral-400">Select a conversation</p>
-            <p className="text-xs text-neutral-500 dark:text-neutral-500">
+            <p className="max-w-sm text-xs text-neutral-500 dark:text-neutral-500">
               Choose a thread from the list to see the full back-and-forth.
             </p>
           </div>
         )}
         {selectedId && (
           <>
-            <div className="border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
-              <h2 className="truncate text-sm font-medium text-neutral-900 dark:text-neutral-100">
+            <div className="flex min-w-0 items-center gap-2 border-b border-neutral-200 px-3 py-2.5 dark:border-neutral-800 sm:px-4 sm:py-3">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 shrink-0 md:hidden"
+                aria-label="Back to thread list"
+                onClick={() => setSelectedId(null)}
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </Button>
+              <h2 className="line-clamp-3 min-w-0 flex-1 break-words text-sm font-medium leading-snug text-neutral-900 dark:text-neutral-100 sm:line-clamp-none sm:truncate">
                 {selectedConversation?.subject ?? "Thread"}
               </h2>
             </div>
-            <LenisScrollArea className="flex-1 min-h-0" contentClassName="p-4">
+            <LenisScrollArea className="min-h-0 flex-1" contentClassName="p-3 sm:p-4">
               {threadLoading && (
                 <div className="space-y-3">
                   {[1, 2, 3].map((i) => (

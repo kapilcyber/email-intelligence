@@ -7,7 +7,7 @@ import { getApi } from "@/lib/api/client";
 import type { TeamProjectOut } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ChevronRight } from "lucide-react";
+import { Archive, ChevronRight } from "lucide-react";
 
 export default function ArchiveProjectsPage() {
   const { data: session, status } = useSession();
@@ -31,45 +31,54 @@ export default function ArchiveProjectsPage() {
   }, [status, api]);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-50">Archive Projects</h1>
-        <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
+    <div className="min-w-0 max-w-full space-y-4 sm:space-y-6">
+      <div className="min-w-0">
+        <h1 className="text-xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50 sm:text-2xl">
+          Archive Projects
+        </h1>
+        <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400 sm:text-sm">
           Projects move here automatically when status is set to completed.
         </p>
       </div>
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400">
-          {error}
+          <p className="break-words">{error}</p>
         </div>
       )}
-      <Card className="rounded-2xl">
-        <CardHeader>
-          <CardTitle className="text-base">Completed projects</CardTitle>
+      <Card className="min-w-0 rounded-2xl border-border">
+        <CardHeader className="p-4 sm:p-6">
+          <CardTitle className="flex min-w-0 flex-wrap items-center gap-2 text-base leading-snug">
+            <Archive className="h-5 w-5 shrink-0 text-indigo-600 dark:text-indigo-400" />
+            <span className="min-w-0 break-words">Completed projects</span>
+          </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
           {loading ? (
-            <Skeleton className="h-40 w-full rounded-lg" />
+            <Skeleton className="h-36 w-full rounded-lg sm:h-40" />
           ) : projects.length === 0 ? (
             <p className="text-sm text-neutral-500 dark:text-neutral-400">No completed projects yet.</p>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-2 sm:space-y-3">
               {projects.map((p) => (
                 <Link
                   key={p.id}
                   href={`/admin/team-projects/${p.id}`}
-                  className="block rounded-lg border border-neutral-200 p-3 transition-colors hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800/40"
+                  className="block min-w-0 overflow-hidden rounded-lg border border-border bg-panel/30 p-3 transition-colors hover:bg-panel-elevated/50 dark:hover:bg-neutral-800/40"
                 >
-                  <div className="flex items-start justify-between gap-2">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
                     <div className="min-w-0 flex-1">
-                      <p className="font-medium text-neutral-900 dark:text-neutral-100">{p.name}</p>
-                      <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                        {p.teamName ?? "No department"} · completed
+                      <p className="break-words font-medium leading-snug text-neutral-900 dark:text-neutral-100">
+                        {p.name}
+                      </p>
+                      <p className="mt-1 break-words text-xs text-neutral-500 dark:text-neutral-400">
+                        {p.teamName ?? "No department"}
+                        <span className="text-neutral-400 dark:text-neutral-500"> · </span>
+                        completed
                       </p>
                     </div>
-                    <span className="flex shrink-0 items-center gap-1 text-xs font-medium text-indigo-600 dark:text-indigo-400">
+                    <span className="flex shrink-0 items-center justify-end gap-1 self-end text-xs font-medium text-indigo-600 dark:text-indigo-400 sm:self-start sm:justify-start">
                       Details
-                      <ChevronRight className="h-4 w-4" aria-hidden />
+                      <ChevronRight className="h-4 w-4 shrink-0" aria-hidden />
                     </span>
                   </div>
                 </Link>

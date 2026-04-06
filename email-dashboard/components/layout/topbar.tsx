@@ -23,6 +23,7 @@ import {
   Target,
   ClipboardList,
   ChevronRight,
+  Menu,
   type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -182,7 +183,14 @@ function buildBreadcrumbItems(
   return items;
 }
 
-export function Topbar({ environment = "Dev" }: { systemStatus?: SystemStatus; environment?: string }) {
+export function Topbar({
+  environment = "Dev",
+  onOpenMobileNav,
+}: {
+  systemStatus?: SystemStatus;
+  environment?: string;
+  onOpenMobileNav?: () => void;
+}) {
   const pathname = usePathname();
   const router = useRouter();
   const { theme, setTheme } = useTheme();
@@ -366,25 +374,54 @@ export function Topbar({ environment = "Dev" }: { systemStatus?: SystemStatus; e
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
+  const currentPageLabel =
+    breadcrumbItems.length > 0 ? breadcrumbItems[breadcrumbItems.length - 1].label : "Dashboard";
+
   return (
-    <header className="glass-surface-strong flex h-16 items-center justify-between gap-4 border-b px-4 md:px-5">
+    <header className="glass-surface-strong flex min-h-16 items-center justify-between gap-2 border-b px-2 pt-[env(safe-area-inset-top,0px)] sm:px-4 md:gap-4 md:px-5">
       {/* Back + Breadcrumbs */}
-      <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-2.5">
+      <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:gap-2.5">
+        {onOpenMobileNav ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-10 w-10 shrink-0 rounded-lg md:hidden"
+            aria-label="Open navigation menu"
+            onClick={onOpenMobileNav}
+          >
+            <Menu className="h-5 w-5" />
+          </Button>
+        ) : null}
         <Button
           type="button"
           variant="ghost"
           size="icon"
-          className="h-10 w-10 shrink-0 rounded-lg"
+          className="hidden h-10 w-10 shrink-0 rounded-lg md:inline-flex"
           aria-label="Go back"
           onClick={() => router.back()}
         >
           <ArrowLeft className="h-5 w-5" />
         </Button>
-        <Calendar className="h-5 w-5 shrink-0 text-muted-foreground" />
-        <nav className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-base" aria-label="Breadcrumb">
+        <Calendar className="hidden h-5 w-5 shrink-0 text-muted-foreground md:block" aria-hidden />
+        <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5 leading-tight md:hidden">
           <Link
             href="/dashboard"
-            className="shrink-0 font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+            className="truncate text-[10px] font-semibold uppercase tracking-wide text-muted-foreground underline-offset-2 hover:underline"
+          >
+            Email Intelligence
+          </Link>
+          <p className="truncate text-sm font-semibold text-foreground" title={currentPageLabel}>
+            {currentPageLabel}
+          </p>
+        </div>
+        <nav
+          className="hidden min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm md:flex md:gap-x-2 md:text-base"
+          aria-label="Breadcrumb"
+        >
+          <Link
+            href="/dashboard"
+            className="shrink-0 truncate font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
           >
             Email Intelligence
           </Link>

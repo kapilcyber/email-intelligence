@@ -64,12 +64,21 @@ export default function EscalationsPage() {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-50">My Escalations</h1>
+    <div className="min-w-0 max-w-full space-y-4 sm:space-y-6">
+      <div className="min-w-0">
+        <h1 className="text-xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50 sm:text-2xl">
+          My Escalations
+        </h1>
+        <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400 sm:text-sm">
+          Escalation emails assigned to your mailbox.
+        </p>
       </div>
 
-      <div data-tour-id="escalations-filters" className="flex flex-wrap items-center gap-2">
+      <div
+        data-tour-id="escalations-filters"
+        className="glass-surface rounded-2xl p-3 sm:p-4"
+      >
+        <p className="mb-2 text-xs font-medium text-muted-foreground">Filter by received date</p>
         <DateRangePair
           from={fromDate}
           to={toDate}
@@ -81,25 +90,30 @@ export default function EscalationsPage() {
             setToDate(v);
             setPage(1);
           }}
+          className="w-full min-w-0"
+          fieldClassName="relative min-w-0 flex-1"
         />
       </div>
 
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400">
-          {error}
+          <p className="break-words">{error}</p>
         </div>
       )}
 
       <Card data-tour-id="escalations-list" className="rounded-2xl">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <AlertCircle className="h-5 w-5" />
-            My Escalations ({total})
+        <CardHeader className="space-y-1 p-4 sm:p-6">
+          <CardTitle className="flex min-w-0 flex-wrap items-center gap-2 text-base">
+            <AlertCircle className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
+            <span className="min-w-0 break-words">
+              My Escalations
+              <span className="tabular-nums text-muted-foreground"> ({total})</span>
+            </span>
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
           {loading ? (
-            <Skeleton className="h-64 w-full rounded-lg" />
+            <Skeleton className="h-48 w-full rounded-lg sm:h-64" />
           ) : items.length === 0 ? (
             <p className="py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">
               No escalation emails in your mailbox.
@@ -107,26 +121,42 @@ export default function EscalationsPage() {
           ) : (
             <ul className="divide-y divide-neutral-200 dark:divide-neutral-700">
               {items.map((item) => (
-                <li key={item.id} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-start sm:justify-between">
+                <li
+                  key={item.id}
+                  className="flex flex-col gap-3 py-3 first:pt-0 sm:flex-row sm:items-start sm:justify-between sm:gap-4"
+                >
                   <div className="min-w-0 flex-1">
                     <Link
                       href={`/emails/${item.id}`}
-                      className="font-medium text-neutral-900 hover:underline dark:text-neutral-50"
+                      className="line-clamp-2 text-sm font-medium leading-snug text-neutral-900 hover:underline dark:text-neutral-50 sm:line-clamp-none sm:text-base"
                     >
                       {item.subject || "(No subject)"}
                     </Link>
-                    <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">
-                      {item.sender} · {formatDate(item.receivedAt)} · {item.priorityLabel ?? "—"}
+                    <p className="mt-1 break-words text-xs text-neutral-500 dark:text-neutral-400">
+                      <span className="font-medium text-neutral-600 dark:text-neutral-300">{item.sender}</span>
+                      <span className="text-neutral-400 dark:text-neutral-500"> · </span>
+                      <span className="tabular-nums">{formatDate(item.receivedAt)}</span>
+                      <span className="text-neutral-400 dark:text-neutral-500"> · </span>
+                      {item.priorityLabel ?? "—"}
                     </p>
                     {item.summary && (
-                      <p className="mt-1 line-clamp-2 text-sm text-neutral-600 dark:text-neutral-300">{item.summary}</p>
+                      <p className="mt-1.5 line-clamp-3 text-sm text-neutral-600 dark:text-neutral-300 sm:line-clamp-2">
+                        {item.summary}
+                      </p>
                     )}
                   </div>
-                  <div className="flex shrink-0 flex-col items-end gap-2 sm:flex-row sm:items-center">
+                  <div className="flex w-full min-w-0 flex-row items-center justify-between gap-2 border-t border-neutral-100 pt-2 dark:border-neutral-800 sm:w-auto sm:shrink-0 sm:flex-col sm:items-end sm:justify-start sm:border-t-0 sm:pt-0">
                     <RetagMailControl emailId={item.id} onDone={load} compact />
-                    <Link href={`/emails/${item.id}`}>
-                      <Button variant="ghost" size="icon">
-                        <ChevronRight className="h-4 w-4" />
+                    <Link href={`/emails/${item.id}`} className="shrink-0">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5 sm:h-9 sm:w-9 sm:justify-center sm:gap-0 sm:px-0"
+                        aria-label="Open email"
+                      >
+                        <span className="sm:hidden">Open</span>
+                        <ChevronRight className="h-4 w-4 shrink-0" aria-hidden />
                       </Button>
                     </Link>
                   </div>
@@ -135,18 +165,30 @@ export default function EscalationsPage() {
             </ul>
           )}
           {totalPages > 1 && (
-            <div className="mt-4 flex items-center justify-between">
-              <p className="text-sm text-neutral-500 dark:text-neutral-400">
+            <div className="mt-4 grid grid-cols-1 gap-2 border-t border-neutral-200 pt-4 dark:border-neutral-700 sm:flex sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full sm:order-1 sm:w-auto"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => p - 1)}
+              >
+                Previous
+              </Button>
+              <p className="py-0.5 text-center text-sm text-neutral-500 dark:text-neutral-400 sm:order-2 sm:flex-1 sm:py-0">
                 Page {page} of {totalPages}
               </p>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-                  Previous
-                </Button>
-                <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
-                  Next
-                </Button>
-              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full sm:order-3 sm:w-auto"
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                Next
+              </Button>
             </div>
           )}
         </CardContent>

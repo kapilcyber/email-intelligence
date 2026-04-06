@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { useParams, notFound } from "next/navigation";
 import { EmailsView } from "@/components/emails/emails-view";
+import { DepartmentSubnav } from "@/components/departments/department-subnav";
 import { slugToCategoryFilter } from "@/lib/departments";
 
 export default function DepartmentSlugPage() {
@@ -20,10 +21,9 @@ export default function DepartmentSlugPage() {
   }
 
   return (
-    <EmailsView
-      categoryFilter={categoryFilter}
-      title="Departments"
-      suppressSubtitle
-    />
+    <div className="min-w-0 max-w-full">
+      <DepartmentSubnav />
+      <EmailsView categoryFilter={categoryFilter} title="Departments" listContext="departments" />
+    </div>
   );
 }

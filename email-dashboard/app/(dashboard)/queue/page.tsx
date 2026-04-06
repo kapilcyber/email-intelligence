@@ -39,26 +39,32 @@ export default function QueueMonitorPage() {
 
   if (error) {
     return (
-      <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400">
-        {error}
+      <div className="min-w-0 max-w-full rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400">
+        <p className="break-words">{error}</p>
       </div>
     );
   }
 
   if (loading || !data) {
     return (
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-50">Queue Monitor</h1>
-          <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
+      <div className="min-w-0 max-w-full space-y-4 sm:space-y-6">
+        <div className="min-w-0">
+          <h1 className="text-xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50 sm:text-2xl">
+            Queue Monitor
+          </h1>
+          <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400 sm:text-sm">
             Your mailbox backlog (not the whole deployment)
           </p>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid min-w-0 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
           {[1, 2, 3, 4].map((i) => (
-            <Card key={i} className="rounded-2xl">
-              <CardHeader><Skeleton className="h-4 w-24" /></CardHeader>
-              <CardContent><Skeleton className="h-8 w-16" /></CardContent>
+            <Card key={i} className="min-w-0 rounded-2xl border-border">
+              <CardHeader className="p-4 sm:p-6">
+                <Skeleton className="h-4 w-24" />
+              </CardHeader>
+              <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
+                <Skeleton className="h-8 w-16" />
+              </CardContent>
             </Card>
           ))}
         </div>
@@ -67,78 +73,78 @@ export default function QueueMonitorPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-50">Queue Monitor</h1>
-        <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-          Redis & Celery workers
-        </p>
+    <div className="min-w-0 max-w-full space-y-4 sm:space-y-6">
+      <div className="min-w-0">
+        <h1 className="text-xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50 sm:text-2xl">
+          Queue Monitor
+        </h1>
+        <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400 sm:text-sm">Redis & Celery workers</p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        <Card className="rounded-2xl">
-          <CardHeader>
+      <div className="grid min-w-0 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-6">
+        <Card className="min-w-0 rounded-2xl border-border">
+          <CardHeader className="p-4 sm:p-6">
             <CardTitle className="text-sm font-medium text-neutral-500 dark:text-neutral-400">
               Your pending
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-semibold text-neutral-900 dark:text-neutral-50">{data.pending}</p>
+          <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
+            <p className="text-2xl font-semibold tabular-nums text-neutral-900 dark:text-neutral-50">{data.pending}</p>
             <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">Enqueued for your mailbox</p>
           </CardContent>
         </Card>
-        <Card className="rounded-2xl">
-          <CardHeader>
+        <Card className="min-w-0 rounded-2xl border-border">
+          <CardHeader className="p-4 sm:p-6">
             <CardTitle className="text-sm font-medium text-neutral-500 dark:text-neutral-400">
               Your active
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-semibold text-neutral-900 dark:text-neutral-50">{data.active}</p>
+          <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
+            <p className="text-2xl font-semibold tabular-nums text-neutral-900 dark:text-neutral-50">{data.active}</p>
             <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">Running now (best-effort)</p>
           </CardContent>
         </Card>
-        <Card className="rounded-2xl">
-          <CardHeader>
+        <Card className="min-w-0 rounded-2xl border-border">
+          <CardHeader className="p-4 sm:p-6">
             <CardTitle className="text-sm font-medium text-neutral-500 dark:text-neutral-400">
               Workers
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-semibold text-neutral-900 dark:text-neutral-50">
+          <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
+            <p className="text-2xl font-semibold tabular-nums text-neutral-900 dark:text-neutral-50">
               {data.activeWorkers ?? "—"}
             </p>
             <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">Shared pool</p>
           </CardContent>
         </Card>
-        <Card className="rounded-2xl">
-          <CardHeader>
+        <Card className="min-w-0 rounded-2xl border-border">
+          <CardHeader className="p-4 sm:p-6">
             <CardTitle className="text-sm font-medium text-neutral-500 dark:text-neutral-400">
               Failed
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-semibold text-neutral-900 dark:text-neutral-50">{data.failed}</p>
+          <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
+            <p className="text-2xl font-semibold tabular-nums text-neutral-900 dark:text-neutral-50">{data.failed}</p>
           </CardContent>
         </Card>
-        <Card className="rounded-2xl">
-          <CardHeader>
+        <Card className="min-w-0 rounded-2xl border-border">
+          <CardHeader className="p-4 sm:p-6">
             <CardTitle className="text-sm font-medium text-neutral-500 dark:text-neutral-400">
               Retry count
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-semibold text-neutral-900 dark:text-neutral-50">{data.retryCount}</p>
+          <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
+            <p className="text-2xl font-semibold tabular-nums text-neutral-900 dark:text-neutral-50">{data.retryCount}</p>
           </CardContent>
         </Card>
-        <Card className="rounded-2xl">
-          <CardHeader>
+        <Card className="min-w-0 rounded-2xl border-border">
+          <CardHeader className="p-4 sm:p-6">
             <CardTitle className="text-sm font-medium text-neutral-500 dark:text-neutral-400">
               Worker uptime
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-semibold text-neutral-900 dark:text-neutral-50">
+          <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
+            <p className="text-2xl font-semibold tabular-nums text-neutral-900 dark:text-neutral-50">
               {formatUptime(data.workerUptime)}
             </p>
           </CardContent>
@@ -146,13 +152,14 @@ export default function QueueMonitorPage() {
       </div>
 
       {data.taskDistribution && data.taskDistribution.length > 0 && (
-        <Card className="rounded-2xl">
-          <CardHeader>
+        <Card className="min-w-0 max-w-full overflow-hidden rounded-2xl border-border">
+          <CardHeader className="p-4 sm:p-6">
             <CardTitle className="text-base">Task distribution</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="h-64 w-full">
-              <ResponsiveContainer width="100%" height="100%">
+          <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
+            <div className="overflow-x-auto overflow-y-hidden [-webkit-overflow-scrolling:touch]">
+              <div className="h-56 min-h-[14rem] w-full min-w-[280px] sm:h-64">
+                <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={data.taskDistribution} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
                   <XAxis dataKey="name" tick={{ fontSize: 12, fill: chart.axis }} />
                   <YAxis tick={{ fontSize: 12, fill: chart.axisMuted }} />
@@ -160,6 +167,7 @@ export default function QueueMonitorPage() {
                   <Bar dataKey="count" fill={chart.isDark ? "#a1a1aa" : "#64748b"} radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
+              </div>
             </div>
           </CardContent>
         </Card>

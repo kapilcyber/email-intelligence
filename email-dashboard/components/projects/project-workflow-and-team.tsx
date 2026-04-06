@@ -87,15 +87,17 @@ function ProjectHierarchyNode({
   const rb = projectRoleBadge(node.role);
 
   return (
-    <div className="flex flex-col items-center">
-      <Card className="w-[220px] shrink-0 border-2 border-neutral-200 shadow-md transition-shadow hover:shadow-lg dark:border-neutral-700">
+    <div className="flex min-w-0 flex-col items-center">
+      <Card className="w-[min(100%,220px)] max-w-full shrink-0 border-2 border-border shadow-md transition-shadow hover:shadow-lg">
         <CardContent className="p-3">
           <div className="flex items-center gap-2">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800">
               <User className="h-4 w-4 text-neutral-500" />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-neutral-900 dark:text-neutral-50">{label}</p>
+              <p className="line-clamp-2 text-sm font-medium leading-snug text-neutral-900 dark:text-neutral-50">
+                {label}
+              </p>
               <div className="mt-1 flex flex-wrap items-center gap-1">
                 <Badge variant={rb.variant} className="px-1.5 py-0 text-[10px]">
                   {rb.label}
@@ -113,7 +115,7 @@ function ProjectHierarchyNode({
       {node.children.length > 0 && (
         <>
           <div className="h-4 w-0.5 bg-neutral-300 dark:bg-neutral-600" />
-          <div className="flex flex-wrap justify-center gap-8 pt-2">
+          <div className="flex flex-wrap justify-center gap-4 pt-2 sm:gap-8">
             {node.children.map((child) => (
               <ProjectHierarchyNode key={child.userId} node={child} projectLeadUserId={projectLeadUserId} />
             ))}
@@ -133,7 +135,11 @@ function ProjectMemberChart({
 }) {
   if (roots.length === 0) return null;
   return (
-    <LenisScrollArea axis="horizontal" className="py-4" contentClassName="flex min-w-max flex-wrap justify-center gap-8">
+    <LenisScrollArea
+      axis="horizontal"
+      className="min-w-0 max-w-full rounded-lg border border-border py-3 [-webkit-overflow-scrolling:touch] sm:py-4"
+      contentClassName="flex min-w-max flex-wrap justify-center gap-4 px-1 sm:gap-8 sm:px-0"
+    >
       {roots.map((node) => (
         <ProjectHierarchyNode key={node.userId} node={node} projectLeadUserId={projectLeadUserId} />
       ))}
@@ -173,33 +179,38 @@ export function ProjectWorkflowAndTeamSection({
         <ProjectMemberChart roots={memberRoots} projectLeadUserId={project.projectLeadUserId} />
       )}
       {project.assignedUsers.length > 0 && (
-        <ul className="mt-4 divide-y divide-neutral-200 rounded-lg border border-neutral-200 dark:divide-neutral-700 dark:border-neutral-700">
+        <ul className="mt-4 divide-y divide-neutral-200 rounded-lg border border-border dark:divide-neutral-700">
           {project.assignedUsers.map((u) => {
             const reportsTo = u.reportsToUserId ? byUserId.get(u.reportsToUserId) : undefined;
             return (
-              <li key={u.userId} className="space-y-1 px-3 py-3 text-sm">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div>
-                    <span className="font-medium text-neutral-900 dark:text-neutral-100">
+              <li key={u.userId} className="min-w-0 space-y-1.5 px-3 py-3 text-sm">
+                <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:gap-x-3">
+                  <div className="min-w-0 flex-1">
+                    <span className="break-words font-medium text-neutral-900 dark:text-neutral-100">
                       {u.displayName ?? u.email}
                     </span>
-                    {u.role?.trim() && (
-                      <span className="ml-2 rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-medium text-indigo-800 dark:bg-indigo-900/50 dark:text-indigo-200">
-                        {u.role.trim()}
-                      </span>
-                    )}
-                    {project.projectLeadUserId === u.userId && (
-                      <span className="ml-2 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200">
-                        Project lead
-                      </span>
-                    )}
+                    <span className="mt-1 flex flex-wrap gap-1.5 sm:ml-2 sm:inline-flex sm:mt-0">
+                      {u.role?.trim() && (
+                        <span className="inline-flex rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-medium text-indigo-800 dark:bg-indigo-900/50 dark:text-indigo-200">
+                          {u.role.trim()}
+                        </span>
+                      )}
+                      {project.projectLeadUserId === u.userId && (
+                        <span className="inline-flex rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200">
+                          Project lead
+                        </span>
+                      )}
+                    </span>
                   </div>
-                  <span className="text-xs text-neutral-500 dark:text-neutral-400">
-                    Reports to on project: {reportsTo ? (reportsTo.displayName ?? reportsTo.email) : "—"}
+                  <span className="min-w-0 break-words text-xs leading-snug text-neutral-500 dark:text-neutral-400 sm:text-right">
+                    <span className="font-medium text-neutral-600 dark:text-neutral-300">Reports to:</span>{" "}
+                    {reportsTo ? (reportsTo.displayName ?? reportsTo.email) : "—"}
                   </span>
                 </div>
                 {u.responsibilities && (
-                  <p className="text-xs leading-relaxed text-neutral-600 dark:text-neutral-400">{u.responsibilities}</p>
+                  <p className="break-words text-xs leading-relaxed text-neutral-600 dark:text-neutral-400">
+                    {u.responsibilities}
+                  </p>
                 )}
               </li>
             );
@@ -259,17 +270,17 @@ export function ProjectWorkflowAndTeamSection({
       )}
 
       {teamSectionAsAccordion ? (
-        <div className="glass-surface text-panel-foreground overflow-hidden rounded-2xl border border-border">
+        <div className="glass-surface text-panel-foreground min-w-0 overflow-hidden rounded-2xl border border-border">
           <button
             type="button"
             onClick={() => setTeamAccordionOpen((o) => !o)}
-            className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-panel-elevated/50"
+            className="flex min-h-11 w-full items-center justify-between gap-3 px-3 py-3 text-left transition-colors hover:bg-panel-elevated/50 sm:min-h-0 sm:px-4"
             aria-expanded={teamAccordionOpen}
             id={`project-team-trigger-${project.id}`}
           >
-            <span className="flex min-w-0 items-center gap-2 text-base font-semibold">
-              <Network className="h-5 w-5 shrink-0" aria-hidden />
-              <span className="truncate">Project team</span>
+            <span className="flex min-w-0 items-center gap-2 text-base font-semibold leading-snug">
+              <Network className="h-5 w-5 shrink-0 text-indigo-600 dark:text-indigo-400" aria-hidden />
+              <span className="min-w-0 break-words">Project team</span>
             </span>
             <ChevronDown
               className={cn(
@@ -281,7 +292,7 @@ export function ProjectWorkflowAndTeamSection({
           </button>
           {teamAccordionOpen && (
             <div
-              className="border-t border-border px-4 pb-4 pt-2"
+              className="border-t border-border px-3 pb-4 pt-2 sm:px-4"
               role="region"
               aria-labelledby={`project-team-trigger-${project.id}`}
             >

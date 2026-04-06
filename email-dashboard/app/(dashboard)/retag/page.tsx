@@ -8,7 +8,7 @@ import type { EscalationLeadItem, RetagApprovalOut } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, ListChecks, Tags } from "lucide-react";
 
 const PAGE_SIZE = 20;
 
@@ -70,24 +70,33 @@ export default function RetagPage() {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
-    <div className="space-y-6">
-      <div data-tour-id="retag-header">
-        <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-50">ReTag</h1>
+    <div className="min-w-0 max-w-full space-y-4 sm:space-y-6">
+      <div data-tour-id="retag-header" className="min-w-0">
+        <h1 className="text-xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50 sm:text-2xl">ReTag</h1>
+        <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400 sm:text-sm">
+          Emails you moved to another department, and any pending admin approvals.
+        </p>
       </div>
 
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400">
-          {error}
+          <p className="break-words">{error}</p>
         </div>
       )}
 
       <Card data-tour-id="retag-list" className="rounded-2xl">
-        <CardHeader>
-          <CardTitle className="text-base">Your retagged mail ({total})</CardTitle>
+        <CardHeader className="space-y-1 p-4 sm:p-6">
+          <CardTitle className="flex min-w-0 flex-wrap items-center gap-2 text-base">
+            <Tags className="h-5 w-5 shrink-0 text-indigo-600 dark:text-indigo-400" />
+            <span className="min-w-0 break-words">
+              Your retagged mail
+              <span className="tabular-nums text-muted-foreground"> ({total})</span>
+            </span>
+          </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
           {loading ? (
-            <Skeleton className="h-64 w-full rounded-lg" />
+            <Skeleton className="h-48 w-full rounded-lg sm:h-64" />
           ) : items.length === 0 ? (
             <p className="py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">
               Nothing here yet. Use <strong>Retag</strong> on an escalation or lead in your mailbox.
@@ -95,83 +104,119 @@ export default function RetagPage() {
           ) : (
             <ul className="divide-y divide-neutral-200 dark:divide-neutral-700">
               {items.map((item) => (
-                <li key={item.id} className="flex flex-col gap-1 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <li
+                  key={item.id}
+                  className="flex flex-col gap-2 py-3 first:pt-0 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
+                >
                   <div className="min-w-0 flex-1">
                     <Link
                       href={`/emails/${item.id}`}
-                      className="font-medium text-neutral-900 hover:underline dark:text-neutral-50"
+                      className="line-clamp-2 text-sm font-medium leading-snug text-neutral-900 hover:underline dark:text-neutral-50 sm:line-clamp-none sm:text-base"
                     >
                       {item.subject || "(No subject)"}
                     </Link>
-                    <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">{item.sender}</p>
+                    <p className="mt-1 break-words text-xs text-neutral-500 dark:text-neutral-400">
+                      <span className="font-medium text-neutral-600 dark:text-neutral-300">{item.sender}</span>
+                    </p>
                   </div>
-                  <Link href={`/emails/${item.id}`}>
-                    <Button variant="ghost" size="icon">
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
-                  </Link>
+                  <div className="flex w-full justify-end border-t border-neutral-100 pt-2 dark:border-neutral-800 sm:w-auto sm:border-t-0 sm:pt-0">
+                    <Link href={`/emails/${item.id}`} className="shrink-0">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5 sm:h-9 sm:w-9 sm:justify-center sm:gap-0 sm:px-0"
+                        aria-label="Open email"
+                      >
+                        <span className="sm:hidden">Open</span>
+                        <ChevronRight className="h-4 w-4 shrink-0" aria-hidden />
+                      </Button>
+                    </Link>
+                  </div>
                 </li>
               ))}
             </ul>
           )}
           {totalPages > 1 && (
-            <div data-tour-id="retag-pagination" className="mt-4 flex items-center justify-between">
-              <p className="text-sm text-neutral-500">Page {page} of {totalPages}</p>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-                  Previous
-                </Button>
-                <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
-                  Next
-                </Button>
-              </div>
+            <div
+              data-tour-id="retag-pagination"
+              className="mt-4 grid grid-cols-1 gap-2 border-t border-neutral-200 pt-4 dark:border-neutral-700 sm:flex sm:flex-row sm:items-center sm:justify-between sm:gap-3"
+            >
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full sm:order-1 sm:w-auto"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => p - 1)}
+              >
+                Previous
+              </Button>
+              <p className="py-0.5 text-center text-sm text-neutral-500 dark:text-neutral-400 sm:order-2 sm:flex-1 sm:py-0">
+                Page {page} of {totalPages}
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full sm:order-3 sm:w-auto"
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                Next
+              </Button>
             </div>
           )}
         </CardContent>
       </Card>
 
       <Card className="rounded-2xl">
-        <CardHeader>
-          <CardTitle className="text-base">Your approval requests</CardTitle>
+        <CardHeader className="space-y-1 p-4 sm:p-6">
+          <CardTitle className="flex min-w-0 flex-wrap items-center gap-2 text-base">
+            <ListChecks className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
+            <span className="min-w-0 break-words">Your approval requests</span>
+          </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
           {requestsLoading ? (
-            <Skeleton className="h-40 w-full rounded-lg" />
+            <Skeleton className="h-32 w-full rounded-lg sm:h-40" />
           ) : requests.length === 0 ? (
             <p className="text-sm text-neutral-500 dark:text-neutral-400">No retag approval requests yet.</p>
           ) : (
             <ul className="divide-y divide-neutral-200 dark:divide-neutral-700">
               {requests.map((req) => (
-                <li key={req.id} className="py-3">
-                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-neutral-900 dark:text-neutral-50">
+                <li key={req.id} className="py-3 first:pt-0">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                    <div className="min-w-0 flex-1">
+                      <p className="line-clamp-2 text-sm font-medium leading-snug text-neutral-900 dark:text-neutral-50 sm:line-clamp-none">
                         {req.emailSubject || req.emailId}
                       </p>
-                      <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                        Team: <span className="font-medium text-indigo-700 dark:text-indigo-300">{req.requestedTeam}</span> ·
-                        Requested {formatDate(req.requestedAt)}
+                      <p className="mt-1 break-words text-xs text-neutral-500 dark:text-neutral-400">
+                        Team:{" "}
+                        <span className="font-medium text-indigo-700 dark:text-indigo-300">{req.requestedTeam}</span>
+                        <span className="text-neutral-400 dark:text-neutral-500"> · </span>
+                        <span className="tabular-nums">Requested {formatDate(req.requestedAt)}</span>
                       </p>
                       {req.status === "rejected" && (
-                        <p className="text-xs text-red-600 dark:text-red-400">
+                        <p className="mt-1 break-words text-xs text-red-600 dark:text-red-400">
                           Request rejected{req.reviewedAt ? ` on ${formatDate(req.reviewedAt)}` : ""}.
                         </p>
                       )}
                     </div>
                     <span
-                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                      className={`inline-flex w-fit shrink-0 self-start rounded-full px-2.5 py-0.5 text-xs font-medium sm:self-center ${
                         req.status === "pending"
                           ? "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
                           : req.status === "approved"
-                          ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300"
-                          : "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300"
+                            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300"
+                            : "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300"
                       }`}
                     >
                       {req.status === "pending"
                         ? "Approval pending"
                         : req.status === "approved"
-                        ? "Approved"
-                        : "Rejected"}
+                          ? "Approved"
+                          : "Rejected"}
                     </span>
                   </div>
                 </li>

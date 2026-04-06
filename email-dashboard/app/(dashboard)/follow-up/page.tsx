@@ -75,58 +75,68 @@ function ProjectTrackerCard({
   }, [open, loadHistory]);
 
   return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-lg">{p.projectName}</CardTitle>
-        <p className="text-sm text-neutral-500 dark:text-neutral-400">{p.teamName ?? "No team"}</p>
-        <p className="text-xs text-neutral-400 dark:text-neutral-500">{formatWeek(p.weekStartISO, p.weekEndISO)}</p>
+    <Card className="min-w-0 max-w-full rounded-2xl border-border">
+      <CardHeader className="space-y-1 p-4 pb-2 sm:p-6 sm:pb-2">
+        <CardTitle className="break-words text-base sm:text-lg">{p.projectName}</CardTitle>
+        <p className="break-words text-sm text-neutral-500 dark:text-neutral-400">{p.teamName ?? "No team"}</p>
+        <p className="break-words text-xs leading-relaxed text-neutral-400 dark:text-neutral-500">
+          {formatWeek(p.weekStartISO, p.weekEndISO)}
+        </p>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div>
+      <CardContent className="space-y-4 p-4 pt-0 sm:p-6 sm:pt-0">
+        <div className="min-w-0">
           <p className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
             Expected days (set by admin)
           </p>
-          <p className="text-sm text-neutral-600 dark:text-neutral-300">
+          <p className="break-words text-sm text-neutral-600 dark:text-neutral-300">
             {p.scheduleDays.length > 0 ? p.scheduleDays.map((d) => SHORT[d] ?? d).join(", ") : "None configured"}
           </p>
         </div>
-        <div>
+        <div className="min-w-0">
           <p className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
             This week — you sent?
           </p>
-          <div className="grid grid-cols-7 gap-1 text-center text-[11px] sm:text-xs">
-            {p.days.map((day: FollowUpTrackerDay) => (
-              <div
-                key={day.key}
-                className="flex flex-col items-center gap-1 rounded-md border border-neutral-200 bg-neutral-50/80 px-0.5 py-2 dark:border-neutral-700 dark:bg-neutral-900/40"
-              >
-                <span className="font-medium text-neutral-600 dark:text-neutral-300">{SHORT[day.key] ?? day.key}</span>
-                <span
-                  className={cn(
-                    "inline-flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-semibold",
-                    day.sentByMe
-                      ? "bg-emerald-500 text-white"
-                      : "bg-neutral-200 text-neutral-500 dark:bg-neutral-700 dark:text-neutral-400"
-                  )}
-                  title={day.label}
+          <div className="max-w-full overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch] sm:overflow-visible sm:pb-0">
+            <div className="grid min-w-[18rem] grid-cols-7 gap-0.5 text-center text-[10px] sm:min-w-0 sm:gap-1 sm:text-xs">
+              {p.days.map((day: FollowUpTrackerDay) => (
+                <div
+                  key={day.key}
+                  className="flex min-w-0 flex-col items-center gap-0.5 rounded-md border border-neutral-200 bg-neutral-50/80 px-0.5 py-1.5 sm:gap-1 sm:py-2 dark:border-neutral-700 dark:bg-neutral-900/40"
                 >
-                  {day.sentByMe ? "✓" : "—"}
-                </span>
-                {day.expected && !day.sentByMe && (
-                  <span className="text-[9px] leading-tight text-amber-700 dark:text-amber-400">due</span>
-                )}
-              </div>
-            ))}
+                  <span className="font-medium text-neutral-600 dark:text-neutral-300">{SHORT[day.key] ?? day.key}</span>
+                  <span
+                    className={cn(
+                      "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-semibold sm:h-6 sm:w-6 sm:text-[10px]",
+                      day.sentByMe
+                        ? "bg-emerald-500 text-white"
+                        : "bg-neutral-200 text-neutral-500 dark:bg-neutral-700 dark:text-neutral-400"
+                    )}
+                    title={day.label}
+                  >
+                    {day.sentByMe ? "✓" : "—"}
+                  </span>
+                  {day.expected && !day.sentByMe && (
+                    <span className="text-[8px] leading-tight text-amber-700 dark:text-amber-400 sm:text-[9px]">due</span>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
-        <div data-tour-id="followup-history">
+        <div data-tour-id="followup-history" className="min-w-0">
           <button
             type="button"
-            className="flex w-full items-center justify-between rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-left text-sm font-medium text-neutral-800 dark:border-neutral-700 dark:bg-neutral-800/50 dark:text-neutral-100"
+            className="flex min-h-11 w-full items-center justify-between gap-2 rounded-lg border border-border bg-panel/60 px-3 py-2.5 text-left text-sm font-medium text-neutral-800 dark:text-neutral-100"
             onClick={() => setOpen((o) => !o)}
           >
-            Your tracker send history (last 90 days)
-            {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            <span className="min-w-0 flex-1 break-words pr-1 leading-snug">
+              Your tracker send history (last 90 days)
+            </span>
+            {open ? (
+              <ChevronUp className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+            ) : (
+              <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+            )}
           </button>
           {open && (
             <div className="mt-2 space-y-2 border-t border-neutral-100 pt-3 dark:border-neutral-800">
@@ -136,21 +146,23 @@ function ProjectTrackerCard({
                   <Skeleton className="h-12 w-full rounded-md" />
                 </>
               ) : histErr ? (
-                <p className="text-sm text-red-600 dark:text-red-400">{histErr}</p>
+                <p className="break-words text-sm text-red-600 dark:text-red-400">{histErr}</p>
               ) : hist.length === 0 ? (
                 <p className="text-sm text-neutral-500 dark:text-neutral-400">No matching sends found.</p>
               ) : (
                 <ul className="space-y-2">
                   {hist.map((e) => (
-                    <li key={e.emailId}>
+                    <li key={e.emailId} className="min-w-0">
                       <Link
                         href={`/emails/${e.emailId}`}
-                        className="block rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm transition-colors hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:bg-neutral-800"
+                        className="block min-w-0 rounded-md border border-border bg-panel px-3 py-2.5 text-sm transition-colors hover:bg-panel-elevated/80"
                       >
-                        <span className="font-medium text-neutral-900 dark:text-neutral-100">
+                        <span className="line-clamp-2 font-medium text-neutral-900 dark:text-neutral-100">
                           {e.subject?.trim() || "(No subject)"}
                         </span>
-                        <span className="mt-1 block text-xs text-neutral-500">{formatReceived(e.receivedAt)}</span>
+                        <span className="mt-1 block break-words text-xs tabular-nums text-neutral-500 dark:text-neutral-400">
+                          {formatReceived(e.receivedAt)}
+                        </span>
                       </Link>
                     </li>
                   ))}
@@ -194,34 +206,53 @@ export default function FollowUpPage() {
   }, [load]);
 
   return (
-    <div className="space-y-6">
-      <div data-tour-id="followup-header" className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-50">Follow UP</h1>
-          {weekHint && <p className="mt-2 text-xs text-neutral-500">{weekHint}</p>}
+    <div className="min-w-0 max-w-full space-y-4 sm:space-y-6">
+      <div
+        data-tour-id="followup-header"
+        className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:gap-4"
+      >
+        <div className="min-w-0 flex-1">
+          <h1 className="text-xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50 sm:text-2xl">
+            Follow UP
+          </h1>
+          {weekHint && (
+            <p className="mt-1 break-words text-xs leading-relaxed text-neutral-500 dark:text-neutral-400 sm:mt-2">
+              {weekHint}
+            </p>
+          )}
+          <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400 sm:text-sm">
+            Weekly send tracker for team projects you are on.
+          </p>
         </div>
-        <Button type="button" variant="outline" size="sm" onClick={() => load()} disabled={loading}>
-          <RefreshCw className={cn("mr-2 h-4 w-4", loading && "animate-spin")} />
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-10 w-full shrink-0 sm:h-9 sm:w-auto"
+          onClick={() => load()}
+          disabled={loading}
+        >
+          <RefreshCw className={cn("mr-2 h-4 w-4 shrink-0", loading && "animate-spin")} />
           Refresh
         </Button>
       </div>
 
       {error && (
         <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
-          {error}
+          <span className="break-words">{error}</span>
         </p>
       )}
 
       {loading ? (
         <div data-tour-id="followup-projects" className="space-y-4">
-          <Skeleton className="h-48 w-full rounded-xl" />
-          <Skeleton className="h-48 w-full rounded-xl" />
+          <Skeleton className="h-40 w-full rounded-xl sm:h-48" />
+          <Skeleton className="h-40 w-full rounded-xl sm:h-48" />
         </div>
       ) : projects.length === 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>No assigned projects</CardTitle>
-            <p className="text-sm text-neutral-500 dark:text-neutral-400">
+        <Card className="min-w-0 rounded-2xl border-border">
+          <CardHeader className="p-4 sm:p-6">
+            <CardTitle className="text-base sm:text-lg">No assigned projects</CardTitle>
+            <p className="mt-2 text-sm leading-relaxed text-neutral-500 dark:text-neutral-400">
               When you are assigned to a team project, tracker follow-up appears here.
             </p>
           </CardHeader>

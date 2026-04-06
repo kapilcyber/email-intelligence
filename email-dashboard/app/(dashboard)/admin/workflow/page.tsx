@@ -83,7 +83,7 @@ function MemberProjectsTree({ names }: { names: string[] }) {
             key={`${name}-${i}`}
             className="relative py-1 pl-3 text-[11px] before:absolute before:left-0 before:top-[0.62rem] before:h-px before:w-2.5 before:-translate-x-3 before:bg-indigo-400/75 before:content-[''] dark:before:bg-indigo-400/50"
           >
-            <span className="font-medium leading-snug text-foreground">{name}</span>
+            <span className="break-words font-medium leading-snug text-foreground">{name}</span>
           </li>
         ))}
       </ul>
@@ -142,7 +142,9 @@ function WorkflowMemberChartCard({
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-start justify-between gap-1">
-                <p className="truncate text-sm font-semibold leading-tight text-foreground">{label}</p>
+                <p className="line-clamp-2 min-w-0 flex-1 text-sm font-semibold leading-tight text-foreground">
+                  {label}
+                </p>
                 <ChevronDown
                   className={cn(
                     "mt-0.5 h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 motion-reduce:transition-none",
@@ -162,9 +164,9 @@ function WorkflowMemberChartCard({
                 )}
               </div>
               {node.teamName && (
-                <p className="mt-1.5 flex items-center gap-1 truncate text-[11px] text-muted-foreground">
-                  <Building2 className="h-3 w-3 shrink-0 opacity-70" aria-hidden />
-                  <span className="truncate">{node.teamName}</span>
+                <p className="mt-1.5 flex items-start gap-1 text-[11px] leading-snug text-muted-foreground">
+                  <Building2 className="mt-0.5 h-3 w-3 shrink-0 opacity-70" aria-hidden />
+                  <span className="min-w-0 break-words">{node.teamName}</span>
                 </p>
               )}
               <p className="mt-2 text-[10px] text-muted-foreground">
@@ -241,9 +243,10 @@ function HorizontalHierarchyBranch({
 function HierarchyChart({ roots }: { roots: WorkflowTreeNode[] }) {
   if (roots.length === 0) return null;
   return (
-    <div className="overflow-x-auto overflow-y-visible py-2 [-webkit-overflow-scrolling:touch]">
-      <div className="inline-block min-w-min px-1 pb-2 pt-2">
-        <div className="flex flex-col gap-10">
+    <div className="max-w-full min-w-0 overflow-x-auto overflow-y-visible rounded-xl border border-border/50 py-2 [-webkit-overflow-scrolling:touch] sm:border-transparent sm:py-2">
+      <p className="mb-2 px-1 text-[11px] text-muted-foreground sm:hidden">Swipe horizontally to see the full chart.</p>
+      <div className="inline-block min-w-min px-1 pb-2 pt-1 sm:pt-2">
+        <div className="flex flex-col gap-8 sm:gap-10">
           {roots.map((node, i) => (
             <HorizontalHierarchyBranch key={node.id} node={node} animIndex={i} childIndex={0} />
           ))}
@@ -301,28 +304,35 @@ export default function AdminWorkflowPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-50">
+    <div className="min-w-0 max-w-full space-y-4 sm:space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50 sm:text-2xl">
             Hierarchy
           </h1>
+          <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400 sm:text-sm">
+            Org chart and manager assignments (chart scrolls sideways on small screens).
+          </p>
         </div>
-        <div className="flex gap-2">
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:shrink-0 sm:gap-2">
           <Button
+            type="button"
             variant={view === "chart" ? "default" : "outline"}
             size="sm"
+            className="h-10 w-full sm:h-9 sm:w-auto"
             onClick={() => setView("chart")}
           >
-            <LayoutGrid className="mr-2 h-4 w-4" />
+            <LayoutGrid className="mr-2 h-4 w-4 shrink-0" />
             Chart
           </Button>
           <Button
+            type="button"
             variant={view === "list" ? "default" : "outline"}
             size="sm"
+            className="h-10 w-full sm:h-9 sm:w-auto"
             onClick={() => setView("list")}
           >
-            <List className="mr-2 h-4 w-4" />
+            <List className="mr-2 h-4 w-4 shrink-0" />
             List
           </Button>
         </div>
@@ -330,17 +340,17 @@ export default function AdminWorkflowPage() {
 
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400">
-          {error}
+          <p className="break-words">{error}</p>
         </div>
       )}
 
-      <Card className="overflow-hidden rounded-2xl border-border/60 shadow-sm">
+      <Card className="min-w-0 max-w-full overflow-hidden rounded-2xl border-border/60 shadow-sm">
         <CardContent className="p-4 sm:p-6">
           {loading ? (
             <div className="space-y-3">
-              <Skeleton className="h-20 w-full rounded-xl" />
-              <Skeleton className="h-20 w-full rounded-xl" />
-              <Skeleton className="h-20 w-full rounded-xl" />
+              <Skeleton className="h-16 w-full rounded-xl sm:h-20" />
+              <Skeleton className="h-16 w-full rounded-xl sm:h-20" />
+              <Skeleton className="h-16 w-full rounded-xl sm:h-20" />
             </div>
           ) : nodes.length === 0 ? (
             <p className="py-10 text-center text-sm text-muted-foreground">
@@ -349,7 +359,7 @@ export default function AdminWorkflowPage() {
           ) : view === "chart" ? (
             <HierarchyChart roots={tree} />
           ) : (
-            <ul className="flex flex-col gap-3">
+            <ul className="flex min-w-0 flex-col gap-3">
               {nodes.map((n, i) => {
                 const label = n.displayName ?? n.email;
                 const initials = getInitials(label);
@@ -358,13 +368,13 @@ export default function AdminWorkflowPage() {
                   <li
                     key={n.id}
                     className={cn(
-                      "animate-in fade-in slide-in-from-bottom-2 fill-mode-both motion-reduce:animate-none"
+                      "min-w-0 animate-in fade-in slide-in-from-bottom-2 fill-mode-both motion-reduce:animate-none"
                     )}
                     style={{ animationDelay: `${i * 45}ms`, animationDuration: "380ms" }}
                   >
                     <div
                       className={cn(
-                        "group flex flex-col gap-4 rounded-xl border border-border/60 bg-panel/40 p-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6",
+                        "group flex min-w-0 flex-col gap-4 rounded-xl border border-border/60 bg-panel/40 p-3 sm:p-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6",
                         "transition-all duration-200 ease-out motion-reduce:transition-none",
                         "hover:border-indigo-300/50 hover:bg-panel-elevated/50 hover:shadow-md",
                         "dark:hover:border-indigo-500/35"
@@ -383,7 +393,7 @@ export default function AdminWorkflowPage() {
                         </div>
                         <div className="min-w-0 flex-1 space-y-2">
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className="font-semibold text-foreground">{label}</span>
+                            <span className="break-words font-semibold text-foreground">{label}</span>
                             <Badge variant={rv} className="text-[10px] font-semibold">
                               {n.role}
                             </Badge>
@@ -393,10 +403,10 @@ export default function AdminWorkflowPage() {
                               </Badge>
                             )}
                           </div>
-                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                            <span className="inline-flex items-center gap-1 rounded-md bg-muted/80 px-2 py-1 font-medium text-foreground/80">
-                              <Building2 className="h-3.5 w-3.5 opacity-70" aria-hidden />
-                              {n.teamName ?? "No team"}
+                          <div className="flex flex-col gap-2 text-xs text-muted-foreground sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-3 sm:gap-y-1">
+                            <span className="inline-flex w-fit max-w-full items-center gap-1 rounded-md bg-muted/80 px-2 py-1 font-medium text-foreground/80">
+                              <Building2 className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
+                              <span className="break-words">{n.teamName ?? "No team"}</span>
                             </span>
                             <span className="inline-flex max-w-full items-start gap-1 rounded-md bg-muted/50 px-2 py-1">
                               <FolderKanban className="mt-0.5 h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
@@ -406,20 +416,20 @@ export default function AdminWorkflowPage() {
                                   : "No team projects"}
                               </span>
                             </span>
-                            <span>
+                            <span className="break-words">
                               Reports to{" "}
                               <span className="font-medium text-foreground">{getManagerName(n.managerId)}</span>
                             </span>
                           </div>
                         </div>
                       </div>
-                      <div className="shrink-0 sm:w-[220px]">
+                      <div className="w-full shrink-0 border-t border-border/50 pt-3 sm:w-[220px] sm:border-t-0 sm:pt-0">
                         <Select
                           value={n.managerId ?? ""}
                           onValueChange={(mid) => assignManager(n.id, mid)}
                           disabled={!!updatingId}
                         >
-                          <SelectTrigger className="h-10 w-full rounded-lg transition-colors hover:bg-panel-elevated">
+                          <SelectTrigger className="h-10 w-full min-w-0 rounded-lg transition-colors hover:bg-panel-elevated">
                             <SelectValue placeholder="Assign manager" />
                           </SelectTrigger>
                           <SelectContent>

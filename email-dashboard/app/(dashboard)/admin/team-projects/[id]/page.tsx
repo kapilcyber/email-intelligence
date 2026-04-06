@@ -56,7 +56,7 @@ export default function AdminProjectWorkflowPage() {
 
   if (!id) {
     return (
-      <div className="p-6 text-sm text-neutral-500">
+      <div className="min-w-0 max-w-full p-4 text-sm text-neutral-500 sm:p-6">
         Invalid project.{" "}
         <Link
           href="/admin/team-projects"
@@ -69,16 +69,16 @@ export default function AdminProjectWorkflowPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 max-w-full space-y-4 sm:space-y-6">
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400">
-          {error}
+          <p className="break-words">{error}</p>
         </div>
       )}
 
       {loading && (
         <div className="space-y-4">
-          <Skeleton className="h-10 w-2/3 max-w-md" />
+          <Skeleton className="h-9 w-full max-w-md" />
           <Skeleton className="h-32 w-full rounded-xl" />
           <Skeleton className="h-64 w-full rounded-xl" />
         </div>
@@ -86,38 +86,40 @@ export default function AdminProjectWorkflowPage() {
 
       {!loading && project && (
         <>
-          <div>
-            <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-50">{project.name}</h1>
-            <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
+          <div className="min-w-0">
+            <h1 className="break-words text-xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50 sm:text-2xl">
+              {project.name}
+            </h1>
+            <p className="mt-1 break-words text-xs text-neutral-500 dark:text-neutral-400 sm:text-sm">
               {project.teamName ?? "No department"} · <span className="capitalize">{project.status}</span>
               {typeof project.structure?.currentPhase === "number"
                 ? ` · Phase ${project.structure.currentPhase}`
                 : ""}
             </p>
             {project.projectLeadUserId && (
-              <p className="mt-2 text-sm text-indigo-800 dark:text-indigo-200">
+              <p className="mt-2 break-words text-sm text-indigo-800 dark:text-indigo-200">
                 <span className="font-medium">Project lead:</span>{" "}
                 {project.assignedUsers.find((x) => x.userId === project.projectLeadUserId)?.displayName ??
                   project.assignedUsers.find((x) => x.userId === project.projectLeadUserId)?.email ??
                   "—"}
               </p>
             )}
-            <div className="mt-3 flex flex-wrap gap-2">
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
               {isAdmin ? (
-                <Link href="/admin/team-projects">
-                  <Button variant="outline" size="sm" type="button">
+                <Link href="/admin/team-projects" className="w-full sm:w-auto">
+                  <Button variant="outline" size="sm" type="button" className="w-full sm:w-auto">
                     Edit on list
                   </Button>
                 </Link>
               ) : (
-                <Link href="/admin/my-projects">
-                  <Button variant="outline" size="sm" type="button">
+                <Link href="/admin/my-projects" className="w-full sm:w-auto">
+                  <Button variant="outline" size="sm" type="button" className="w-full sm:w-auto">
                     Back to projects
                   </Button>
                 </Link>
               )}
             </div>
-            <p className="mt-2 text-xs text-neutral-400 dark:text-neutral-500">
+            <p className="mt-2 text-xs leading-relaxed text-neutral-400 dark:text-neutral-500">
               {isAdmin ? (
                 <>
                   Open <strong>Projects</strong> in the sidebar and click <strong>Edit</strong> on this project to set{" "}
@@ -134,7 +136,7 @@ export default function AdminProjectWorkflowPage() {
             <ProjectWorkflowAndTeamSection project={project} />
           </div>
 
-          <div className="space-y-2">
+          <div className="min-w-0 space-y-2">
             <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">Mailbox &amp; threads</h2>
             {canViewMailboxThreads ? (
               <ProjectMailboxThreads projectId={project.id} projectName={project.name} />

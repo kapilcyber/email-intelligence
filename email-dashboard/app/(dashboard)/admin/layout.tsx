@@ -96,10 +96,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   if (access === "session-loading" || access === "me-loading") {
     return (
-      <div className="p-8">
+      <div className="min-w-0 max-w-full p-4 sm:p-6 md:p-8">
         <div className="mx-auto max-w-[960px] space-y-4">
-          <div className="h-8 w-40 animate-pulse rounded-md bg-muted" />
-          <div className="h-40 animate-pulse rounded-xl bg-muted/60" />
+          <div className="h-8 w-40 max-w-full animate-pulse rounded-md bg-muted" />
+          <div className="h-40 max-w-full animate-pulse rounded-xl bg-muted/60" />
         </div>
       </div>
     );
@@ -107,9 +107,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   if (access !== "ok") {
     return (
-      <div className="p-8 text-sm text-muted-foreground">
-        Redirecting…
-      </div>
+      <div className="min-w-0 max-w-full p-4 text-sm text-muted-foreground sm:p-6">Redirecting…</div>
     );
   }
 

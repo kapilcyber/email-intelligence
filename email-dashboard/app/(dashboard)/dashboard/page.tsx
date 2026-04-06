@@ -144,6 +144,18 @@ function selectDashboardCalendarEvents(events: CalendarEventOut[], now: Date): C
   });
 }
 
+function useNarrowCharts(maxWidthPx = 639) {
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${maxWidthPx}px)`);
+    const fn = () => setNarrow(mq.matches);
+    fn();
+    mq.addEventListener("change", fn);
+    return () => mq.removeEventListener("change", fn);
+  }, [maxWidthPx]);
+  return narrow;
+}
+
 function DashboardAiChartsEmpty({
   api,
   onClassifyAll,
@@ -246,6 +258,19 @@ function DashboardAiCharts({
   const [leadCountsByUser, setLeadCountsByUser] = useState<UserLeadCountOut[] | null>(null);
   const chart = useChartTheme();
   const tt = chartTooltipProps(chart);
+  const narrow = useNarrowCharts(639);
+  const chartBoxH = narrow ? 240 : 320;
+  const axisTick = { fontSize: narrow ? 9 : 10, fill: chart.axis };
+  const axisTickMuted = { fontSize: narrow ? 9 : 10, fill: chart.axisMuted };
+  const marginCategory = narrow
+    ? { top: 8, right: 4, bottom: 28, left: 0 }
+    : { top: 8, right: 32, bottom: 8, left: 8 };
+  const marginStandard = narrow
+    ? { top: 6, right: 4, bottom: 6, left: 0 }
+    : { top: 8, right: 8, bottom: 8, left: 8 };
+  const marginEscalation = narrow
+    ? { top: 6, right: 4, left: 0, bottom: 52 }
+    : { top: 8, right: 8, left: 8, bottom: 56 };
 
   useEffect(() => {
     setEscalationByUser(null);
@@ -347,7 +372,10 @@ function DashboardAiCharts({
           <Sparkles className="h-4 w-4" />
           AI classification overview
         </h2>
-        <div className="h-64 animate-pulse rounded-lg bg-neutral-200 dark:bg-neutral-700" />
+        <div
+          className="w-full min-w-0 animate-pulse rounded-lg bg-neutral-200 dark:bg-neutral-700"
+          style={{ height: chartBoxH }}
+        />
       </section>
     );
   }
@@ -357,13 +385,13 @@ function DashboardAiCharts({
   }
 
   return (
-    <section className="space-y-6">
+    <section className="min-w-0 space-y-4 sm:space-y-6">
       <h2 className="flex items-center gap-2 text-sm font-semibold text-neutral-700 dark:text-neutral-300">
         <Sparkles className="h-4 w-4" />
         AI classification overview
       </h2>
-      <div className="flex flex-col gap-6">
-        <div className="rounded-3xl border border-sky-100 bg-gradient-to-br from-white via-sky-50 to-cyan-50 p-4 shadow-md shadow-sky-100/60 dark:border-neutral-800 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 dark:shadow-none">
+      <div className="flex min-w-0 flex-col gap-4 sm:gap-6">
+        <div className="min-w-0 rounded-3xl border border-sky-100 bg-gradient-to-br from-white via-sky-50 to-cyan-50 p-3 shadow-md shadow-sky-100/60 dark:border-neutral-800 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 dark:shadow-none sm:p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <span className="rounded-full bg-white/80 px-3 py-1 text-xs text-neutral-600 ring-1 ring-sky-200 dark:bg-neutral-800 dark:text-neutral-300 dark:ring-neutral-700">
               By category
@@ -372,39 +400,53 @@ function DashboardAiCharts({
               Emails by category (KPI)
             </h3>
           </div>
-          <div className="h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={categoryKpiData} margin={{ top: 8, right: 32, bottom: 8, left: 8 }}>
+          <div className="w-full min-w-0" style={{ height: chartBoxH }}>
+            <ResponsiveContainer width="100%" height="100%" debounce={80}>
+              <ComposedChart data={categoryKpiData} margin={marginCategory}>
                 <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} vertical={false} />
                 <XAxis
                   dataKey="category"
-                  tick={{ fontSize: 10, fill: chart.axis }}
+                  tick={axisTick}
+                  interval={narrow ? "preserveStartEnd" : 0}
+                  angle={narrow ? -20 : 0}
+                  textAnchor={narrow ? "end" : "middle"}
+                  height={narrow ? 36 : 30}
                 />
                 <YAxis
                   yAxisId="left"
                   orientation="left"
-                  tick={{ fontSize: 10, fill: chart.axisMuted }}
-                  label={{
-                    value: "Email count",
-                    angle: -90,
-                    position: "insideLeft",
-                    fontSize: 10,
-                    fill: chart.axisMuted,
-                  }}
+                  width={narrow ? 28 : undefined}
+                  tick={axisTickMuted}
+                  label={
+                    narrow
+                      ? undefined
+                      : {
+                          value: "Email count",
+                          angle: -90,
+                          position: "insideLeft",
+                          fontSize: 10,
+                          fill: chart.axisMuted,
+                        }
+                  }
                 />
                 <YAxis
                   yAxisId="right"
                   orientation="right"
-                  tick={{ fontSize: 10, fill: chart.axisMuted }}
+                  width={narrow ? 30 : undefined}
+                  tick={axisTickMuted}
                   domain={[0, 100]}
                   tickFormatter={(v) => `${v}%`}
-                  label={{
-                    value: "% of total",
-                    angle: 90,
-                    position: "insideRight",
-                    fontSize: 10,
-                    fill: chart.axisMuted,
-                  }}
+                  label={
+                    narrow
+                      ? undefined
+                      : {
+                          value: "% of total",
+                          angle: 90,
+                          position: "insideRight",
+                          fontSize: 10,
+                          fill: chart.axisMuted,
+                        }
+                  }
                 />
                 <Tooltip
                   {...tt}
@@ -414,9 +456,13 @@ function DashboardAiCharts({
                 />
                 <Legend
                   layout="horizontal"
-                  align="right"
+                  align={narrow ? "center" : "right"}
                   verticalAlign="top"
-                  wrapperStyle={{ paddingBottom: 8, color: chart.axis }}
+                  wrapperStyle={{
+                    paddingBottom: narrow ? 4 : 8,
+                    color: chart.axis,
+                    fontSize: narrow ? 10 : 12,
+                  }}
                 />
                 <Bar
                   yAxisId="left"
@@ -445,14 +491,14 @@ function DashboardAiCharts({
             Showing {categoryKpiData.length} categor{categoryKpiData.length === 1 ? "y" : "ies"}.
           </p>
         </div>
-        <div className="rounded-3xl border border-violet-100 bg-gradient-to-br from-white via-violet-50 to-fuchsia-50 p-4 shadow-md shadow-violet-100/60 dark:border-neutral-800 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 dark:shadow-none">
+        <div className="min-w-0 rounded-3xl border border-violet-100 bg-gradient-to-br from-white via-violet-50 to-fuchsia-50 p-3 shadow-md shadow-violet-100/60 dark:border-neutral-800 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 dark:shadow-none sm:p-4">
           <h3 className="mb-3 text-xs font-medium uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
             Emails by priority
           </h3>
           {priorityData.length > 0 ? (
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={prioritySeriesData} margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
+            <div className="w-full min-w-0" style={{ height: chartBoxH }}>
+              <ResponsiveContainer width="100%" height="100%" debounce={80}>
+                <AreaChart data={prioritySeriesData} margin={marginStandard}>
                   <defs>
                     <linearGradient id="priority-area-fill" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor="#8b5cf6" stopOpacity={chart.isDark ? 0.55 : 0.45} />
@@ -460,8 +506,19 @@ function DashboardAiCharts({
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chart.grid} />
-                  <XAxis dataKey="name" tick={{ fontSize: 10, fill: chart.axis }} />
-                  <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: chart.axisMuted }} />
+                  <XAxis
+                    dataKey="name"
+                    tick={axisTick}
+                    interval={narrow ? "preserveStartEnd" : 0}
+                    angle={narrow ? -25 : 0}
+                    textAnchor={narrow ? "end" : "middle"}
+                    height={narrow ? 40 : 30}
+                  />
+                  <YAxis
+                    allowDecimals={false}
+                    width={narrow ? 28 : undefined}
+                    tick={axisTickMuted}
+                  />
                   <Tooltip
                     {...tt}
                     contentStyle={{ ...tt.contentStyle, borderRadius: 8 }}
@@ -470,27 +527,29 @@ function DashboardAiCharts({
                       props.payload?.name ?? "Priority",
                     ]}
                   />
-                  <Legend wrapperStyle={{ color: chart.axis }} />
+                  <Legend wrapperStyle={{ color: chart.axis, fontSize: narrow ? 10 : 12 }} />
                   <Area
                     type="monotone"
                     dataKey="count"
                     name="Priority count"
                     stroke="#7c3aed"
-                    strokeWidth={3}
+                    strokeWidth={narrow ? 2 : 3}
                     fill="url(#priority-area-fill)"
                     isAnimationActive
                     animationDuration={900}
                   />
-                  <Line
-                    type="monotone"
-                    dataKey="count"
-                    name="Priority trend"
-                    stroke="#4c1d95"
-                    strokeWidth={2}
-                    dot={{ r: 4, fill: "#4c1d95" }}
-                    isAnimationActive
-                    animationDuration={1100}
-                  />
+                  {!narrow && (
+                    <Line
+                      type="monotone"
+                      dataKey="count"
+                      name="Priority trend"
+                      stroke="#4c1d95"
+                      strokeWidth={2}
+                      dot={{ r: 4, fill: "#4c1d95" }}
+                      isAnimationActive
+                      animationDuration={1100}
+                    />
+                  )}
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -500,7 +559,7 @@ function DashboardAiCharts({
             </p>
           )}
         </div>
-        <div className="rounded-3xl border border-orange-100 bg-gradient-to-br from-white via-orange-50 to-amber-50 p-4 shadow-md shadow-orange-100/60 dark:border-neutral-800 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 dark:shadow-none">
+        <div className="min-w-0 rounded-3xl border border-orange-100 bg-gradient-to-br from-white via-orange-50 to-amber-50 p-3 shadow-md shadow-orange-100/60 dark:border-neutral-800 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 dark:shadow-none sm:p-4">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-xs font-medium uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
                 Escalations by team member
@@ -513,15 +572,18 @@ function DashboardAiCharts({
               </Link>
             </div>
             {escalationByUser === null ? (
-              <div className="h-80 animate-pulse rounded-lg bg-neutral-200 dark:bg-neutral-700" />
+              <div
+                className="w-full min-w-0 animate-pulse rounded-lg bg-neutral-200 dark:bg-neutral-700"
+                style={{ height: chartBoxH }}
+              />
             ) : memberEscalationChartData.length === 0 ? (
               <p className="py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">
                 No escalation emails per mailbox yet.
               </p>
             ) : (
-              <div className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={memberEscalationChartData} margin={{ top: 8, right: 8, left: 8, bottom: 56 }}>
+              <div className="w-full min-w-0" style={{ height: chartBoxH }}>
+                <ResponsiveContainer width="100%" height="100%" debounce={80}>
+                  <LineChart data={memberEscalationChartData} margin={marginEscalation}>
                     <defs>
                       <linearGradient id="esc-line-fill" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0%" stopColor="#f97316" stopOpacity={chart.isDark ? 0.45 : 0.35} />
@@ -531,22 +593,28 @@ function DashboardAiCharts({
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chart.grid} />
                     <XAxis
                       dataKey="name"
-                      tick={{ fontSize: 10, fill: chart.axis }}
-                      angle={-40}
+                      tick={{ fontSize: narrow ? 8 : 10, fill: chart.axis }}
+                      tickFormatter={(v: string) => (v.length > 10 ? `${v.slice(0, 9)}…` : v)}
+                      angle={narrow ? -55 : -40}
                       textAnchor="end"
-                      height={56}
+                      height={narrow ? 52 : 56}
                       interval={0}
                     />
                     <YAxis
-                      tick={{ fontSize: 10, fill: chart.axisMuted }}
+                      width={narrow ? 26 : undefined}
+                      tick={axisTickMuted}
                       allowDecimals={false}
-                      label={{
-                        value: "Count",
-                        angle: -90,
-                        position: "insideLeft",
-                        fontSize: 10,
-                        fill: chart.axisMuted,
-                      }}
+                      label={
+                        narrow
+                          ? undefined
+                          : {
+                              value: "Count",
+                              angle: -90,
+                              position: "insideLeft",
+                              fontSize: 10,
+                              fill: chart.axisMuted,
+                            }
+                      }
                     />
                     <Tooltip
                       {...tt}
@@ -570,9 +638,9 @@ function DashboardAiCharts({
                       dataKey="count"
                       name="Escalations"
                       stroke="#ea580c"
-                      strokeWidth={3}
-                      dot={{ r: 4, fill: "#ea580c" }}
-                      activeDot={{ r: 6 }}
+                      strokeWidth={narrow ? 2 : 3}
+                      dot={{ r: narrow ? 3 : 4, fill: "#ea580c" }}
+                      activeDot={{ r: narrow ? 5 : 6 }}
                       isAnimationActive
                       animationDuration={1100}
                     />
@@ -581,7 +649,7 @@ function DashboardAiCharts({
               </div>
             )}
           </div>
-        <div className="rounded-3xl border border-indigo-100 bg-gradient-to-br from-white via-indigo-50 to-cyan-50 p-4 shadow-md shadow-indigo-100/60 dark:border-neutral-800 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 dark:shadow-none">
+        <div className="min-w-0 rounded-3xl border border-indigo-100 bg-gradient-to-br from-white via-indigo-50 to-cyan-50 p-3 shadow-md shadow-indigo-100/60 dark:border-neutral-800 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 dark:shadow-none sm:p-4">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-xs font-medium uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
                 Leads by team member (Nightingale)
@@ -594,18 +662,28 @@ function DashboardAiCharts({
               </Link>
             </div>
             {leadCountsByUser === null ? (
-              <div className="h-80 animate-pulse rounded-lg bg-neutral-200 dark:bg-neutral-700" />
+              <div
+                className="w-full min-w-0 animate-pulse rounded-lg bg-neutral-200 dark:bg-neutral-700"
+                style={{ height: chartBoxH }}
+              />
             ) : memberLeadChartData.length === 0 ? (
               <p className="py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">
                 No lead emails per mailbox yet.
               </p>
             ) : (
-              <div className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <RadarChart data={memberLeadChartData} outerRadius="72%">
+              <div className="w-full min-w-0" style={{ height: chartBoxH }}>
+                <ResponsiveContainer width="100%" height="100%" debounce={80}>
+                  <RadarChart data={memberLeadChartData} outerRadius={narrow ? "58%" : "72%"}>
                     <PolarGrid stroke={chart.polarGrid} />
-                    <PolarAngleAxis dataKey="name" tick={{ fontSize: 10, fill: chart.axis }} />
-                    <PolarRadiusAxis allowDecimals={false} tick={{ fontSize: 10, fill: chart.axisMuted }} />
+                    <PolarAngleAxis
+                      dataKey="name"
+                      tick={{ fontSize: narrow ? 8 : 10, fill: chart.axis }}
+                      tickFormatter={(v: string) => (v.length > 12 ? `${v.slice(0, 11)}…` : v)}
+                    />
+                    <PolarRadiusAxis
+                      allowDecimals={false}
+                      tick={{ fontSize: narrow ? 8 : 10, fill: chart.axisMuted }}
+                    />
                     <Tooltip
                       {...tt}
                       contentStyle={{ ...tt.contentStyle, borderRadius: 8 }}
@@ -1074,35 +1152,37 @@ function DashboardPageContent() {
   }, [dashboardTourOpen, dashboardTourStep, currentTour]);
 
   return (
-    <div className="flex w-full min-w-0 flex-col gap-6 md:gap-8">
-      <header className="">
-        <h1 className="text-2xl font-bold tracking-tight text-neutral-900 dark:text-neutral-100">Dashboard</h1>
+    <div className="flex w-full min-w-0 max-w-full flex-col gap-4 sm:gap-6 md:gap-8">
+      <header className="min-w-0">
+        <h1 className="text-xl font-bold tracking-tight text-neutral-900 dark:text-neutral-100 sm:text-2xl">
+          Dashboard
+        </h1>
       </header>
 
       {(metricsError || emailsError) && (
-        <p className="text-xs text-amber-600 dark:text-amber-400">
+        <p className="break-words text-xs text-amber-600 dark:text-amber-400 sm:text-sm">
           {[metricsError, emailsError].filter(Boolean).join(" • ")} — Database or backend may be unavailable.
         </p>
       )}
       {backfillStatus && (
-        <p className="text-sm text-neutral-600 dark:text-neutral-400">{backfillStatus}</p>
+        <p className="break-words text-xs text-neutral-600 dark:text-neutral-400 sm:text-sm">{backfillStatus}</p>
       )}
       {dashboardTourOpen && currentTour && (
-        <div className="sticky top-3 z-40 rounded-xl border border-neutral-700 bg-black/95 p-4 shadow-lg backdrop-blur">
-          <p className="text-xs font-semibold uppercase tracking-wide text-neutral-300">
+        <div className="sticky top-3 z-40 rounded-xl border border-neutral-700 bg-black/95 p-3 shadow-lg backdrop-blur sm:p-4">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-neutral-300 sm:text-xs">
             Dashboard walkthrough ({dashboardTourStep + 1}/{dashboardTourSteps.length})
           </p>
           <p className="mt-1 text-sm font-semibold text-white">{currentTour.title}</p>
-          <p className="mt-1 text-sm text-neutral-200">{currentTour.description}</p>
-          <p className="mt-1 text-xs text-neutral-400">
-            Scroll to the highlighted section, then click next to continue.
+          <p className="mt-1 break-words text-xs text-neutral-200 sm:text-sm">{currentTour.description}</p>
+          <p className="mt-1 text-[11px] text-neutral-400 sm:text-xs">
+            Scroll to the highlighted section, then tap next to continue.
           </p>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
+          <div className="mt-3 grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:items-center">
             <Button
               type="button"
               size="sm"
               variant="outline"
-              className="border-neutral-600 bg-black text-white hover:bg-neutral-900"
+              className="w-full border-neutral-600 bg-black text-white hover:bg-neutral-900 sm:w-auto"
               disabled={isFirstTourStep}
               onClick={() => setDashboardTourStep((s) => Math.max(0, s - 1))}
             >
@@ -1113,6 +1193,7 @@ function DashboardPageContent() {
               size="sm"
               variant={isLastTourStep ? "default" : "outline"}
               className={cn(
+                "w-full sm:w-auto",
                 isLastTourStep
                   ? "bg-white text-black hover:bg-neutral-200"
                   : "border-neutral-600 bg-black text-white hover:bg-neutral-900"
@@ -1125,9 +1206,9 @@ function DashboardPageContent() {
               {isLastTourStep ? "Restart" : "Next"}
             </Button>
             {isLastTourStep && (
-              <Link href="/emails?walkthrough=1">
-                <Button type="button" size="sm" className="bg-white text-black hover:bg-neutral-200">
-                  Open next toggle walkthrough
+              <Link href="/emails?walkthrough=1" className="block w-full sm:w-auto">
+                <Button type="button" size="sm" className="w-full bg-white text-black hover:bg-neutral-200 sm:w-auto">
+                  Open next walkthrough
                 </Button>
               </Link>
             )}
@@ -1135,7 +1216,7 @@ function DashboardPageContent() {
               type="button"
               size="sm"
               variant="ghost"
-              className="text-neutral-200 hover:bg-neutral-900 hover:text-white"
+              className="w-full text-neutral-200 hover:bg-neutral-900 hover:text-white sm:w-auto"
               onClick={() => setDashboardTourOpen(false)}
             >
               Close tour
@@ -1146,7 +1227,10 @@ function DashboardPageContent() {
       {!metricsError && !emailsError && emails.length === 0 && (metrics?.emailsIngestedToday ?? 0) === 0 && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
           <p className="font-medium">Why no emails?</p>
-          <p className="mt-1 text-xs">Ensure PostgreSQL, Redis, and Celery worker are running, then use <strong>Sync 1 day</strong> or <strong>Sync 7 days</strong> below.</p>
+          <p className="mt-1 break-words text-xs">
+            Ensure PostgreSQL, Redis, and Celery worker are running, then use <strong>Sync 1 day</strong> or{" "}
+            <strong>Sync 7 days</strong> below.
+          </p>
         </div>
       )}
 
@@ -1159,40 +1243,46 @@ function DashboardPageContent() {
           isBlurredTourSection(0) && "opacity-55"
         )}
       >
-        <div className="flex w-full min-w-0 flex-wrap items-stretch gap-3 sm:gap-4 xl:flex-nowrap xl:gap-5">
-          {actionCards.map(({ label, icon: Icon, onClick }) => {
-            const title =
-              label === "Sync for today"
-                ? "Sync 1 day"
-                : label === "Sync inbox (7 days)"
-                  ? "Sync 7 days"
-                  : label === "Sync all emails"
-                    ? "Sync all mail"
-                    : "Classify all mail";
-            const disabled =
-              (label === "Classify all" && classifyLoading) || (label.startsWith("Sync") && loadingMetrics);
-            return (
-              <button
-                key={label}
-                type="button"
-                onClick={onClick}
-                disabled={disabled}
-                className="flex min-h-[118px] min-w-[140px] flex-1 basis-0 flex-col items-center justify-center gap-3 rounded-2xl border border-white/70 bg-gradient-to-br from-white to-[#eef5ff] px-4 py-5 text-center shadow-md shadow-sky-100/60 transition duration-300 hover:-translate-y-0.5 hover:border-sky-200 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900/70 dark:from-neutral-900 dark:to-neutral-900 dark:hover:border-neutral-600 dark:hover:shadow-none"
-              >
-                <div className="flex h-20 w-20 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-sky-500 text-white shadow-sm dark:from-indigo-600 dark:to-sky-600">
-                  <Icon className="h-10 w-10" />
-                </div>
-                <span className="text-sm font-medium leading-snug text-neutral-800 dark:text-neutral-200">{title}</span>
-              </button>
-            );
-          })}
+        <div className="flex w-full min-w-0 flex-col gap-3 sm:gap-4 xl:flex-row xl:flex-nowrap xl:items-stretch xl:gap-5">
+          <div className="flex min-w-0 w-full flex-nowrap items-stretch gap-1.5 sm:gap-3 md:gap-4 xl:flex-1 xl:min-w-0">
+            {actionCards.map(({ label, icon: Icon, onClick }) => {
+              const title =
+                label === "Sync for today"
+                  ? "Sync 1 day"
+                  : label === "Sync inbox (7 days)"
+                    ? "Sync 7 days"
+                    : label === "Sync all emails"
+                      ? "Sync all mail"
+                      : "Classify all mail";
+              const disabled =
+                (label === "Classify all" && classifyLoading) || (label.startsWith("Sync") && loadingMetrics);
+              return (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={onClick}
+                  disabled={disabled}
+                  className="flex min-h-[92px] min-w-0 flex-1 basis-0 flex-col items-center justify-center gap-1.5 rounded-xl border border-white/70 bg-gradient-to-br from-white to-[#eef5ff] px-1 py-2.5 text-center shadow-md shadow-sky-100/60 transition duration-300 hover:-translate-y-0.5 hover:border-sky-200 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900/70 dark:from-neutral-900 dark:to-neutral-900 dark:hover:border-neutral-600 dark:hover:shadow-none sm:min-h-[104px] sm:gap-2 sm:rounded-2xl sm:px-2 sm:py-3 md:min-h-[118px] md:gap-3 md:px-3 md:py-4 xl:px-4 xl:py-5"
+                >
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-sky-500 text-white shadow-sm dark:from-indigo-600 dark:to-sky-600 sm:h-12 sm:w-12 sm:rounded-xl md:h-16 md:w-16 xl:h-20 xl:w-20">
+                    <Icon className="h-[1.15rem] w-[1.15rem] sm:h-6 sm:w-6 md:h-8 md:w-8 xl:h-10 xl:w-10" />
+                  </div>
+                  <span className="line-clamp-2 max-w-full text-[0.625rem] font-medium leading-tight text-neutral-800 dark:text-neutral-200 sm:text-[0.7rem] md:text-xs xl:text-sm">
+                    {title}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
 
-          <div className="flex min-h-[118px] min-w-[min(100%,260px)] flex-[1.35] basis-0 flex-col justify-center gap-3 rounded-2xl border border-white/70 bg-gradient-to-br from-white to-[#edf8ff] px-4 py-5 shadow-md shadow-cyan-100/60 dark:border-neutral-700 dark:bg-neutral-900/70 dark:from-neutral-900 dark:to-neutral-900 dark:shadow-none">
-            <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-sky-100 text-sky-600 dark:bg-sky-900/30 dark:text-sky-400">
-                <Calendar className="h-6 w-6" />
+          <div className="flex min-h-[118px] w-full min-w-0 shrink-0 flex-col justify-center gap-3 rounded-2xl border border-white/70 bg-gradient-to-br from-white to-[#edf8ff] px-3 py-4 shadow-md shadow-cyan-100/60 dark:border-neutral-700 dark:bg-neutral-900/70 dark:from-neutral-900 dark:to-neutral-900 dark:shadow-none sm:px-4 sm:py-5 xl:min-w-[min(100%,260px)] xl:flex-[1.35] xl:basis-0">
+            <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sky-100 text-sky-600 dark:bg-sky-900/30 dark:text-sky-400 sm:h-12 sm:w-12">
+                <Calendar className="h-5 w-5 sm:h-6 sm:w-6" />
               </div>
-              <span className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">Sync mails by date range</span>
+              <span className="min-w-0 break-words text-sm font-semibold leading-snug text-neutral-800 dark:text-neutral-100">
+                Sync mails by date range
+              </span>
             </div>
             <DateRangePair
               from={syncFromDate}
@@ -1218,7 +1308,7 @@ function DashboardPageContent() {
       <section
         ref={kpiCardsRef}
         className={cn(
-          "grid gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-4",
+          "grid grid-cols-2 gap-4 sm:gap-5 lg:grid-cols-4",
           isActiveTourSection(1) && "rounded-xl ring-2 ring-indigo-400/70 p-1",
           isBlurredTourSection(1) && "opacity-55"
         )}
@@ -1226,39 +1316,43 @@ function DashboardPageContent() {
         {kpiCards.map(({ title, value, subtitle }) => (
           <div
             key={title}
-            className="relative rounded-2xl border border-white/80 bg-gradient-to-br from-[#1e3a8a] via-[#2563eb] to-[#0ea5e9] p-5 text-white shadow-lg shadow-blue-200/70 transition-transform duration-300 hover:-translate-y-0.5 dark:border-neutral-700 dark:bg-neutral-900/60 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-900 dark:shadow-none"
+            className="relative min-w-0 rounded-2xl border border-white/80 bg-gradient-to-br from-[#1e3a8a] via-[#2563eb] to-[#0ea5e9] p-3 text-white shadow-lg shadow-blue-200/70 transition-transform duration-300 hover:-translate-y-0.5 dark:border-neutral-700 dark:bg-neutral-900/60 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-900 dark:shadow-none sm:p-5"
           >
-            <button type="button" className="absolute right-2 top-2 rounded p-1 text-white/70 hover:bg-white/15 hover:text-white dark:text-neutral-400 dark:hover:bg-neutral-700 dark:hover:text-neutral-300" aria-label="More">
+            <button type="button" className="absolute right-1.5 top-1.5 rounded p-1 text-white/70 hover:bg-white/15 hover:text-white dark:text-neutral-400 dark:hover:bg-neutral-700 dark:hover:text-neutral-300 sm:right-2 sm:top-2" aria-label="More">
               <MoreHorizontal className="h-4 w-4" />
             </button>
-            <p className="text-sm font-medium text-white/80 dark:text-neutral-400">{title}</p>
-            <p className="mt-1 text-3xl font-semibold text-white dark:text-neutral-100">{value}</p>
-            <p className="mt-0.5 text-xs text-white/75 dark:text-neutral-400">{subtitle}</p>
+            <p className="pr-7 text-xs font-medium leading-tight text-white/80 dark:text-neutral-400 sm:text-sm">{title}</p>
+            <p className="mt-1 min-w-0 break-words text-xl font-semibold tabular-nums leading-tight text-white dark:text-neutral-100 sm:text-2xl md:text-3xl">
+              {value}
+            </p>
+            <p className="mt-0.5 text-[10px] leading-tight text-white/75 dark:text-neutral-400 sm:text-xs">{subtitle}</p>
           </div>
         ))}
       </section>
 
       {/* Time-Based Activity Map + right column */}
-      <div className="grid gap-6 lg:grid-cols-3 lg:gap-8">
+      <div className="grid min-w-0 gap-4 sm:gap-6 lg:grid-cols-3 lg:gap-8">
         <div
           ref={activityMapRef}
           className={cn(
-            "lg:col-span-2",
+            "min-w-0 lg:col-span-2",
             isActiveTourSection(2) && "rounded-xl ring-2 ring-indigo-400/70 p-1",
             isBlurredTourSection(2) && "opacity-55"
           )}
         >
-          <section className="rounded-3xl border border-slate-100 bg-gradient-to-br from-white to-[#f7fbff] p-5 shadow-md shadow-slate-100/70 dark:border-neutral-700 dark:from-neutral-900 dark:to-neutral-900 dark:shadow-none sm:p-6">
-            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-              <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">Time-Based Activity Map</h2>
-              <div className="flex rounded-lg border border-neutral-200 dark:border-neutral-600">
+          <section className="min-w-0 overflow-x-hidden rounded-3xl border border-slate-100 bg-gradient-to-br from-white to-[#f7fbff] p-4 shadow-md shadow-slate-100/70 dark:border-neutral-700 dark:from-neutral-900 dark:to-neutral-900 dark:shadow-none sm:p-5 md:p-6">
+            <div className="mb-4 flex flex-col gap-3 sm:mb-5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-3">
+              <h2 className="min-w-0 text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                Time-Based Activity Map
+              </h2>
+              <div className="flex w-full min-w-0 flex-wrap rounded-lg border border-neutral-200 dark:border-neutral-600 sm:w-auto">
                 {(["daily", "weekly", "monthly", "yearly"] as const).map((p) => (
                   <button
                     key={p}
                     type="button"
                     onClick={() => setChartPeriod(p)}
                     className={cn(
-                      "px-3 py-1.5 text-xs font-medium",
+                      "px-2 py-1 text-[10px] font-medium sm:px-3 sm:py-1.5 sm:text-xs",
                       p === "daily" && "rounded-l-md",
                       p === "yearly" && "rounded-r-md",
                       chartPeriod === p
@@ -1283,14 +1377,14 @@ function DashboardPageContent() {
         <div
           ref={rightColumnRef}
           className={cn(
-            "flex flex-col gap-6",
+            "flex min-w-0 flex-col gap-4 sm:gap-6",
             dashboardTourOpen && ![3, 4].includes(dashboardTourStep) && "opacity-55"
           )}
         >
           {myProjects.length > 0 && (
-            <div className="rounded-3xl border border-neutral-100 bg-gradient-to-br from-white to-[#f8fbff] p-5 shadow-md shadow-neutral-100/70 dark:border-neutral-700 dark:from-neutral-900 dark:to-neutral-900 dark:shadow-none">
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">My projects</h2>
+            <div className="rounded-3xl border border-neutral-100 bg-gradient-to-br from-white to-[#f8fbff] p-4 shadow-md shadow-neutral-100/70 dark:border-neutral-700 dark:from-neutral-900 dark:to-neutral-900 dark:shadow-none sm:p-5">
+              <div className="mb-4 flex items-center justify-between gap-2">
+                <h2 className="min-w-0 text-sm font-semibold text-neutral-900 dark:text-neutral-100">My projects</h2>
                 <button type="button" className="rounded p-1 text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-700" aria-label="More">
                   <MoreHorizontal className="h-4 w-4" />
                 </button>
@@ -1299,7 +1393,9 @@ function DashboardPageContent() {
                 {myProjects.slice(0, 6).map((p) => (
                   <li key={p.projectId} className="rounded-lg border border-neutral-200 bg-neutral-50/50 p-3 dark:border-neutral-700 dark:bg-neutral-800/40">
                     <div className="flex items-start justify-between gap-2">
-                      <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100">{p.projectName}</p>
+                      <p className="min-w-0 flex-1 break-words text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                        {p.projectName}
+                      </p>
                       <span className="rounded bg-neutral-200 px-2 py-0.5 text-[10px] font-medium uppercase text-neutral-700 dark:bg-neutral-700 dark:text-neutral-200">
                         {p.status}
                       </span>
@@ -1325,7 +1421,7 @@ function DashboardPageContent() {
           <div
             ref={meetingsCardRef}
             className={cn(
-              "overflow-hidden rounded-3xl border border-sky-100 bg-gradient-to-br from-white via-sky-50 to-cyan-50 p-5 shadow-md shadow-sky-100/60 dark:border-neutral-700 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 dark:shadow-none",
+              "min-w-0 overflow-hidden rounded-3xl border border-sky-100 bg-gradient-to-br from-white via-sky-50 to-cyan-50 p-4 shadow-md shadow-sky-100/60 dark:border-neutral-700 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 dark:shadow-none sm:p-5",
               isActiveTourSection(3) && "ring-2 ring-sky-400/70",
               isBlurredTourSection(3) && "opacity-55"
             )}
@@ -1356,22 +1452,22 @@ function DashboardPageContent() {
             )}
             {!(calendarLoading && calendarEvents.length === 0 && !calendarError) && (
               <div className="space-y-3">
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center justify-between gap-1 sm:gap-2">
                   <button
                     type="button"
-                    className="rounded-lg border border-sky-200 bg-white/80 px-2.5 py-1 text-xs font-medium text-sky-700 hover:bg-sky-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100 dark:hover:bg-neutral-700"
+                    className="shrink-0 rounded-lg border border-sky-200 bg-white/80 px-2 py-1 text-[11px] font-medium text-sky-700 hover:bg-sky-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100 dark:hover:bg-neutral-700 sm:px-2.5 sm:text-xs"
                     onClick={() =>
                       setCalendarMonthStart((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1))
                     }
                   >
                     Prev
                   </button>
-                  <p className="text-xs font-semibold text-sky-900 dark:text-neutral-100">
+                  <p className="min-w-0 flex-1 truncate text-center text-[11px] font-semibold text-sky-900 dark:text-neutral-100 sm:text-xs">
                     {calendarMonthStart.toLocaleDateString(undefined, { month: "long", year: "numeric" })}
                   </p>
                   <button
                     type="button"
-                    className="rounded-lg border border-sky-200 bg-white/80 px-2.5 py-1 text-xs font-medium text-sky-700 hover:bg-sky-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100 dark:hover:bg-neutral-700"
+                    className="shrink-0 rounded-lg border border-sky-200 bg-white/80 px-2 py-1 text-[11px] font-medium text-sky-700 hover:bg-sky-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100 dark:hover:bg-neutral-700 sm:px-2.5 sm:text-xs"
                     onClick={() =>
                       setCalendarMonthStart((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1))
                     }
@@ -1379,12 +1475,17 @@ function DashboardPageContent() {
                     Next
                   </button>
                 </div>
-                <div className="grid grid-cols-7 gap-1 rounded-lg bg-sky-100/70 px-1 py-1 text-center text-[10px] font-semibold uppercase tracking-wide text-sky-800 dark:border dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100">
-                  {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((wd) => (
-                    <div key={wd} className="py-1">{wd}</div>
+                <div className="grid grid-cols-7 gap-0.5 rounded-lg bg-sky-100/70 px-0.5 py-1 text-center text-[8px] font-semibold uppercase leading-tight tracking-wide text-sky-800 dark:border dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-100 sm:gap-1 sm:px-1 sm:text-[10px]">
+                  {["S", "M", "T", "W", "T", "F", "S"].map((wd, i) => (
+                    <div key={`${wd}-${i}`} className="py-0.5 sm:py-1">
+                      <span className="sm:hidden">{wd}</span>
+                      <span className="hidden sm:inline">
+                        {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][i]}
+                      </span>
+                    </div>
                   ))}
                 </div>
-                <div className="grid grid-cols-7 gap-1">
+                <div className="grid grid-cols-7 gap-0.5 sm:gap-1">
                   {calendarDays.map((d) => {
                     const isSelected = d.key === selectedMeetingDateKey;
                     const isToday = d.key === toDateKey(new Date());
@@ -1393,7 +1494,7 @@ function DashboardPageContent() {
                         key={d.key}
                         type="button"
                         onClick={() => setSelectedMeetingDateKey(d.key)}
-                        className={`relative min-h-[46px] rounded-lg border px-1 py-1 text-left text-[11px] transition ${d.inMonth
+                        className={`relative min-h-[38px] rounded-md border px-0.5 py-0.5 text-left text-[10px] transition sm:min-h-[46px] sm:rounded-lg sm:px-1 sm:py-1 sm:text-[11px] ${d.inMonth
                           ? "border-sky-200 bg-white/90 text-neutral-800 shadow-[0_1px_0_rgba(14,165,233,0.08)] dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100"
                           : "border-sky-100/90 bg-sky-50/60 text-sky-500 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-500"
                           } ${isSelected
@@ -1427,7 +1528,7 @@ function DashboardPageContent() {
                     >
                       <div className="flex flex-wrap items-start justify-between gap-2">
                         <p
-                          className={`min-w-0 flex-1 text-sm font-medium text-neutral-900 dark:text-neutral-100 ${ev.isCancelled ? "line-through" : ""
+                          className={`min-w-0 flex-1 break-words text-sm font-medium text-neutral-900 dark:text-neutral-100 ${ev.isCancelled ? "line-through" : ""
                             }`}
                         >
                           {ev.subject}
@@ -1478,13 +1579,13 @@ function DashboardPageContent() {
             <div
               ref={departmentsCardRef}
               className={cn(
-                "overflow-hidden rounded-3xl border border-indigo-100 bg-gradient-to-br from-white via-indigo-50/80 to-violet-50/90 p-5 shadow-md shadow-indigo-100/50 dark:border-neutral-700 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 dark:shadow-none",
+                "min-w-0 overflow-hidden rounded-3xl border border-indigo-100 bg-gradient-to-br from-white via-indigo-50/80 to-violet-50/90 p-4 shadow-md shadow-indigo-100/50 dark:border-neutral-700 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 dark:shadow-none sm:p-5",
                 isActiveTourSection(4) && "ring-2 ring-indigo-400/70",
                 isBlurredTourSection(4) && "opacity-55"
               )}
             >
               <div className="mb-4 flex items-start justify-between gap-3 border-b border-indigo-100/90 pb-3 dark:border-neutral-700">
-                <div>
+                <div className="min-w-0">
                   <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">Departments & Teams</h2>
                 </div>
                 <button
@@ -1568,13 +1669,13 @@ function DashboardPageContent() {
             <div
               ref={departmentsCardRef}
               className={cn(
-                "overflow-hidden rounded-3xl border border-indigo-100 bg-gradient-to-br from-white via-indigo-50/80 to-violet-50/90 p-5 shadow-md shadow-indigo-100/50 dark:border-neutral-700 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 dark:shadow-none",
+                "min-w-0 overflow-hidden rounded-3xl border border-indigo-100 bg-gradient-to-br from-white via-indigo-50/80 to-violet-50/90 p-4 shadow-md shadow-indigo-100/50 dark:border-neutral-700 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 dark:shadow-none sm:p-5",
                 isActiveTourSection(4) && "ring-2 ring-indigo-400/70",
                 isBlurredTourSection(4) && "opacity-55"
               )}
             >
               <div className="mb-4 flex items-start justify-between gap-3 border-b border-indigo-100/90 pb-3 dark:border-neutral-700">
-                <div>
+                <div className="min-w-0">
                   <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">Reporting manager</h2>
                 </div>
                 <button
@@ -1588,7 +1689,7 @@ function DashboardPageContent() {
               <div className="space-y-3">
                 <div className="rounded-xl border border-indigo-100/80 bg-white/70 px-3 py-2.5 dark:border-neutral-700 dark:bg-neutral-800/50">
                   <p className="text-[10px] font-semibold uppercase tracking-wide text-indigo-600 dark:text-neutral-400">You report to</p>
-                  <p className="mt-1 text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                  <p className="mt-1 break-words text-sm font-medium text-neutral-900 dark:text-neutral-100">
                     {me?.reportingManager
                       ? `${me.reportingManager.displayName ?? me.reportingManager.email} (${me.reportingManager.email})`
                       : "—"}
@@ -1596,7 +1697,9 @@ function DashboardPageContent() {
                 </div>
                 <div className="rounded-xl border border-indigo-100/80 bg-white/70 px-3 py-2.5 dark:border-neutral-700 dark:bg-neutral-800/50">
                   <p className="text-[10px] font-semibold uppercase tracking-wide text-indigo-600 dark:text-neutral-400">Department</p>
-                  <p className="mt-1 text-sm font-medium text-neutral-900 dark:text-neutral-100">{me?.department ?? "—"}</p>
+                  <p className="mt-1 break-words text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                    {me?.department ?? "—"}
+                  </p>
                 </div>
               </div>
             </div>

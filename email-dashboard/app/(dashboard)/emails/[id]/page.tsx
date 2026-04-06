@@ -97,8 +97,8 @@ export default function EmailDetailPage() {
 
   if (loading) {
     return (
-      <div className="space-y-6">
-        <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white p-8 dark:border-neutral-800 dark:bg-neutral-900/50">
+      <div className="min-w-0 max-w-full space-y-4 sm:space-y-6">
+        <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900/50 sm:p-8">
           <div className="mb-6 h-7 w-3/4 animate-pulse rounded bg-neutral-200 dark:bg-neutral-700" />
           <div className="mb-6 grid gap-4 sm:grid-cols-2">
             <div className="h-14 animate-pulse rounded bg-neutral-100 dark:bg-neutral-800" />
@@ -116,9 +116,9 @@ export default function EmailDetailPage() {
 
   if (error || !email) {
     return (
-      <div className="space-y-6">
-        <div className="rounded-xl border border-red-200 bg-red-50/80 px-6 py-4 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
-          {error ?? "Email not found."}
+      <div className="min-w-0 max-w-full space-y-4 sm:space-y-6">
+        <div className="rounded-xl border border-red-200 bg-red-50/80 px-4 py-4 text-sm text-red-800 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300 sm:px-6">
+          <p className="break-words">{error ?? "Email not found."}</p>
         </div>
       </div>
     );
@@ -238,11 +238,11 @@ export default function EmailDetailPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <article className="overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-900/50">
+    <div className="min-w-0 max-w-full space-y-4 sm:space-y-6">
+      <article className="min-w-0 max-w-full overflow-x-hidden rounded-xl border border-neutral-200 bg-white shadow-sm dark:border-neutral-800 dark:bg-neutral-900/50">
         {/* Subject */}
-        <header className="border-b border-neutral-100 px-6 py-5 dark:border-neutral-800">
-          <h1 className="text-2xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50">
+        <header className="border-b border-neutral-100 px-4 py-4 dark:border-neutral-800 sm:px-6 sm:py-5">
+          <h1 className="break-words text-xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50 sm:text-2xl">
             {email.subject || "(No subject)"}
           </h1>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -308,7 +308,7 @@ export default function EmailDetailPage() {
         </header>
 
         {/* AI Insights — always show; summary has fallback when missing */}
-        <div className="border-b border-neutral-100 bg-neutral-50/60 px-6 py-4 dark:border-neutral-800 dark:bg-neutral-800/30">
+        <div className="border-b border-neutral-100 bg-neutral-50/60 px-4 py-4 dark:border-neutral-800 dark:bg-neutral-800/30 sm:px-6">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
               <Sparkles className="h-4 w-4" />
@@ -445,7 +445,7 @@ export default function EmailDetailPage() {
         </div>
 
         {email.attachments.length > 0 && (
-          <div className="border-b border-neutral-100 px-6 py-4 dark:border-neutral-800">
+          <div className="border-b border-neutral-100 px-4 py-4 dark:border-neutral-800 sm:px-6">
             <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
               <Paperclip className="h-4 w-4" />
               Attachments ({email.attachments.length})
@@ -489,17 +489,16 @@ export default function EmailDetailPage() {
           </div>
         )}
 
-        <div className="px-6 py-5">
+        <div className="min-w-0 px-4 py-4 sm:px-6 sm:py-5">
           {bodyContent ? (
             <div className={emailBodySurfaceClassName}>
               {isHtml ? (
                 <div
                   className={emailHtmlProseClassName}
-                  style={{ overflowWrap: "break-word" }}
                   dangerouslySetInnerHTML={{ __html: bodyContent }}
                 />
               ) : (
-                <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-neutral-800">
+                <pre className="min-w-0 max-w-full whitespace-pre-wrap break-words font-sans text-sm leading-relaxed text-neutral-800">
                   {bodyContent}
                 </pre>
               )}

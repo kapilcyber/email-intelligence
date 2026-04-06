@@ -27,6 +27,11 @@ type Props = {
   showRetag?: boolean;
   /** Initial search query from URL/state. */
   initialSearch?: string;
+  /**
+   * When set to `departments`, show an “All departments · N emails” line if no single category is selected
+   * (e.g. `/departments/all`). Does not affect `/emails` unless this prop is passed.
+   */
+  listContext?: "departments";
 };
 
 export function EmailsView({
@@ -36,6 +41,7 @@ export function EmailsView({
   suppressSubtitle = false,
   showRetag = false,
   initialSearch = "",
+  listContext,
 }: Props) {
   const category = useMemo(() => {
     if (!categoryFilter) return "";
@@ -109,24 +115,32 @@ export function EmailsView({
         <>
           Showing <strong>{category}</strong> only · {total} email{total !== 1 ? "s" : ""}
         </>
+      ) : listContext === "departments" ? (
+        <>
+          All departments · {total} email{total !== 1 ? "s" : ""}
+        </>
       ) : null));
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="space-y-6">
-        <div data-tour-id="emails-header">
-          <h1 className="text-2xl font-bold tracking-tight text-neutral-900 dark:text-neutral-100">{defaultTitle}</h1>
+    <div className="flex min-w-0 max-w-full flex-col gap-4 sm:gap-6">
+      <div className="min-w-0 space-y-4 sm:space-y-6">
+        <div data-tour-id="emails-header" className="min-w-0">
+          <h1 className="text-xl font-bold tracking-tight text-neutral-900 dark:text-neutral-100 sm:text-2xl">
+            {defaultTitle}
+          </h1>
           {defaultDescription ? (
-            <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">{defaultDescription}</p>
+            <p className="mt-1.5 break-words text-xs leading-relaxed text-neutral-500 dark:text-neutral-400 sm:mt-1 sm:text-sm">
+              {defaultDescription}
+            </p>
           ) : null}
         </div>
 
         <div
           data-tour-id="emails-filters"
-          className="glass-surface rounded-2xl p-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
+          className="glass-surface flex flex-col gap-4 rounded-2xl p-3 sm:p-4 md:flex-row md:items-center md:justify-between md:gap-6"
         >
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:flex-wrap">
-            <div className="relative min-w-0 flex-1 sm:w-64">
+          <div className="flex min-w-0 flex-col gap-3 md:min-w-0 md:flex-1 md:flex-row md:flex-wrap md:items-center">
+            <div className="relative min-w-0 w-full md:w-64 md:flex-none">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
               <Input
                 placeholder="Search subject, sender..."
@@ -136,23 +150,42 @@ export function EmailsView({
                 className="pl-9"
               />
             </div>
-            <DateRangePair from={from} to={to} onFromChange={setFrom} onToChange={setTo} />
-            <Button variant="outline" onClick={load}>
+            <DateRangePair
+              from={from}
+              to={to}
+              onFromChange={setFrom}
+              onToChange={setTo}
+              className="w-full min-w-0 md:w-auto"
+              fieldClassName="relative min-w-0 flex-1"
+            />
+            <Button type="button" variant="outline" className="w-full shrink-0 md:w-auto" onClick={load}>
               Apply
             </Button>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">Show</span>
-            <Select value={String(pageSize)} onValueChange={handlePageSizeChange} className="w-20">
-              {PAGE_SIZE_OPTIONS.map((n) => (
-                <SelectItem key={n} value={String(n)}>
-                  {n}
-                </SelectItem>
-              ))}
-            </Select>
-            <span className="text-sm text-muted-foreground">
-              per page · {total} total
-            </span>
+          <div
+            className="flex min-w-0 shrink-0 flex-col gap-2 border-t border-border/60 pt-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-3 sm:gap-y-1 md:border-l md:border-t-0 md:pt-0 md:pl-6"
+            role="group"
+            aria-label="Pagination page size"
+          >
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="shrink-0 text-sm text-muted-foreground">Rows per page</span>
+              <Select
+                value={String(pageSize)}
+                onValueChange={handlePageSizeChange}
+                className="w-[5.75rem] shrink-0 sm:w-24"
+              >
+                {PAGE_SIZE_OPTIONS.map((n) => (
+                  <SelectItem key={n} value={String(n)}>
+                    {n}
+                  </SelectItem>
+                ))}
+              </Select>
+            </div>
+            <p className="min-w-0 text-sm leading-snug text-muted-foreground">
+              <span className="font-medium tabular-nums text-foreground">{total}</span>
+              {" "}
+              email{total !== 1 ? "s" : ""} total
+            </p>
           </div>
         </div>
 
@@ -174,21 +207,28 @@ export function EmailsView({
         </div>
 
         {totalPages > 1 && (
-          <div data-tour-id="emails-pagination" className="flex justify-between">
+          <div
+            data-tour-id="emails-pagination"
+            className="grid grid-cols-1 gap-2 sm:flex sm:flex-row sm:items-center sm:justify-between sm:gap-3"
+          >
             <Button
+              type="button"
               variant="outline"
               size="sm"
+              className="w-full sm:w-auto"
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={page <= 1}
             >
               Previous
             </Button>
-            <span className="text-sm text-neutral-500 dark:text-neutral-400">
+            <span className="py-1 text-center text-sm text-neutral-500 dark:text-neutral-400 sm:order-none sm:flex-1">
               Page {page} of {totalPages}
             </span>
             <Button
+              type="button"
               variant="outline"
               size="sm"
+              className="w-full sm:w-auto"
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               disabled={page >= totalPages}
             >

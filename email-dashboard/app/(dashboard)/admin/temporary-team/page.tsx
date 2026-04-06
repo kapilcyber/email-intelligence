@@ -29,49 +29,55 @@ export default function TemporaryTeamPage() {
   }, [status, api]);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-50">Temporary team</h1>
-        <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
+    <div className="min-w-0 max-w-full space-y-4 sm:space-y-6">
+      <div className="min-w-0">
+        <h1 className="text-xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50 sm:text-2xl">
+          Temporary team
+        </h1>
+        <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400 sm:text-sm">
           Per-project reporting structure for temporary teams (phase workflow is only on the full project page).
         </p>
       </div>
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400">
-          {error}
+          <p className="break-words">{error}</p>
         </div>
       )}
       {loading ? (
-        <Skeleton className="h-64 w-full rounded-xl" />
+        <Skeleton className="h-48 w-full rounded-xl sm:h-64" />
       ) : (
-        <div className="space-y-8">
+        <div className="space-y-6 sm:space-y-8">
           {projects.map((p) => (
-            <section key={p.id} className="space-y-4">
-              <div className="rounded-2xl border border-neutral-200 bg-neutral-50/80 px-4 py-4 dark:border-neutral-700 dark:bg-neutral-900/30">
-                <div className="space-y-4">
-                  <div>
+            <section key={p.id} className="min-w-0 space-y-3 sm:space-y-4">
+              <div className="rounded-2xl border border-border bg-muted/30 p-3 dark:bg-neutral-900/30 sm:p-4">
+                <div className="space-y-3 sm:space-y-4">
+                  <div className="min-w-0">
                     <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                       Project name
                     </p>
-                    <h2 className="mt-1 text-xl font-bold text-neutral-900 dark:text-neutral-50">{p.name}</h2>
+                    <h2 className="mt-1 break-words text-lg font-bold leading-snug text-neutral-900 dark:text-neutral-50 sm:text-xl">
+                      {p.name}
+                    </h2>
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                       Department
                     </p>
-                    <p className="mt-1 text-sm font-medium text-neutral-800 dark:text-neutral-200">
+                    <p className="mt-1 break-words text-sm font-medium text-neutral-800 dark:text-neutral-200">
                       {p.teamName?.trim() ? p.teamName : "—"}
                     </p>
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                       Status
                     </p>
-                    <p className="mt-1 text-sm font-medium capitalize text-neutral-800 dark:text-neutral-200">{p.status}</p>
+                    <p className="mt-1 break-words text-sm font-medium capitalize text-neutral-800 dark:text-neutral-200">
+                      {p.status}
+                    </p>
                   </div>
                 </div>
               </div>
-              <div className="space-y-4">
+              <div className="min-w-0 space-y-4">
                 <ProjectWorkflowAndTeamSection
                   project={p}
                   showPhaseWorkflow={false}

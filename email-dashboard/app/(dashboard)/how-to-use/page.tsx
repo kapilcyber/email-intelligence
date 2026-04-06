@@ -214,27 +214,37 @@ export default function HowToUsePage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-50">How to use</h1>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <Button type="button" onClick={startTour}>
+    <div className="min-w-0 max-w-full space-y-4 sm:space-y-6">
+      <div className="min-w-0">
+        <h1 className="text-xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50 sm:text-2xl">
+          How to use
+        </h1>
+        <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400 sm:text-sm">
+          Role-based guides and an optional click-through tour of main pages.
+        </p>
+        <div className="mt-3 flex flex-col gap-2 sm:mt-4 sm:flex-row sm:flex-wrap">
+          <Button type="button" className="h-10 w-full sm:h-9 sm:w-auto" onClick={startTour}>
             Replay guided tour
           </Button>
           {tourOpen && (
-            <Button type="button" variant="outline" onClick={() => setTourOpen(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              className="h-10 w-full sm:h-9 sm:w-auto"
+              onClick={() => setTourOpen(false)}
+            >
               Hide tour panel
             </Button>
           )}
         </div>
       </div>
 
-      <Card>
-        <CardHeader>
+      <Card className="min-w-0 rounded-2xl border-border">
+        <CardHeader className="p-4 sm:p-6">
           <CardTitle className="text-base">Role manuals</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex flex-wrap gap-2">
+        <CardContent className="space-y-4 p-4 pt-0 sm:p-6 sm:pt-0">
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
             {TABS.filter((t) => visibleTabs.includes(t.id)).map((t) => {
               const Icon = t.icon;
               return (
@@ -244,10 +254,11 @@ export default function HowToUsePage() {
                   variant={active === t.id ? "default" : "outline"}
                   onClick={() => setActive(t.id)}
                   className={cn(
+                    "h-10 w-full justify-center sm:h-9 sm:w-auto sm:justify-start",
                     active === t.id && "bg-neutral-900 hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900"
                   )}
                 >
-                  <Icon className="mr-2 h-4 w-4" />
+                  <Icon className="mr-2 h-4 w-4 shrink-0" />
                   {t.label}
                 </Button>
               );
@@ -257,21 +268,30 @@ export default function HowToUsePage() {
       </Card>
 
       {tourOpen && currentStep && (
-        <Card className="border-indigo-200 bg-indigo-50/60 dark:border-indigo-900/60 dark:bg-indigo-950/20">
-          <CardHeader>
-            <CardTitle className="text-base">
-              Guided walkthrough ({tourIndex + 1}/{visibleSteps.length})
+        <Card className="min-w-0 rounded-2xl border-indigo-200 bg-indigo-50/60 dark:border-indigo-900/60 dark:bg-indigo-950/20">
+          <CardHeader className="p-4 sm:p-6">
+            <CardTitle className="text-base leading-snug">
+              Guided walkthrough{" "}
+              <span className="tabular-nums">
+                ({tourIndex + 1}/{visibleSteps.length})
+              </span>
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3 text-sm">
+          <CardContent className="space-y-3 p-4 pt-0 text-sm sm:p-6 sm:pt-0">
             <p className="font-semibold text-neutral-900 dark:text-neutral-100">{currentStep.title}</p>
-            <p className="text-neutral-700 dark:text-neutral-300">{currentStep.description}</p>
-            <p className="text-xs text-neutral-600 dark:text-neutral-400">
+            <p className="break-words leading-relaxed text-neutral-700 dark:text-neutral-300">
+              {currentStep.description}
+            </p>
+            <p className="text-xs leading-relaxed text-neutral-600 dark:text-neutral-400">
               Open this toggle/page to see it in action.
             </p>
-            <div className="flex flex-wrap items-center gap-2">
-              <Link href={currentStep.href}>
-                <Button type="button" size="sm">
+            <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:items-stretch">
+              <Link href={currentStep.href} className="min-w-0 sm:inline-flex">
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-auto min-h-9 w-full whitespace-normal px-3 py-2 text-center leading-snug sm:w-auto sm:text-left"
+                >
                   Open {currentStep.title}
                 </Button>
               </Link>
@@ -279,6 +299,7 @@ export default function HowToUsePage() {
                 type="button"
                 size="sm"
                 variant="outline"
+                className="h-9 w-full sm:w-auto"
                 disabled={isFirst}
                 onClick={() => setTourIndex((i) => Math.max(0, i - 1))}
               >
@@ -287,6 +308,7 @@ export default function HowToUsePage() {
               <Button
                 type="button"
                 size="sm"
+                className="h-9 w-full sm:w-auto"
                 variant={isLast ? "default" : "outline"}
                 onClick={() => {
                   if (isLast) setTourIndex(0);
@@ -301,35 +323,38 @@ export default function HowToUsePage() {
       )}
 
       {active === "manager" && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Manager manual</CardTitle>
+        <Card className="min-w-0 rounded-2xl border-border">
+          <CardHeader className="p-4 sm:p-6">
+            <CardTitle className="text-base sm:text-lg">Manager manual</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3 text-sm text-neutral-700 dark:text-neutral-300">
+          <CardContent className="space-y-3 p-4 pt-0 text-sm leading-relaxed text-neutral-700 dark:text-neutral-300 sm:p-6 sm:pt-0">
             <p className="font-medium text-neutral-900 dark:text-neutral-100">1) Team oversight</p>
-            <p>Review team inbox trends via Dashboard and department views.</p>
+            <p className="break-words">Review team inbox trends via Dashboard and department views.</p>
             <p className="font-medium text-neutral-900 dark:text-neutral-100">2) Tracker compliance</p>
-            <p>
-              Ask team members to use Follow UP and keep subjects in the format with tracker + project name so sends are detected.
+            <p className="break-words">
+              Ask team members to use Follow UP and keep subjects in the format with tracker + project name so sends are
+              detected.
             </p>
             <p className="font-medium text-neutral-900 dark:text-neutral-100">3) Escalation response</p>
-            <p>Track pending escalations and ensure users are replying in time.</p>
+            <p className="break-words">Track pending escalations and ensure users are replying in time.</p>
           </CardContent>
         </Card>
       )}
 
       {active === "admin" && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Admin manual</CardTitle>
+        <Card className="min-w-0 rounded-2xl border-border">
+          <CardHeader className="p-4 sm:p-6">
+            <CardTitle className="text-base sm:text-lg">Admin manual</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3 text-sm text-neutral-700 dark:text-neutral-300">
+          <CardContent className="space-y-3 p-4 pt-0 text-sm leading-relaxed text-neutral-700 dark:text-neutral-300 sm:p-6 sm:pt-0">
             <p className="font-medium text-neutral-900 dark:text-neutral-100">1) Setup</p>
-            <p>Create teams, users, reporting workflow, and projects in Admin pages.</p>
+            <p className="break-words">Create teams, users, reporting workflow, and projects in Admin pages.</p>
             <p className="font-medium text-neutral-900 dark:text-neutral-100">2) Tracker configuration</p>
-            <p>In Admin → Tracker, set expected weekdays per project and monitor project history.</p>
+            <p className="break-words">
+              In Admin → Tracker, set expected weekdays per project and monitor project history.
+            </p>
             <p className="font-medium text-neutral-900 dark:text-neutral-100">3) Review module</p>
-            <p>
+            <p className="break-words">
               Use Admin → Review for user-wise escalation reply performance and project tracker count; add new review
               parameters in future as needed.
             </p>
