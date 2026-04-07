@@ -34,7 +34,7 @@ celery_app.conf.update(
     broker_connection_retry_on_startup=True,
 )
 # End-of-day summary: run daily at configured hour (default 23:00 UTC)
-celery_app.conf.beat_schedule = {
+_beat: dict = {
     "daily-summary": {
         "task": "app.workers.tasks.generate_daily_summary_task",
         "schedule": crontab(
@@ -44,6 +44,13 @@ celery_app.conf.beat_schedule = {
         "options": {"queue": "celery"},
     },
 }
+if getattr(settings, "outlook_deleted_sync_enabled", True):
+    _beat["outlook-deleted-sync"] = {
+        "task": "app.workers.tasks.sync_outlook_deleted_for_all_users_task",
+        "schedule": crontab(minute=20, hour="*/4"),
+        "options": {"queue": "celery"},
+    }
+celery_app.conf.beat_schedule = _beat
 # On Windows, default prefork pool can raise "ValueError: not enough values to unpack" in Celery trace
 if sys.platform == "win32":
     celery_app.conf.worker_pool = "solo"

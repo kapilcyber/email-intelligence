@@ -106,6 +106,13 @@ def _ensure_sender(db, email_address: str, display_name: str | None) -> str | No
     return sender.id
 
 
+def _is_outlook_deleted_folder(folder_display_name: str | None) -> bool:
+    """True when ingest/backfill targets the mailbox Deleted Items folder (Graph well-known: deleteditems)."""
+    if not folder_display_name or not str(folder_display_name).strip():
+        return False
+    return "deleted" in str(folder_display_name).strip().lower()
+
+
 def _record_escalation_thread(db, conversation_id: str, email_id: str, received_at: datetime):
     """Upsert escalation_threads so we track continuous escalation threads by conversation_id."""
     if not conversation_id or not received_at:
@@ -157,11 +164,21 @@ def ingest_email_task(
             return
         raw_uid = (user_id or "").strip()
         mailbox_norm = raw_uid.lower() if "@" in raw_uid else raw_uid
+        is_del_folder = _is_outlook_deleted_folder(folder_display_name)
         existing = db.query(Email).filter(
             Email.message_id == message_id,
             Email.mailbox_owner_email == mailbox_norm,
         ).first()
         if existing:
+            if is_del_folder:
+                folder = data.get("parentFolderId") or existing.folder_id
+                fn = (folder_display_name or "").strip() or "Deleted Items"
+                existing.graph_id = data.get("id") or existing.graph_id
+                existing.folder_id = folder
+                existing.folder_name = fn
+                if existing.deleted_at is None:
+                    existing.deleted_at = datetime.now(timezone.utc)
+                db.commit()
             return
         sender_info = (data.get("sender") or {}).get("emailAddress") or {}
         sender_email = sender_info.get("address") or "unknown"
@@ -185,6 +202,8 @@ def ingest_email_task(
                 folder_name = "Inbox"
             elif len(folder_name) > 40 and " " not in folder_name:
                 folder_name = "Mail"  # opaque folder ID, avoid showing long string
+        now_utc = datetime.now(timezone.utc)
+        outlook_deleted_at = now_utc if is_del_folder else None
         email = Email(
             graph_id=data.get("id"),
             message_id=message_id,
@@ -207,6 +226,7 @@ def ingest_email_task(
             mailbox_owner_email=mailbox_norm,
             status="stored",
             raw_payload={k: v for k, v in data.items() if k not in ("body",)},
+            deleted_at=outlook_deleted_at,
         )
         if getattr(Email, "processing_status", None) is not None:
             email.processing_status = "ingested"
@@ -226,11 +246,38 @@ def ingest_email_task(
                 )
                 db.add(a)
         db.commit()
-        if email_id_to_classify:
+        if email_id_to_classify and not is_del_folder:
             enqueue_classify_email_task(email_id_to_classify, mailbox_norm)
     except Exception as e:
         db.rollback()
         raise self.retry(exc=e)
+    finally:
+        db.close()
+
+
+@celery_app.task(name="app.workers.tasks.sync_outlook_deleted_for_all_users_task")
+def sync_outlook_deleted_for_all_users_task(days: int | None = None):
+    """
+    Enqueue backfill of Graph well-known folder `deleteditems` for every distinct User.email.
+    Marks existing rows deleted when a message appears only in Deleted Items, or sets deleted_at on new rows.
+    """
+    cfg = get_settings()
+    if not cfg.outlook_deleted_sync_enabled:
+        return {"ok": True, "skipped": True, "message": "outlook_deleted_sync_enabled is false"}
+    d = int(days if days is not None else cfg.outlook_deleted_sync_days)
+    d = max(1, min(90, d))
+    db = SessionLocal()
+    try:
+        rows = db.query(User.email).filter(User.email.isnot(None), User.email != "").distinct().all()
+        enq = 0
+        for (addr,) in rows:
+            e = (addr or "").strip()
+            if not e or "@" not in e:
+                continue
+            user_key = e.lower()
+            backfill_emails_task.delay(user_key, "deleteditems", d)
+            enq += 1
+        return {"ok": True, "mailboxesEnqueued": enq, "days": d}
     finally:
         db.close()
 
@@ -717,7 +764,15 @@ def backfill_emails_task(
 
     params = {"$top": 999, "$filter": filter_expr, "$orderby": f"{date_field} desc"}
     total_enqueued = 0
-    folder_display = "Sent" if is_sent else ("Inbox" if str(folder_id).lower() == "inbox" else folder_id)
+    fid = str(folder_id).lower()
+    if fid == "deleteditems":
+        folder_display = "Deleted Items"
+    elif is_sent:
+        folder_display = "Sent"
+    elif fid == "inbox":
+        folder_display = "Inbox"
+    else:
+        folder_display = folder_id
 
     with httpx_client(timeout=60.0) as client:
         next_url: str | None = base_url

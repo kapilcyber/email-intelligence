@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.api.admin_access import actor_manager_scope_mailboxes, manager_actor_row
 from app.api.deps import get_admin_or_manager_user, get_current_user_email
 from app.config import get_settings
-from app.db.models import Email, TeamProject, User
+from app.db.models import Email, ProjectAssignment, TeamProject, User
 from app.db.session import get_db
 
 router = APIRouter(prefix="/tracker", dependencies=[Depends(get_admin_or_manager_user)])
@@ -96,22 +96,28 @@ def _normalize_schedule_days(raw) -> list[str]:
     return out
 
 
-def _dows_tracker_sent_for_project(
+def _utc_isoweekday(dt: datetime) -> int:
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.astimezone(timezone.utc)
+    return dt.isoweekday()
+
+
+def _qualifying_tracker_rows_project_week(
     db: Session,
     project: TeamProject,
     week_start: datetime,
     week_end: datetime,
     watch_emails: set[str],
-) -> set[int]:
+) -> list[tuple[datetime, str]]:
     """
-    Return ISO weekdays (1=Mon .. 7=Sun) on which at least one email qualifies as this project's
-    tracker: subject contains 'tracker' and project name (case-insensitive), and Cc includes at
-    least one Admin/Manager user email or an address listed in ADMIN_EMAILS (so copies sent with
-    leadership in CC count even when the ingested row is that mailbox).
+    Qualifying tracker rows in the window: subject has tracker + project name, Cc has watch email,
+    returns (received_at, sender_lower) per row.
     """
     name_pat = _like_fragment(project.name)
     if not name_pat:
-        return set()
+        return []
 
     subj = Email.subject
     conds = [
@@ -122,22 +128,84 @@ def _dows_tracker_sent_for_project(
         func.lower(subj).like(f"%{name_pat.lower()}%", escape="\\"),
     ]
 
-    q = db.query(Email.received_at, Email.cc_recipients).filter(and_(*conds))
-    dows: set[int] = set()
-    for received_at, cc_recipients in q.all():
+    out: list[tuple[datetime, str]] = []
+    for received_at, sender_email, cc_recipients in (
+        db.query(Email.received_at, Email.sender_email, Email.cc_recipients).filter(and_(*conds)).all()
+    ):
         if not received_at:
             continue
         if not _cc_has_watch_email(cc_recipients, watch_emails):
             continue
-        dt = received_at
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        else:
-            dt = dt.astimezone(timezone.utc)
-        iw = dt.isoweekday()  # Monday=1 .. Sunday=7
+        se = (sender_email or "").strip().lower()
+        if not se:
+            continue
+        out.append((received_at, se))
+    return out
+
+
+def _dows_tracker_sent_for_project(
+    db: Session,
+    project: TeamProject,
+    week_start: datetime,
+    week_end: datetime,
+    watch_emails: set[str],
+) -> set[int]:
+    """
+    Return ISO weekdays (1=Mon .. 7=Sun) on which at least one qualifying tracker was received.
+    """
+    rows = _qualifying_tracker_rows_project_week(db, project, week_start, week_end, watch_emails)
+    dows: set[int] = set()
+    for ra, _ in rows:
+        iw = _utc_isoweekday(ra)
         if 1 <= iw <= 7:
             dows.add(iw)
     return dows
+
+
+def _normalize_member_deadline_map(raw) -> dict[str, str]:
+    if not raw or not isinstance(raw, dict):
+        return {}
+    out: dict[str, str] = {}
+    for k, v in raw.items():
+        uid = str(k).strip() if k is not None else ""
+        if not uid or not isinstance(v, str):
+            continue
+        day = v.strip().lower()
+        if day in TRACKER_DAY_KEYS:
+            out[uid] = day
+    return out
+
+
+def _member_schedule_override_for_out(raw, uid: str) -> list[str] | None:
+    """None = inherit project tracker_schedule_days; list (maybe empty) = explicit override."""
+    if not raw or not isinstance(raw, dict):
+        return None
+    u = (uid or "").strip()
+    if not u:
+        return None
+    if u not in raw and str(u) not in raw:
+        return None
+    v = raw[u] if u in raw else raw.get(str(u))
+    if not isinstance(v, list):
+        return None
+    return _normalize_schedule_days(v)
+
+
+def _member_met_deadline(
+    rows: list[tuple[datetime, str]],
+    member_email_lower: str,
+    deadline_before_key: str,
+) -> bool:
+    """True if member sent at least one qualifying tracker on a weekday strictly before deadline_before_key (UTC)."""
+    if deadline_before_key not in KEY_TO_ISO_DOW:
+        return False
+    d_iso = KEY_TO_ISO_DOW[deadline_before_key]
+    for ra, se in rows:
+        if se != member_email_lower:
+            continue
+        if _utc_isoweekday(ra) < d_iso:
+            return True
+    return False
 
 
 def _list_tracker_emails_for_project(
@@ -185,6 +253,24 @@ class TrackerDayState(BaseModel):
     sent: bool = Field(description="At least one qualifying email received this weekday (UTC week)")
 
 
+class TrackerMemberOut(BaseModel):
+    userId: str
+    email: str
+    displayName: str | None = None
+    deadlineBefore: str | None = Field(
+        None,
+        description="Tracker must be sent on a weekday strictly before this day (UTC week, e.g. thu => by Wed).",
+    )
+    metThisWeek: bool | None = Field(
+        None,
+        description="Whether the member met the deadline this UTC week; null if no per-member deadline.",
+    )
+    scheduleDaysOverride: list[str] | None = Field(
+        None,
+        description="Expected tracker weekdays for this member; null = use project tracker days, [] = none expected.",
+    )
+
+
 class ProjectTrackerOut(BaseModel):
     projectId: str
     projectName: str
@@ -193,6 +279,7 @@ class ProjectTrackerOut(BaseModel):
     weekStartISO: str
     weekEndISO: str
     days: list[TrackerDayState]
+    members: list[TrackerMemberOut] = Field(default_factory=list)
 
 
 class TrackerDashboardOut(BaseModel):
@@ -203,6 +290,14 @@ class TrackerSchedulePatch(BaseModel):
     scheduleDays: list[str] = Field(
         default_factory=list,
         description="Weekday keys: mon,tue,wed,thu,fri,sat,sun (lowercase)",
+    )
+    memberDeadlineBeforeDays: dict[str, str | None] | None = Field(
+        None,
+        description="Per assignee userId -> deadline weekday before which to send, or null to remove.",
+    )
+    memberScheduleDays: dict[str, list[str] | None] | None = Field(
+        None,
+        description="Per assignee userId -> expected weekday list, or null to remove override (use project days).",
     )
 
 
@@ -233,10 +328,77 @@ DAY_LABELS = {
 }
 
 
+def _build_project_tracker_out(
+    db: Session,
+    p: TeamProject,
+    week_start: datetime,
+    week_end: datetime,
+    watch_emails: set[str],
+) -> ProjectTrackerOut:
+    schedule = _normalize_schedule_days(getattr(p, "tracker_schedule_days", None))
+    rows_week = _qualifying_tracker_rows_project_week(db, p, week_start, week_end, watch_emails)
+    sent_dows: set[int] = set()
+    for ra, _ in rows_week:
+        iw = _utc_isoweekday(ra)
+        if 1 <= iw <= 7:
+            sent_dows.add(iw)
+    days: list[TrackerDayState] = []
+    for key in TRACKER_DAY_KEYS:
+        iso = KEY_TO_ISO_DOW[key]
+        days.append(
+            TrackerDayState(
+                key=key,
+                label=DAY_LABELS[key],
+                expected=key in schedule,
+                sent=iso in sent_dows,
+            )
+        )
+    team_name = p.team.name if getattr(p, "team", None) else None
+    deadline_map = _normalize_member_deadline_map(getattr(p, "tracker_member_deadline_days", None))
+    raw_member_sched = getattr(p, "tracker_member_schedule_days", None)
+    members_out: list[TrackerMemberOut] = []
+    assignments = list(getattr(p, "assignments", None) or [])
+    assignments.sort(key=lambda a: ((a.user.email or "").lower() if getattr(a, "user", None) else ""))
+    for a in assignments:
+        u = a.user
+        if not u:
+            continue
+        uid = str(u.id)
+        em = (u.email or "").strip()
+        dk = deadline_map.get(uid)
+        met: bool | None = None
+        if dk:
+            met = _member_met_deadline(rows_week, em.lower(), dk)
+        sched_override = _member_schedule_override_for_out(raw_member_sched, uid)
+        members_out.append(
+            TrackerMemberOut(
+                userId=uid,
+                email=em,
+                displayName=u.display_name,
+                deadlineBefore=dk,
+                metThisWeek=met,
+                scheduleDaysOverride=sched_override,
+            )
+        )
+    return ProjectTrackerOut(
+        projectId=p.id,
+        projectName=p.name,
+        teamName=team_name,
+        scheduleDays=schedule,
+        weekStartISO=week_start.isoformat().replace("+00:00", "Z"),
+        weekEndISO=week_end.isoformat().replace("+00:00", "Z"),
+        days=days,
+        members=members_out,
+    )
+
+
 def _tracker_projects_for_dashboard(db: Session, actor_email: str) -> list[TeamProject]:
     q = (
         db.query(TeamProject)
-        .options(joinedload(TeamProject.team))
+        .options(
+            joinedload(TeamProject.team),
+            joinedload(TeamProject.assignments).joinedload(ProjectAssignment.user),
+        )
         .order_by(TeamProject.updated_at.desc())
     )
     if actor_manager_scope_mailboxes(db, actor_email) is not None:
@@ -266,33 +428,7 @@ def get_tracker_dashboard(
     week_start, week_end = _week_bounds_utc()
     watch_emails = _tracker_watch_emails(db)
     projects = _tracker_projects_for_dashboard(db, actor_email)
-    out: list[ProjectTrackerOut] = []
-    for p in projects:
-        schedule = _normalize_schedule_days(getattr(p, "tracker_schedule_days", None))
-        sent_dows = _dows_tracker_sent_for_project(db, p, week_start, week_end, watch_emails)
-        days: list[TrackerDayState] = []
-        for key in TRACKER_DAY_KEYS:
-            iso = KEY_TO_ISO_DOW[key]
-            days.append(
-                TrackerDayState(
-                    key=key,
-                    label=DAY_LABELS[key],
-                    expected=key in schedule,
-                    sent=iso in sent_dows,
-                )
-            )
-        team_name = p.team.name if getattr(p, "team", None) else None
-        out.append(
-            ProjectTrackerOut(
-                projectId=p.id,
-                projectName=p.name,
-                teamName=team_name,
-                scheduleDays=schedule,
-                weekStartISO=week_start.isoformat().replace("+00:00", "Z"),
-                weekEndISO=week_end.isoformat().replace("+00:00", "Z"),
-                days=days,
-            )
-        )
+    out = [_build_project_tracker_out(db, p, week_start, week_end, watch_emails) for p in projects]
     return TrackerDashboardOut(projects=out)
 
 
@@ -346,7 +482,10 @@ def patch_tracker_schedule(
 ):
     p = (
         db.query(TeamProject)
-        .options(joinedload(TeamProject.team))
+        .options(
+            joinedload(TeamProject.team),
+            joinedload(TeamProject.assignments).joinedload(ProjectAssignment.user),
+        )
         .filter(TeamProject.id == project_id)
         .first()
     )
@@ -355,31 +494,68 @@ def patch_tracker_schedule(
     _assert_tracker_project_access(db, actor_email, p)
     schedule = _normalize_schedule_days(body.scheduleDays)
     p.tracker_schedule_days = schedule if schedule else None
+
+    if body.memberDeadlineBeforeDays is not None:
+        assignee_ids = {str(a.user_id) for a in (p.assignments or [])}
+        merged = dict(_normalize_member_deadline_map(getattr(p, "tracker_member_deadline_days", None)))
+        for uid_raw, val in body.memberDeadlineBeforeDays.items():
+            uids = str(uid_raw).strip()
+            if not uids:
+                continue
+            if uids not in assignee_ids:
+                raise HTTPException(
+                    status_code=400,
+                    detail="User is not assigned to this project",
+                )
+            if val is None or (isinstance(val, str) and not str(val).strip()):
+                merged.pop(uids, None)
+            else:
+                k = str(val).strip().lower()
+                if k not in TRACKER_DAY_KEYS:
+                    raise HTTPException(status_code=400, detail="Invalid deadline weekday")
+                merged[uids] = k
+        p.tracker_member_deadline_days = merged if merged else None
+
+    if body.memberScheduleDays is not None:
+        assignee_ids = {str(a.user_id) for a in (p.assignments or [])}
+        prev = getattr(p, "tracker_member_schedule_days", None)
+        merged_sched: dict[str, list[str]] = {}
+        if isinstance(prev, dict):
+            for k, v in prev.items():
+                ks = str(k).strip() if k is not None else ""
+                if ks in assignee_ids and isinstance(v, list):
+                    merged_sched[ks] = _normalize_schedule_days(v)
+        for uid_raw, val in body.memberScheduleDays.items():
+            uids = str(uid_raw).strip()
+            if not uids:
+                continue
+            if uids not in assignee_ids:
+                raise HTTPException(
+                    status_code=400,
+                    detail="User is not assigned to this project",
+                )
+            if val is None:
+                merged_sched.pop(uids, None)
+            elif isinstance(val, list):
+                merged_sched[uids] = _normalize_schedule_days(val)
+            else:
+                raise HTTPException(status_code=400, detail="Invalid member schedule days")
+        p.tracker_member_schedule_days = merged_sched if merged_sched else None
+
     db.add(p)
     db.commit()
-    db.refresh(p)
 
     week_start, week_end = _week_bounds_utc()
     watch_emails = _tracker_watch_emails(db)
-    sent_dows = _dows_tracker_sent_for_project(db, p, week_start, week_end, watch_emails)
-    days: list[TrackerDayState] = []
-    for key in TRACKER_DAY_KEYS:
-        iso = KEY_TO_ISO_DOW[key]
-        days.append(
-            TrackerDayState(
-                key=key,
-                label=DAY_LABELS[key],
-                expected=key in schedule,
-                sent=iso in sent_dows,
-            )
+    p2 = (
+        db.query(TeamProject)
+        .options(
+            joinedload(TeamProject.team),
+            joinedload(TeamProject.assignments).joinedload(ProjectAssignment.user),
         )
-    team_name = p.team.name if getattr(p, "team", None) else None
-    return ProjectTrackerOut(
-        projectId=p.id,
-        projectName=p.name,
-        teamName=team_name,
-        scheduleDays=schedule,
-        weekStartISO=week_start.isoformat().replace("+00:00", "Z"),
-        weekEndISO=week_end.isoformat().replace("+00:00", "Z"),
-        days=days,
+        .filter(TeamProject.id == project_id)
+        .first()
     )
+    if not p2:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return _build_project_tracker_out(db, p2, week_start, week_end, watch_emails)

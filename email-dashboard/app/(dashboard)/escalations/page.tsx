@@ -69,9 +69,6 @@ export default function EscalationsPage() {
         <h1 className="text-xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50 sm:text-2xl">
           My Escalations
         </h1>
-        <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400 sm:text-sm">
-          Escalation emails assigned to your mailbox.
-        </p>
       </div>
 
       <div
@@ -145,9 +142,9 @@ export default function EscalationsPage() {
                       </p>
                     )}
                   </div>
-                  <div className="flex w-full min-w-0 flex-row items-center justify-between gap-2 border-t border-neutral-100 pt-2 dark:border-neutral-800 sm:w-auto sm:shrink-0 sm:flex-col sm:items-end sm:justify-start sm:border-t-0 sm:pt-0">
+                  <div className="flex w-full min-w-0 flex-row items-center justify-between gap-2 border-t border-neutral-100 pt-2 dark:border-neutral-800 sm:w-auto sm:shrink-0 sm:items-center sm:justify-end sm:gap-2 sm:self-start sm:border-t-0 sm:pt-1">
                     <RetagMailControl emailId={item.id} onDone={load} compact />
-                    <Link href={`/emails/${item.id}`} className="shrink-0">
+                    <Link href={`/emails/${item.id}`} className="inline-flex shrink-0">
                       <Button
                         type="button"
                         variant="outline"

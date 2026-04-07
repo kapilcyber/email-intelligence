@@ -34,9 +34,6 @@ export default function ManagerProjectsPage() {
     <div className="min-w-0 max-w-full space-y-4 sm:space-y-6">
       <div className="min-w-0">
         <h1 className="text-xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50 sm:text-2xl">Projects</h1>
-        <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400 sm:text-sm">
-          Projects for your department and assigned team members.
-        </p>
       </div>
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400">

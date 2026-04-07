@@ -25,6 +25,17 @@ const SHORT: Record<string, string> = {
   sun: "Sun",
 };
 
+/** ISO weekday 1=Mon … 7=Sun — matches admin tracker “send before” rule. */
+const DOW_ISO: Record<string, number> = {
+  mon: 1,
+  tue: 2,
+  wed: 3,
+  thu: 4,
+  fri: 5,
+  sat: 6,
+  sun: 7,
+};
+
 function formatWeek(startISO: string, endISO: string) {
   try {
     const a = new Date(startISO);
@@ -74,6 +85,20 @@ function ProjectTrackerCard({
     loadHistory();
   }, [open, loadHistory]);
 
+  const personalDeadlineIso = useMemo(() => {
+    const k = p.memberDeadlineBefore?.toLowerCase();
+    if (!k || DOW_ISO[k] == null) return null;
+    return DOW_ISO[k];
+  }, [p.memberDeadlineBefore]);
+
+  const metPersonalDeadline = useMemo(() => {
+    if (personalDeadlineIso == null) return true;
+    return p.days.some((d) => {
+      const di = DOW_ISO[d.key] ?? 0;
+      return di < personalDeadlineIso && d.sentByMe;
+    });
+  }, [p.days, personalDeadlineIso]);
+
   return (
     <Card className="min-w-0 max-w-full rounded-2xl border-border">
       <CardHeader className="space-y-1 p-4 pb-2 sm:p-6 sm:pb-2">
@@ -84,42 +109,73 @@ function ProjectTrackerCard({
         </p>
       </CardHeader>
       <CardContent className="space-y-4 p-4 pt-0 sm:p-6 sm:pt-0">
-        <div className="min-w-0">
-          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-            Expected days (set by admin)
-          </p>
-          <p className="break-words text-sm text-neutral-600 dark:text-neutral-300">
-            {p.scheduleDays.length > 0 ? p.scheduleDays.map((d) => SHORT[d] ?? d).join(", ") : "None configured"}
-          </p>
-        </div>
+        {p.days.some((d) => d.expected) || p.memberDeadlineBefore ? (
+          <div className="min-w-0 rounded-lg border border-border/80 bg-muted/25 px-3 py-2.5 dark:bg-neutral-900/35">
+            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+              Tracker settings
+            </p>
+            <dl className="space-y-1.5 text-sm text-neutral-700 dark:text-neutral-200">
+              <div className="flex flex-col gap-0.5 sm:flex-row sm:flex-wrap sm:items-baseline sm:gap-x-2">
+                <dt className="shrink-0 text-xs font-medium text-neutral-500 dark:text-neutral-400">Expected days</dt>
+                <dd className="min-w-0 break-words">
+                  {(p.effectiveScheduleDays ?? []).length > 0
+                    ? (p.effectiveScheduleDays ?? []).map((d) => SHORT[d] ?? d).join(", ")
+                    : "—"}
+                </dd>
+              </div>
+              {p.memberDeadlineBefore ? (
+                <div className="flex flex-col gap-0.5 sm:flex-row sm:flex-wrap sm:items-baseline sm:gap-x-2">
+                  <dt className="shrink-0 text-xs font-medium text-neutral-500 dark:text-neutral-400">
+                    Your send-by
+                  </dt>
+                  <dd className="min-w-0">
+                    Before {SHORT[p.memberDeadlineBefore] ?? p.memberDeadlineBefore} (UTC week)
+                  </dd>
+                </div>
+              ) : null}
+            </dl>
+          </div>
+        ) : null}
         <div className="min-w-0">
           <p className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
             This week — you sent?
           </p>
           <div className="max-w-full overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch] sm:overflow-visible sm:pb-0">
             <div className="grid min-w-[18rem] grid-cols-7 gap-0.5 text-center text-[10px] sm:min-w-0 sm:gap-1 sm:text-xs">
-              {p.days.map((day: FollowUpTrackerDay) => (
-                <div
-                  key={day.key}
-                  className="flex min-w-0 flex-col items-center gap-0.5 rounded-md border border-neutral-200 bg-neutral-50/80 px-0.5 py-1.5 sm:gap-1 sm:py-2 dark:border-neutral-700 dark:bg-neutral-900/40"
-                >
-                  <span className="font-medium text-neutral-600 dark:text-neutral-300">{SHORT[day.key] ?? day.key}</span>
-                  <span
-                    className={cn(
-                      "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-semibold sm:h-6 sm:w-6 sm:text-[10px]",
-                      day.sentByMe
-                        ? "bg-emerald-500 text-white"
-                        : "bg-neutral-200 text-neutral-500 dark:bg-neutral-700 dark:text-neutral-400"
-                    )}
-                    title={day.label}
+              {p.days.map((day: FollowUpTrackerDay) => {
+                const dIso = DOW_ISO[day.key] ?? 0;
+                const inPersonalSendWindow =
+                  personalDeadlineIso != null && dIso < personalDeadlineIso;
+                const personalDue = inPersonalSendWindow && !metPersonalDeadline;
+                const scheduleDue = day.expected && !day.sentByMe;
+                const showDue = scheduleDue || personalDue;
+                return (
+                  <div
+                    key={day.key}
+                    className="flex min-w-0 flex-col items-center gap-0.5 rounded-md border border-neutral-200 bg-neutral-50/80 px-0.5 py-1.5 sm:gap-1 sm:py-2 dark:border-neutral-700 dark:bg-neutral-900/40"
                   >
-                    {day.sentByMe ? "✓" : "—"}
-                  </span>
-                  {day.expected && !day.sentByMe && (
-                    <span className="text-[8px] leading-tight text-amber-700 dark:text-amber-400 sm:text-[9px]">due</span>
-                  )}
-                </div>
-              ))}
+                    <span className="font-medium text-neutral-600 dark:text-neutral-300">
+                      {SHORT[day.key] ?? day.key}
+                    </span>
+                    <span
+                      className={cn(
+                        "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-semibold sm:h-6 sm:w-6 sm:text-[10px]",
+                        day.sentByMe
+                          ? "bg-emerald-500 text-white"
+                          : "bg-neutral-200 text-neutral-500 dark:bg-neutral-700 dark:text-neutral-400"
+                      )}
+                      title={day.label}
+                    >
+                      {day.sentByMe ? "✓" : "—"}
+                    </span>
+                    {showDue && (
+                      <span className="text-[8px] leading-tight text-amber-700 dark:text-amber-400 sm:text-[9px]">
+                        due
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -194,7 +250,16 @@ export default function FollowUpPage() {
     api
       .getFollowUpTracker()
       .then((r) => {
-        setProjects(r.projects ?? []);
+        setProjects(
+          (r.projects ?? []).map((proj) => ({
+            ...proj,
+            scheduleDays: proj.scheduleDays ?? [],
+            effectiveScheduleDays:
+              proj.effectiveScheduleDays ??
+              (proj.days ?? []).filter((d) => d.expected).map((d) => d.key),
+            memberDeadlineBefore: proj.memberDeadlineBefore ?? null,
+          }))
+        );
         setWeekHint(formatWeek(r.weekStartISO, r.weekEndISO));
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed to load"))
@@ -220,9 +285,6 @@ export default function FollowUpPage() {
               {weekHint}
             </p>
           )}
-          <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400 sm:text-sm">
-            Weekly send tracker for team projects you are on.
-          </p>
         </div>
         <Button
           type="button"

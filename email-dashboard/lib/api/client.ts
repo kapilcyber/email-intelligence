@@ -34,6 +34,7 @@ import type {
   ProjectTrackerRow,
   TrackerProjectEmailsResponse,
   ReviewEscalationUser,
+  ReviewLeadUser,
   ReviewProjectTrackerUser,
   RetagActionResponse,
   RetagApprovalOut,
@@ -186,6 +187,37 @@ function createApi(userEmail: string | null, userDisplayName?: string | null) {
       const q = searchParams.toString();
       return withUser<EmailsResponse>(`/api/emails${q ? `?${q}` : ""}`);
     },
+    /** Admin-only: all mailboxes; set deletedOnly=true for user soft-deleted messages */
+    getAdminEmails: (params?: {
+      page?: number;
+      pageSize?: number;
+      search?: string;
+      from?: string;
+      to?: string;
+      category?: string;
+      deletedOnly?: boolean;
+    }) => {
+      const searchParams = new URLSearchParams();
+      if (params?.page != null) searchParams.set("page", String(params.page));
+      if (params?.pageSize != null) searchParams.set("pageSize", String(params.pageSize));
+      if (params?.search) searchParams.set("search", params.search);
+      if (params?.from) searchParams.set("from", params.from);
+      if (params?.to) searchParams.set("to", params.to);
+      if (params?.category) searchParams.set("category", params.category);
+      if (params?.deletedOnly === true) searchParams.set("deletedOnly", "true");
+      const q = searchParams.toString();
+      return withUser<EmailsResponse>(`/api/admin/emails${q ? `?${q}` : ""}`);
+    },
+    restoreAdminEmail: (emailId: string) =>
+      withUser<{ ok: boolean; emailId?: string }>(`/api/admin/emails/${emailId}/restore`, { method: "POST" }),
+    /** Enqueue Microsoft Graph Deleted Items sync for every registered user mailbox (admin). */
+    syncOutlookDeleted: (body?: { days?: number }) =>
+      withUser<{ ok: boolean; taskId?: string; message?: string }>("/api/admin/sync-outlook-deleted", {
+        method: "POST",
+        body: JSON.stringify(body ?? {}),
+      }),
+    softDeleteEmail: (emailId: string) =>
+      withUser<{ ok: boolean; emailId?: string }>(`/api/emails/${emailId}/soft-delete`, { method: "POST" }),
     getEmail: (id: string) => withUser<EmailDetail>(`/api/emails/${id}`),
     /** List email threads (conversations) for Threads view */
     getConversations: (params?: { page?: number; pageSize?: number; search?: string }) => {
@@ -489,10 +521,19 @@ function createApi(userEmail: string | null, userDisplayName?: string | null) {
         body: JSON.stringify(body),
       }),
     getAdminTracker: () => withUser<TrackerDashboardResponse>("/api/admin/tracker"),
-    patchAdminTrackerSchedule: (projectId: string, scheduleDays: string[]) =>
+    patchAdminTrackerSchedule: (
+      projectId: string,
+      scheduleDays: string[],
+      memberDeadlineBeforeDays?: Record<string, string | null>,
+      memberScheduleDays?: Record<string, string[] | null>
+    ) =>
       withUser<ProjectTrackerRow>(`/api/admin/tracker/${encodeURIComponent(projectId)}`, {
         method: "PATCH",
-        body: JSON.stringify({ scheduleDays }),
+        body: JSON.stringify({
+          scheduleDays,
+          ...(memberDeadlineBeforeDays != null ? { memberDeadlineBeforeDays } : {}),
+          ...(memberScheduleDays != null ? { memberScheduleDays } : {}),
+        }),
       }),
     getAdminTrackerProjectEmails: (projectId: string, params?: { days?: number; limit?: number }) => {
       const search = new URLSearchParams();
@@ -505,6 +546,8 @@ function createApi(userEmail: string | null, userDisplayName?: string | null) {
     },
     getAdminReviewEscalationReplies: (days = 30) =>
       withUser<ReviewEscalationUser[]>(`/api/admin/review/escalation-replies?days=${encodeURIComponent(String(days))}`),
+    getAdminReviewLeadReplies: (days = 30) =>
+      withUser<ReviewLeadUser[]>(`/api/admin/review/lead-replies?days=${encodeURIComponent(String(days))}`),
     getAdminReviewProjectTracker: (days = 30) =>
       withUser<ReviewProjectTrackerUser[]>(`/api/admin/review/project-tracker?days=${encodeURIComponent(String(days))}`),
   };

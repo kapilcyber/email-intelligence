@@ -1,6 +1,15 @@
 "use client";
 
-import { Suspense, useEffect, useState, useCallback, useMemo, useRef } from "react";
+import {
+  Suspense,
+  useEffect,
+  useLayoutEffect,
+  useState,
+  useCallback,
+  useMemo,
+  useRef,
+  type ReactNode,
+} from "react";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
@@ -32,6 +41,7 @@ import {
   Calendar,
   ExternalLink,
   Video,
+  type LucideIcon,
 } from "lucide-react";
 import {
   BarChart,
@@ -40,7 +50,6 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  ResponsiveContainer,
   Cell,
   ComposedChart,
   LineChart,
@@ -67,13 +76,34 @@ function loadMetrics(
   setMetrics: (m: DashboardMetrics | null) => void,
   setMetricsError: (e: string | null) => void,
   setLoading: (b: boolean) => void,
-  period?: ChartPeriod
+  period?: ChartPeriod,
+  options?: { silent?: boolean }
+) {
+  const silent = options?.silent ?? false;
+  if (!silent) setLoading(true);
+  api
+    .getDashboardMetrics(period)
+    .then((r) => {
+      setMetrics(r);
+      setMetricsError(null);
+    })
+    .catch(() => setMetricsError("Failed to load metrics"))
+    .finally(() => {
+      if (!silent) setLoading(false);
+    });
+}
+
+/** All-time / unscoped metrics for AI category & priority charts (not affected by daily/weekly tab). */
+function loadOverviewMetrics(
+  api: ReturnType<typeof getApi>,
+  setOverview: (m: DashboardMetrics | null) => void,
+  setLoading: (b: boolean) => void
 ) {
   setLoading(true);
   api
-    .getDashboardMetrics(period)
-    .then(setMetrics)
-    .catch(() => setMetricsError("Failed to load metrics"))
+    .getDashboardMetrics(undefined)
+    .then(setOverview)
+    .catch(() => setOverview(null))
     .finally(() => setLoading(false));
 }
 
@@ -156,6 +186,78 @@ function useNarrowCharts(maxWidthPx = 639) {
   return narrow;
 }
 
+/**
+ * Recharts' ResponsiveContainer can see width 0 under flex/grid + min-w-0, producing NaN SVG attrs in React 19.
+ * Measure the wrapper and pass explicit pixel width/height to the chart.
+ */
+function MeasuredChart({
+  height,
+  children,
+}: {
+  height: number;
+  children: (dims: { width: number; height: number }) => ReactNode;
+}) {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [dims, setDims] = useState<{ width: number; height: number } | null>(null);
+
+  const measure = useCallback(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const w = Math.round(r.width);
+    const h = Math.round(r.height);
+    if (w < 2 || h < 2 || !Number.isFinite(w) || !Number.isFinite(h)) {
+      setDims(null);
+      return;
+    }
+    setDims((prev) => (prev && prev.width === w && prev.height === h ? prev : { width: w, height: h }));
+  }, []);
+
+  useLayoutEffect(() => {
+    const schedule = () => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(measure);
+      });
+    };
+    schedule();
+  }, [height, measure]);
+
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    let cancelled = false;
+    const schedule = () => {
+      if (cancelled) return;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(measure);
+      });
+    };
+    const ro = new ResizeObserver(() => schedule());
+    ro.observe(el);
+    return () => {
+      cancelled = true;
+      ro.disconnect();
+    };
+  }, [height, measure]);
+
+  return (
+    <div
+      ref={wrapRef}
+      className="w-full min-w-[160px] max-w-full"
+      style={{ height }}
+    >
+      {dims ? (
+        children(dims)
+      ) : (
+        <div
+          className="h-full w-full rounded-lg bg-neutral-100/40 dark:bg-neutral-800/40"
+          aria-hidden
+        />
+      )}
+    </div>
+  );
+}
+
 function DashboardAiChartsEmpty({
   api,
   onClassifyAll,
@@ -205,10 +307,6 @@ function DashboardAiChartsEmpty({
   };
   return (
     <section className="rounded-2xl border border-neutral-200 bg-neutral-50/50 p-6 dark:border-neutral-800 dark:bg-neutral-900/30">
-      <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-neutral-700 dark:text-neutral-300">
-        <Sparkles className="h-4 w-4" />
-        AI classification overview
-      </h2>
       <p className="mb-3 text-sm text-neutral-500 dark:text-neutral-400">
         No classified emails yet. Existing emails were synced before AI was enabled — run <strong>Classify all</strong> once to add summary, category, and priority. New emails will be classified automatically.
       </p>
@@ -244,12 +342,18 @@ function DashboardAiChartsEmpty({
 function DashboardAiCharts({
   api,
   metrics,
+  overviewMetrics,
+  overviewLoading,
   loading,
   onClassifyAll,
   isAdmin = false,
 }: {
   api: ReturnType<typeof getApi>;
+  /** Period-scoped (matches KPI / time toggle). */
   metrics: DashboardMetrics | null;
+  /** All-time distribution for category & priority charts so Weekly isn’t empty when mail is older than 7 days. */
+  overviewMetrics: DashboardMetrics | null;
+  overviewLoading: boolean;
   loading: boolean;
   onClassifyAll?: () => void;
   isAdmin?: boolean;
@@ -262,15 +366,16 @@ function DashboardAiCharts({
   const chartBoxH = narrow ? 240 : 320;
   const axisTick = { fontSize: narrow ? 9 : 10, fill: chart.axis };
   const axisTickMuted = { fontSize: narrow ? 9 : 10, fill: chart.axisMuted };
+  /** Margins must cover YAxis `width` or Recharts computes negative plot size → NaN (worse on desktop with wider axes). */
   const marginCategory = narrow
-    ? { top: 8, right: 4, bottom: 28, left: 0 }
-    : { top: 8, right: 32, bottom: 8, left: 8 };
+    ? { top: 10, right: 44, bottom: 44, left: 36 }
+    : { top: 12, right: 56, bottom: 40, left: 52 };
   const marginStandard = narrow
-    ? { top: 6, right: 4, bottom: 6, left: 0 }
-    : { top: 8, right: 8, bottom: 8, left: 8 };
+    ? { top: 8, right: 8, bottom: 32, left: 8 }
+    : { top: 8, right: 16, bottom: 16, left: 52 };
   const marginEscalation = narrow
-    ? { top: 6, right: 4, left: 0, bottom: 52 }
-    : { top: 8, right: 8, left: 8, bottom: 56 };
+    ? { top: 8, right: 8, left: 8, bottom: 52 }
+    : { top: 8, right: 16, left: 52, bottom: 56 };
 
   useEffect(() => {
     setEscalationByUser(null);
@@ -319,8 +424,10 @@ function DashboardAiCharts({
     });
   }, [leadCountsByUser]);
 
+  const distributionMetrics = overviewMetrics ?? metrics;
+
   const categoryData = useMemo(() => {
-    const counts = metrics?.categoryCounts ?? {};
+    const counts = distributionMetrics?.categoryCounts ?? {};
     const ordered = CATEGORY_ORDER.filter((c) => (counts[c] ?? 0) > 0).map((name) => ({
       name,
       count: counts[name] ?? 0,
@@ -329,20 +436,20 @@ function DashboardAiCharts({
       .filter((k) => !CATEGORY_ORDER.includes(k))
       .map((name) => ({ name, count: counts[name] ?? 0 }));
     return [...ordered, ...rest];
-  }, [metrics?.categoryCounts]);
+  }, [distributionMetrics?.categoryCounts]);
 
   const categoryKpiData = useMemo(() => {
-    const counts = metrics?.categoryCounts ?? {};
+    const counts = distributionMetrics?.categoryCounts ?? {};
     const rows = CATEGORY_ORDER.map((name) => ({
       category: name,
       count: counts[name] ?? 0,
     }));
     const total = rows.reduce((s, r) => s + r.count, 0) || 1;
     return rows.map((r) => ({ ...r, pct: Math.round((r.count / total) * 100) }));
-  }, [metrics?.categoryCounts]);
+  }, [distributionMetrics?.categoryCounts]);
 
   const priorityData = useMemo(() => {
-    const counts = metrics?.priorityCounts ?? {};
+    const counts = distributionMetrics?.priorityCounts ?? {};
     const ordered = PRIORITY_ORDER.filter((p) => (counts[p] ?? 0) > 0).map((name) => ({
       name,
       count: counts[name] ?? 0,
@@ -351,7 +458,7 @@ function DashboardAiCharts({
       .filter((k) => !PRIORITY_ORDER.includes(k))
       .map((name) => ({ name, count: counts[name] ?? 0 }));
     return [...ordered, ...rest];
-  }, [metrics?.priorityCounts]);
+  }, [distributionMetrics?.priorityCounts]);
 
   const prioritySeriesData = useMemo(() => {
     const byName = new Map(priorityData.map((p) => [p.name, p.count]));
@@ -365,13 +472,13 @@ function DashboardAiCharts({
 
   const hasAny = categoryData.length > 0 || priorityData.length > 0;
 
-  if (loading) {
+  /** Wait for at least one metrics payload before choosing empty vs charts (overview is all-time). */
+  const chartsBlocking =
+    overviewMetrics === null && metrics === null && (overviewLoading || loading);
+
+  if (chartsBlocking) {
     return (
       <section className="rounded-2xl border border-neutral-200 bg-neutral-50/50 p-6 dark:border-neutral-800 dark:bg-neutral-900/30">
-        <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold text-neutral-700 dark:text-neutral-300">
-          <Sparkles className="h-4 w-4" />
-          AI classification overview
-        </h2>
         <div
           className="w-full min-w-0 animate-pulse rounded-lg bg-neutral-200 dark:bg-neutral-700"
           style={{ height: chartBoxH }}
@@ -386,10 +493,6 @@ function DashboardAiCharts({
 
   return (
     <section className="min-w-0 space-y-4 sm:space-y-6">
-      <h2 className="flex items-center gap-2 text-sm font-semibold text-neutral-700 dark:text-neutral-300">
-        <Sparkles className="h-4 w-4" />
-        AI classification overview
-      </h2>
       <div className="flex min-w-0 flex-col gap-4 sm:gap-6">
         <div className="min-w-0 rounded-3xl border border-sky-100 bg-gradient-to-br from-white via-sky-50 to-cyan-50 p-3 shadow-md shadow-sky-100/60 dark:border-neutral-800 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 dark:shadow-none sm:p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -400,9 +503,9 @@ function DashboardAiCharts({
               Emails by category (KPI)
             </h3>
           </div>
-          <div className="w-full min-w-0" style={{ height: chartBoxH }}>
-            <ResponsiveContainer width="100%" height="100%" debounce={80}>
-              <ComposedChart data={categoryKpiData} margin={marginCategory}>
+          <MeasuredChart height={chartBoxH}>
+            {({ width, height }) => (
+              <ComposedChart width={width} height={height} data={categoryKpiData} margin={marginCategory}>
                 <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} vertical={false} />
                 <XAxis
                   dataKey="category"
@@ -415,38 +518,16 @@ function DashboardAiCharts({
                 <YAxis
                   yAxisId="left"
                   orientation="left"
-                  width={narrow ? 28 : undefined}
+                  width={narrow ? 28 : 44}
                   tick={axisTickMuted}
-                  label={
-                    narrow
-                      ? undefined
-                      : {
-                          value: "Email count",
-                          angle: -90,
-                          position: "insideLeft",
-                          fontSize: 10,
-                          fill: chart.axisMuted,
-                        }
-                  }
                 />
                 <YAxis
                   yAxisId="right"
                   orientation="right"
-                  width={narrow ? 30 : undefined}
+                  width={narrow ? 30 : 48}
                   tick={axisTickMuted}
                   domain={[0, 100]}
                   tickFormatter={(v) => `${v}%`}
-                  label={
-                    narrow
-                      ? undefined
-                      : {
-                          value: "% of total",
-                          angle: 90,
-                          position: "insideRight",
-                          fontSize: 10,
-                          fill: chart.axisMuted,
-                        }
-                  }
                 />
                 <Tooltip
                   {...tt}
@@ -456,10 +537,10 @@ function DashboardAiCharts({
                 />
                 <Legend
                   layout="horizontal"
-                  align={narrow ? "center" : "right"}
-                  verticalAlign="top"
+                  align="center"
+                  verticalAlign="bottom"
                   wrapperStyle={{
-                    paddingBottom: narrow ? 4 : 8,
+                    paddingTop: narrow ? 6 : 8,
                     color: chart.axis,
                     fontSize: narrow ? 10 : 12,
                   }}
@@ -485,8 +566,8 @@ function DashboardAiCharts({
                   animationDuration={1100}
                 />
               </ComposedChart>
-            </ResponsiveContainer>
-          </div>
+            )}
+          </MeasuredChart>
           <p className="mt-2 text-left text-[10px] text-neutral-500 dark:text-neutral-400">
             Showing {categoryKpiData.length} categor{categoryKpiData.length === 1 ? "y" : "ies"}.
           </p>
@@ -496,9 +577,9 @@ function DashboardAiCharts({
             Emails by priority
           </h3>
           {priorityData.length > 0 ? (
-            <div className="w-full min-w-0" style={{ height: chartBoxH }}>
-              <ResponsiveContainer width="100%" height="100%" debounce={80}>
-                <AreaChart data={prioritySeriesData} margin={marginStandard}>
+            <MeasuredChart height={chartBoxH}>
+              {({ width, height }) => (
+                <AreaChart width={width} height={height} data={prioritySeriesData} margin={marginStandard}>
                   <defs>
                     <linearGradient id="priority-area-fill" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor="#8b5cf6" stopOpacity={chart.isDark ? 0.55 : 0.45} />
@@ -514,11 +595,7 @@ function DashboardAiCharts({
                     textAnchor={narrow ? "end" : "middle"}
                     height={narrow ? 40 : 30}
                   />
-                  <YAxis
-                    allowDecimals={false}
-                    width={narrow ? 28 : undefined}
-                    tick={axisTickMuted}
-                  />
+                  <YAxis allowDecimals={false} width={narrow ? 28 : 44} tick={axisTickMuted} />
                   <Tooltip
                     {...tt}
                     contentStyle={{ ...tt.contentStyle, borderRadius: 8 }}
@@ -551,8 +628,8 @@ function DashboardAiCharts({
                     />
                   )}
                 </AreaChart>
-              </ResponsiveContainer>
-            </div>
+              )}
+            </MeasuredChart>
           ) : (
             <p className="py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">
               No priority data yet
@@ -560,155 +637,279 @@ function DashboardAiCharts({
           )}
         </div>
         <div className="min-w-0 rounded-3xl border border-orange-100 bg-gradient-to-br from-white via-orange-50 to-amber-50 p-3 shadow-md shadow-orange-100/60 dark:border-neutral-800 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 dark:shadow-none sm:p-4">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <h3 className="text-xs font-medium uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
-                Escalations by team member
-              </h3>
-              <Link
-                href={isAdmin ? "/admin/escalations" : "/escalations"}
-                className="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400"
-              >
-                Open Escalations →
-              </Link>
-            </div>
-            {escalationByUser === null ? (
-              <div
-                className="w-full min-w-0 animate-pulse rounded-lg bg-neutral-200 dark:bg-neutral-700"
-                style={{ height: chartBoxH }}
-              />
-            ) : memberEscalationChartData.length === 0 ? (
-              <p className="py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">
-                No escalation emails per mailbox yet.
-              </p>
-            ) : (
-              <div className="w-full min-w-0" style={{ height: chartBoxH }}>
-                <ResponsiveContainer width="100%" height="100%" debounce={80}>
-                  <LineChart data={memberEscalationChartData} margin={marginEscalation}>
-                    <defs>
-                      <linearGradient id="esc-line-fill" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#f97316" stopOpacity={chart.isDark ? 0.45 : 0.35} />
-                        <stop offset="100%" stopColor="#f97316" stopOpacity={chart.isDark ? 0.1 : 0.05} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chart.grid} />
-                    <XAxis
-                      dataKey="name"
-                      tick={{ fontSize: narrow ? 8 : 10, fill: chart.axis }}
-                      tickFormatter={(v: string) => (v.length > 10 ? `${v.slice(0, 9)}…` : v)}
-                      angle={narrow ? -55 : -40}
-                      textAnchor="end"
-                      height={narrow ? 52 : 56}
-                      interval={0}
-                    />
-                    <YAxis
-                      width={narrow ? 26 : undefined}
-                      tick={axisTickMuted}
-                      allowDecimals={false}
-                      label={
-                        narrow
-                          ? undefined
-                          : {
-                              value: "Count",
-                              angle: -90,
-                              position: "insideLeft",
-                              fontSize: 10,
-                              fill: chart.axisMuted,
-                            }
-                      }
-                    />
-                    <Tooltip
-                      {...tt}
-                      contentStyle={{ ...tt.contentStyle, borderRadius: 8 }}
-                      formatter={(value: number, _n: string, item: { payload?: { email?: string } }) => [
-                        `${value}`,
-                        item.payload?.email ? `${item.payload.email}` : "Escalations",
-                      ]}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="count"
-                      name="Escalations area"
-                      stroke="none"
-                      fill="url(#esc-line-fill)"
-                      isAnimationActive
-                      animationDuration={900}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="count"
-                      name="Escalations"
-                      stroke="#ea580c"
-                      strokeWidth={narrow ? 2 : 3}
-                      dot={{ r: narrow ? 3 : 4, fill: "#ea580c" }}
-                      activeDot={{ r: narrow ? 5 : 6 }}
-                      isAnimationActive
-                      animationDuration={1100}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            )}
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-xs font-medium uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+              Escalations by team member
+            </h3>
+            <Link
+              href={isAdmin ? "/admin/escalations" : "/escalations"}
+              className="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400"
+            >
+              Open Escalations →
+            </Link>
           </div>
+          {escalationByUser === null ? (
+            <div
+              className="w-full min-w-0 animate-pulse rounded-lg bg-neutral-200 dark:bg-neutral-700"
+              style={{ height: chartBoxH }}
+            />
+          ) : memberEscalationChartData.length === 0 ? (
+            <p className="py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">
+              No escalation emails per mailbox yet.
+            </p>
+          ) : (
+            <MeasuredChart height={chartBoxH}>
+              {({ width, height }) => (
+                <LineChart width={width} height={height} data={memberEscalationChartData} margin={marginEscalation}>
+                  <defs>
+                    <linearGradient id="esc-line-fill" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#f97316" stopOpacity={chart.isDark ? 0.45 : 0.35} />
+                      <stop offset="100%" stopColor="#f97316" stopOpacity={chart.isDark ? 0.1 : 0.05} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chart.grid} />
+                  <XAxis
+                    dataKey="name"
+                    tick={{ fontSize: narrow ? 8 : 10, fill: chart.axis }}
+                    tickFormatter={(v: string) => (v.length > 10 ? `${v.slice(0, 9)}…` : v)}
+                    angle={narrow ? -55 : -40}
+                    textAnchor="end"
+                    height={narrow ? 52 : 56}
+                    interval={0}
+                  />
+                  <YAxis
+                    width={narrow ? 26 : 44}
+                    tick={axisTickMuted}
+                    allowDecimals={false}
+                  />
+                  <Tooltip
+                    {...tt}
+                    contentStyle={{ ...tt.contentStyle, borderRadius: 8 }}
+                    formatter={(value: number, _n: string, item: { payload?: { email?: string } }) => [
+                      `${value}`,
+                      item.payload?.email ? `${item.payload.email}` : "Escalations",
+                    ]}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="count"
+                    name="Escalations area"
+                    stroke="none"
+                    fill="url(#esc-line-fill)"
+                    isAnimationActive
+                    animationDuration={900}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="count"
+                    name="Escalations"
+                    stroke="#ea580c"
+                    strokeWidth={narrow ? 2 : 3}
+                    dot={{ r: narrow ? 3 : 4, fill: "#ea580c" }}
+                    activeDot={{ r: narrow ? 5 : 6 }}
+                    isAnimationActive
+                    animationDuration={1100}
+                  />
+                </LineChart>
+              )}
+            </MeasuredChart>
+          )}
+        </div>
         <div className="min-w-0 rounded-3xl border border-indigo-100 bg-gradient-to-br from-white via-indigo-50 to-cyan-50 p-3 shadow-md shadow-indigo-100/60 dark:border-neutral-800 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 dark:shadow-none sm:p-4">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <h3 className="text-xs font-medium uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
-                Leads by team member (Nightingale)
-              </h3>
-              <Link
-                href={isAdmin ? "/admin/leads" : "/leads"}
-                className="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400"
-              >
-                Open Leads →
-              </Link>
-            </div>
-            {leadCountsByUser === null ? (
-              <div
-                className="w-full min-w-0 animate-pulse rounded-lg bg-neutral-200 dark:bg-neutral-700"
-                style={{ height: chartBoxH }}
-              />
-            ) : memberLeadChartData.length === 0 ? (
-              <p className="py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">
-                No lead emails per mailbox yet.
-              </p>
-            ) : (
-              <div className="w-full min-w-0" style={{ height: chartBoxH }}>
-                <ResponsiveContainer width="100%" height="100%" debounce={80}>
-                  <RadarChart data={memberLeadChartData} outerRadius={narrow ? "58%" : "72%"}>
-                    <PolarGrid stroke={chart.polarGrid} />
-                    <PolarAngleAxis
-                      dataKey="name"
-                      tick={{ fontSize: narrow ? 8 : 10, fill: chart.axis }}
-                      tickFormatter={(v: string) => (v.length > 12 ? `${v.slice(0, 11)}…` : v)}
-                    />
-                    <PolarRadiusAxis
-                      allowDecimals={false}
-                      tick={{ fontSize: narrow ? 8 : 10, fill: chart.axisMuted }}
-                    />
-                    <Tooltip
-                      {...tt}
-                      contentStyle={{ ...tt.contentStyle, borderRadius: 8 }}
-                      formatter={(_value: number, _n: string, item: { payload?: { count?: number; email?: string } }) => [
-                        `${item.payload?.count ?? 0}`,
-                        item.payload?.email ? `${item.payload.email}` : "Leads",
-                      ]}
-                    />
-                    <Radar
-                      name="Leads"
-                      dataKey="count"
-                      stroke="#4f46e5"
-                      fill="#6366f1"
-                      fillOpacity={0.45}
-                      isAnimationActive
-                      animationDuration={1100}
-                    />
-                  </RadarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-xs font-medium uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+              Leads by team member
+            </h3>
+            <Link
+              href={isAdmin ? "/admin/leads" : "/leads"}
+              className="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400"
+            >
+              Open Leads →
+            </Link>
           </div>
+          {leadCountsByUser === null ? (
+            <div
+              className="w-full min-w-0 animate-pulse rounded-lg bg-neutral-200 dark:bg-neutral-700"
+              style={{ height: chartBoxH }}
+            />
+          ) : memberLeadChartData.length === 0 ? (
+            <p className="py-8 text-center text-sm text-neutral-500 dark:text-neutral-400">
+              No lead emails per mailbox yet.
+            </p>
+          ) : (
+            <MeasuredChart height={chartBoxH}>
+              {({ width, height }) => (
+                <RadarChart
+                  width={width}
+                  height={height}
+                  data={memberLeadChartData}
+                  outerRadius={narrow ? "58%" : "72%"}
+                >
+                  <PolarGrid stroke={chart.polarGrid} />
+                  <PolarAngleAxis
+                    dataKey="name"
+                    tick={{ fontSize: narrow ? 8 : 10, fill: chart.axis }}
+                    tickFormatter={(v: string) => (v.length > 12 ? `${v.slice(0, 11)}…` : v)}
+                  />
+                  <PolarRadiusAxis
+                    allowDecimals={false}
+                    tick={{ fontSize: narrow ? 8 : 10, fill: chart.axisMuted }}
+                  />
+                  <Tooltip
+                    {...tt}
+                    contentStyle={{ ...tt.contentStyle, borderRadius: 8 }}
+                    formatter={(_value: number, _n: string, item: { payload?: { count?: number; email?: string } }) => [
+                      `${item.payload?.count ?? 0}`,
+                      item.payload?.email ? `${item.payload.email}` : "Leads",
+                    ]}
+                  />
+                  <Radar
+                    name="Leads"
+                    dataKey="count"
+                    stroke="#4f46e5"
+                    fill="#6366f1"
+                    fillOpacity={0.45}
+                    isAnimationActive
+                    animationDuration={1100}
+                  />
+                </RadarChart>
+              )}
+            </MeasuredChart>
+          )}
+        </div>
       </div>
     </section>
   );
+}
+
+const syncActionTileBase =
+  "flex min-w-0 flex-col items-center justify-center gap-1.5 rounded-xl border border-white/70 bg-gradient-to-br from-white to-[#eef5ff] text-center shadow-md shadow-sky-100/60 transition duration-300 hover:-translate-y-0.5 hover:border-sky-200 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900/70 dark:from-neutral-900 dark:to-neutral-900 dark:hover:border-neutral-600 dark:hover:shadow-none sm:rounded-2xl sm:gap-2 md:gap-3";
+
+function DashboardSyncActionTile({
+  title,
+  icon: Icon,
+  disabled,
+  onClick,
+  layout,
+}: {
+  title: string;
+  icon: LucideIcon;
+  disabled: boolean;
+  onClick: () => void;
+  layout: "mobileRow" | "xlGrid";
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        syncActionTileBase,
+        layout === "mobileRow" &&
+        "min-h-[92px] flex-1 basis-0 px-1 py-2.5 sm:min-h-[104px] sm:px-2 sm:py-3 md:min-h-[118px] md:px-3 md:py-4",
+        layout === "xlGrid" && "h-full min-h-[152px] w-full px-2 py-3 sm:px-3 sm:py-4"
+      )}
+    >
+      <div
+        className={cn(
+          "flex shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-sky-500 text-white shadow-sm dark:from-indigo-600 dark:to-sky-600 sm:rounded-xl",
+          layout === "mobileRow" && "h-9 w-9 sm:h-12 sm:w-12 md:h-16 md:w-16",
+          layout === "xlGrid" && "h-12 w-12 sm:h-14 sm:w-14 md:h-16 md:w-16"
+        )}
+      >
+        <Icon
+          className={cn(
+            layout === "mobileRow" && "h-[1.15rem] w-[1.15rem] sm:h-6 sm:w-6 md:h-8 md:w-8",
+            layout === "xlGrid" && "h-5 w-5 sm:h-6 sm:w-6 md:h-7 md:w-7"
+          )}
+          aria-hidden
+        />
+      </div>
+      <span
+        className={cn(
+          "line-clamp-2 max-w-full font-medium leading-tight text-neutral-800 dark:text-neutral-200",
+          layout === "mobileRow" && "text-[0.625rem] sm:text-[0.7rem] md:text-xs",
+          layout === "xlGrid" && "text-[0.65rem] sm:text-xs"
+        )}
+      >
+        {title}
+      </span>
+    </button>
+  );
+}
+
+function DashboardSyncDateRangeCard({
+  from,
+  to,
+  onFromChange,
+  onToChange,
+  onSync,
+  syncRangeLoading,
+  syncDisabled,
+  layout,
+}: {
+  from: string;
+  to: string;
+  onFromChange: (v: string) => void;
+  onToChange: (v: string) => void;
+  onSync: () => void;
+  syncRangeLoading: boolean;
+  syncDisabled: boolean;
+  layout: "mobile" | "xlGrid";
+}) {
+  return (
+    <div
+      className={cn(
+        "flex w-full min-w-0 flex-col justify-center gap-3 rounded-2xl border border-white/70 bg-gradient-to-br from-white to-[#edf8ff] shadow-md shadow-cyan-100/60 dark:border-neutral-700 dark:bg-neutral-900/70 dark:from-neutral-900 dark:to-neutral-900 dark:shadow-none",
+        layout === "mobile" && "min-h-[118px] px-3 py-4 sm:px-4 sm:py-5",
+        layout === "xlGrid" && "h-full min-h-[152px] gap-2 px-3 py-3 sm:gap-3 sm:px-3 sm:py-4"
+      )}
+    >
+      <div
+        className={cn(
+          "flex min-w-0 gap-2",
+          layout === "mobile" && "flex-col sm:flex-row sm:items-center sm:gap-3",
+          layout === "xlGrid" && "flex-col"
+        )}
+      >
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sky-100 text-sky-600 dark:bg-sky-900/30 dark:text-sky-400 sm:h-12 sm:w-12">
+          <Calendar className="h-5 w-5 sm:h-6 sm:w-6" aria-hidden />
+        </div>
+        <span className="min-w-0 break-words text-sm font-semibold leading-snug text-neutral-800 dark:text-neutral-100">
+          Sync mails by date range
+        </span>
+      </div>
+      <DateRangePair
+        from={from}
+        to={to}
+        onFromChange={onFromChange}
+        onToChange={onToChange}
+        className={cn(
+          "min-w-0 w-full",
+          layout === "mobile" && "flex flex-wrap items-center gap-2",
+          layout === "xlGrid" && "flex flex-col items-stretch gap-2"
+        )}
+        fieldClassName={
+          layout === "xlGrid" ? "relative min-w-0 w-full" : "relative min-w-0 flex-1"
+        }
+      />
+      <Button
+        type="button"
+        onClick={onSync}
+        disabled={syncRangeLoading || syncDisabled}
+        className="h-10 w-full bg-gradient-to-r from-indigo-600 to-sky-600 text-sm text-white hover:from-indigo-700 hover:to-sky-700"
+      >
+        {syncRangeLoading ? "Syncing mails…" : "Run mail sync"}
+      </Button>
+    </div>
+  );
+}
+
+function syncActionCardTitle(label: string) {
+  if (label === "Sync for today") return "Sync 1 day";
+  if (label === "Sync inbox (7 days)") return "Sync 7 days";
+  if (label === "Sync all emails") return "Sync all mail";
+  return "Classify all mail";
 }
 
 function DashboardPageContent() {
@@ -719,6 +920,8 @@ function DashboardPageContent() {
     [session?.user?.email, session?.user?.name]
   );
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
+  const [overviewMetrics, setOverviewMetrics] = useState<DashboardMetrics | null>(null);
+  const [overviewLoading, setOverviewLoading] = useState(false);
   const [emails, setEmails] = useState<EmailRecord[]>([]);
   const [loadingMetrics, setLoadingMetrics] = useState(true);
   const [loadingEmails, setLoadingEmails] = useState(true);
@@ -746,6 +949,8 @@ function DashboardPageContent() {
   const syncPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const syncStopRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  /** Refetch period metrics without full-page skeleton when only the time toggle changes (not first load). */
+  const prevChartPeriodRef = useRef<ChartPeriod | undefined>(undefined);
   const syncActionsRef = useRef<HTMLDivElement>(null);
   const kpiCardsRef = useRef<HTMLDivElement>(null);
   const activityMapRef = useRef<HTMLDivElement>(null);
@@ -754,6 +959,28 @@ function DashboardPageContent() {
   const meetingsCardRef = useRef<HTMLDivElement>(null);
   const [dashboardTourOpen, setDashboardTourOpen] = useState(false);
   const [dashboardTourStep, setDashboardTourStep] = useState(0);
+
+  const adminEmailsList = useMemo(
+    () =>
+      (process.env.NEXT_PUBLIC_ADMIN_EMAILS ?? "")
+        .split(",")
+        .map((e) => e.trim().toLowerCase())
+        .filter(Boolean),
+    []
+  );
+  const isEffectiveAdmin = useMemo(() => {
+    const em = (session?.user?.email ?? "").trim().toLowerCase();
+    return !!(me?.isAdmin || (adminEmailsList.length > 0 && adminEmailsList.includes(em)));
+  }, [me?.isAdmin, adminEmailsList, session?.user?.email]);
+
+  /** Admin only: enqueue Graph Deleted Items sync for all registered mailboxes (same job as former Admin → Deleted mail button). */
+  const enqueueOutlookDeletedSyncForAdmins = useCallback(
+    (days?: number) => {
+      if (!isEffectiveAdmin) return;
+      void api.syncOutlookDeleted(days !== undefined ? { days } : {}).catch(() => {});
+    },
+    [api, isEffectiveAdmin]
+  );
 
   const loadCalendar = useCallback(() => {
     if (status !== "authenticated") return;
@@ -780,12 +1007,13 @@ function DashboardPageContent() {
       // Meetings panel refresh should fetch recent mailbox mail first (Inbox + Sent),
       // then reload meeting events from synced messages.
       await api.triggerBackfill({ days: 30 });
+      enqueueOutlookDeletedSyncForAdmins(30);
       await loadCalendar();
     } catch {
       setCalendarError("Could not refresh meetings from mailbox.");
       setCalendarLoading(false);
     }
-  }, [api, status, loadCalendar]);
+  }, [api, status, loadCalendar, enqueueOutlookDeletedSyncForAdmins]);
 
   const displayedCalendarEvents = useMemo(
     () => selectDashboardCalendarEvents(calendarEvents, new Date()),
@@ -853,13 +1081,29 @@ function DashboardPageContent() {
   );
 
   const refresh = useCallback(() => {
-    loadMetrics(api, setMetrics, setMetricsError, setLoadingMetrics, chartPeriod);
+    loadMetrics(api, setMetrics, setMetricsError, setLoadingMetrics, chartPeriod, { silent: true });
+    loadOverviewMetrics(api, setOverviewMetrics, setOverviewLoading);
     loadEmails(api, setEmails, setEmailsError, setLoadingEmails);
   }, [api, chartPeriod]);
 
   useEffect(() => {
-    if (status !== "authenticated") return;
-    loadMetrics(api, setMetrics, setMetricsError, setLoadingMetrics, chartPeriod);
+    if (status !== "authenticated") {
+      setOverviewMetrics(null);
+      setOverviewLoading(false);
+      return;
+    }
+    loadOverviewMetrics(api, setOverviewMetrics, setOverviewLoading);
+  }, [status, api]);
+
+  useEffect(() => {
+    if (status !== "authenticated") {
+      prevChartPeriodRef.current = undefined;
+      return;
+    }
+    const prev = prevChartPeriodRef.current;
+    const silent = prev !== undefined && prev !== chartPeriod;
+    prevChartPeriodRef.current = chartPeriod;
+    loadMetrics(api, setMetrics, setMetricsError, setLoadingMetrics, chartPeriod, { silent });
   }, [status, api, chartPeriod]);
 
   useEffect(() => {
@@ -1027,6 +1271,7 @@ function DashboardPageContent() {
           }
           syncStopRef.current = null;
         }, 35000);
+        enqueueOutlookDeletedSyncForAdmins(syncAll ? 90 : days !== undefined ? days : 7);
       })
       .catch((e) => setBackfillStatus(e instanceof Error ? e.message : "Sync failed."));
   };
@@ -1036,7 +1281,10 @@ function DashboardPageContent() {
     setClassifyLoading(true);
     api
       .triggerClassifyBackfill()
-      .then(() => refresh())
+      .then(() => {
+        enqueueOutlookDeletedSyncForAdmins();
+        refresh();
+      })
       .finally(() => setClassifyLoading(false));
   };
 
@@ -1081,6 +1329,7 @@ function DashboardPageContent() {
           }
           syncStopRef.current = null;
         }, 35000);
+        enqueueOutlookDeletedSyncForAdmins(90);
       })
       .catch((e) => setBackfillStatus(e instanceof Error ? e.message : "Sync failed."))
       .finally(() => setSyncRangeLoading(false));
@@ -1104,7 +1353,8 @@ function DashboardPageContent() {
     () => [
       {
         title: "Sync action cards",
-        description: "These cards control inbox sync and AI classification. Start with Sync 1 day or Sync 7 days for routine use.",
+        description:
+          "These cards control inbox sync and AI classification. On large screens they share one row with equal width; on smaller screens the four quick actions stay in a row with date-range sync below. Start with Sync 1 day or Sync 7 days for routine use.",
         target: syncActionsRef,
       },
       {
@@ -1234,7 +1484,7 @@ function DashboardPageContent() {
         </div>
       )}
 
-      {/* Sync actions: full-width row of cards that grow to fill space */}
+      {/* Sync actions: mobile/tablet = row of 4 + date card below; xl+ = five equal-width columns */}
       <section
         ref={syncActionsRef}
         className={cn(
@@ -1243,63 +1493,65 @@ function DashboardPageContent() {
           isBlurredTourSection(0) && "opacity-55"
         )}
       >
-        <div className="flex w-full min-w-0 flex-col gap-3 sm:gap-4 xl:flex-row xl:flex-nowrap xl:items-stretch xl:gap-5">
-          <div className="flex min-w-0 w-full flex-nowrap items-stretch gap-1.5 sm:gap-3 md:gap-4 xl:flex-1 xl:min-w-0">
-            {actionCards.map(({ label, icon: Icon, onClick }) => {
-              const title =
-                label === "Sync for today"
-                  ? "Sync 1 day"
-                  : label === "Sync inbox (7 days)"
-                    ? "Sync 7 days"
-                    : label === "Sync all emails"
-                      ? "Sync all mail"
-                      : "Classify all mail";
+        <div className="flex w-full min-w-0 flex-col gap-3 sm:gap-4">
+          <div className="flex min-w-0 w-full flex-nowrap items-stretch gap-1.5 sm:gap-3 md:gap-4 xl:hidden">
+            {actionCards.map(({ label, icon, onClick }) => {
               const disabled =
                 (label === "Classify all" && classifyLoading) || (label.startsWith("Sync") && loadingMetrics);
               return (
-                <button
+                <DashboardSyncActionTile
                   key={label}
-                  type="button"
-                  onClick={onClick}
+                  title={syncActionCardTitle(label)}
+                  icon={icon}
                   disabled={disabled}
-                  className="flex min-h-[92px] min-w-0 flex-1 basis-0 flex-col items-center justify-center gap-1.5 rounded-xl border border-white/70 bg-gradient-to-br from-white to-[#eef5ff] px-1 py-2.5 text-center shadow-md shadow-sky-100/60 transition duration-300 hover:-translate-y-0.5 hover:border-sky-200 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900/70 dark:from-neutral-900 dark:to-neutral-900 dark:hover:border-neutral-600 dark:hover:shadow-none sm:min-h-[104px] sm:gap-2 sm:rounded-2xl sm:px-2 sm:py-3 md:min-h-[118px] md:gap-3 md:px-3 md:py-4 xl:px-4 xl:py-5"
-                >
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-sky-500 text-white shadow-sm dark:from-indigo-600 dark:to-sky-600 sm:h-12 sm:w-12 sm:rounded-xl md:h-16 md:w-16 xl:h-20 xl:w-20">
-                    <Icon className="h-[1.15rem] w-[1.15rem] sm:h-6 sm:w-6 md:h-8 md:w-8 xl:h-10 xl:w-10" />
-                  </div>
-                  <span className="line-clamp-2 max-w-full text-[0.625rem] font-medium leading-tight text-neutral-800 dark:text-neutral-200 sm:text-[0.7rem] md:text-xs xl:text-sm">
-                    {title}
-                  </span>
-                </button>
+                  onClick={onClick}
+                  layout="mobileRow"
+                />
               );
             })}
           </div>
 
-          <div className="flex min-h-[118px] w-full min-w-0 shrink-0 flex-col justify-center gap-3 rounded-2xl border border-white/70 bg-gradient-to-br from-white to-[#edf8ff] px-3 py-4 shadow-md shadow-cyan-100/60 dark:border-neutral-700 dark:bg-neutral-900/70 dark:from-neutral-900 dark:to-neutral-900 dark:shadow-none sm:px-4 sm:py-5 xl:min-w-[min(100%,260px)] xl:flex-[1.35] xl:basis-0">
-            <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sky-100 text-sky-600 dark:bg-sky-900/30 dark:text-sky-400 sm:h-12 sm:w-12">
-                <Calendar className="h-5 w-5 sm:h-6 sm:w-6" />
-              </div>
-              <span className="min-w-0 break-words text-sm font-semibold leading-snug text-neutral-800 dark:text-neutral-100">
-                Sync mails by date range
-              </span>
+          <div className="hidden min-w-0 xl:grid xl:grid-cols-5 xl:items-stretch xl:gap-5">
+            {actionCards.map(({ label, icon, onClick }) => {
+              const disabled =
+                (label === "Classify all" && classifyLoading) || (label.startsWith("Sync") && loadingMetrics);
+              return (
+                <div key={label} className="flex min-h-[152px] min-w-0">
+                  <DashboardSyncActionTile
+                    title={syncActionCardTitle(label)}
+                    icon={icon}
+                    disabled={disabled}
+                    onClick={onClick}
+                    layout="xlGrid"
+                  />
+                </div>
+              );
+            })}
+            <div className="flex min-h-[152px] min-w-0">
+              <DashboardSyncDateRangeCard
+                layout="xlGrid"
+                from={syncFromDate}
+                to={syncToDate}
+                onFromChange={setSyncFromDate}
+                onToChange={setSyncToDate}
+                onSync={onSyncByDateRange}
+                syncRangeLoading={syncRangeLoading}
+                syncDisabled={loadingMetrics}
+              />
             </div>
-            <DateRangePair
+          </div>
+
+          <div className="xl:hidden">
+            <DashboardSyncDateRangeCard
+              layout="mobile"
               from={syncFromDate}
               to={syncToDate}
               onFromChange={setSyncFromDate}
               onToChange={setSyncToDate}
-              className="min-w-0 w-full"
-              fieldClassName="relative min-w-0 flex-1"
+              onSync={onSyncByDateRange}
+              syncRangeLoading={syncRangeLoading}
+              syncDisabled={loadingMetrics}
             />
-            <Button
-              type="button"
-              onClick={onSyncByDateRange}
-              disabled={syncRangeLoading || loadingMetrics}
-              className="h-10 w-full bg-gradient-to-r from-indigo-600 to-sky-600 text-sm text-white hover:from-indigo-700 hover:to-sky-700"
-            >
-              {syncRangeLoading ? "Syncing mails…" : "Run mail sync"}
-            </Button>
           </div>
         </div>
       </section>
@@ -1368,6 +1620,8 @@ function DashboardPageContent() {
             <DashboardAiCharts
               api={api}
               metrics={metrics}
+              overviewMetrics={overviewMetrics}
+              overviewLoading={overviewLoading}
               loading={loadingMetrics}
               onClassifyAll={refresh}
               isAdmin={!!me?.isAdmin}

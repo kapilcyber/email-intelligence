@@ -546,12 +546,9 @@ export default function AdminEscalationsPage() {
       {(viewMode === "all" || viewMode === "analytics") && (
         <div className="flex min-w-0 flex-col gap-6 md:gap-8">
           <section className="min-w-0 rounded-3xl border border-slate-100 bg-gradient-to-br from-white to-[#f7fbff] p-4 shadow-md shadow-slate-100/70 dark:border-neutral-700 dark:from-neutral-900 dark:to-neutral-900 dark:shadow-none sm:p-6">
-            <h3 className="mb-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-neutral-400">
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-neutral-400 sm:mb-4">
               Escalations over time
             </h3>
-            <p className="mb-3 text-[11px] text-slate-400 dark:text-neutral-500 sm:mb-4">
-              Volume trend across the selected range
-            </p>
             {chartLoading ? (
               <Skeleton className="h-[220px] w-full rounded-xl sm:h-[300px]" />
             ) : lineData.length === 0 ? (
@@ -614,12 +611,9 @@ export default function AdminEscalationsPage() {
           </section>
           <div className="grid min-w-0 gap-6 lg:grid-cols-2 lg:gap-8">
             <section className="min-w-0 rounded-3xl border border-orange-100 bg-gradient-to-br from-white via-orange-50 to-amber-50 p-4 shadow-md shadow-orange-100/60 dark:border-neutral-800 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 dark:shadow-none sm:p-6">
-              <h3 className="mb-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-neutral-400">
+              <h3 className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-neutral-400 sm:mb-4">
                 By priority
               </h3>
-              <p className="mb-3 text-[11px] text-slate-400 dark:text-neutral-500 sm:mb-4">
-                Volume by severity — column view
-              </p>
               {chartLoading ? (
                 <Skeleton className="h-[220px] w-full rounded-xl sm:h-[280px]" />
               ) : priorityPieData.length === 0 ? (
@@ -681,12 +675,9 @@ export default function AdminEscalationsPage() {
               )}
             </section>
             <section className="min-w-0 rounded-3xl border border-violet-100 bg-gradient-to-br from-white via-violet-50 to-fuchsia-50 p-4 shadow-md shadow-violet-100/60 dark:border-neutral-800 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 dark:shadow-none sm:p-6">
-              <h3 className="mb-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-neutral-400">
+              <h3 className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-neutral-400 sm:mb-4">
                 By assigned team
               </h3>
-              <p className="mb-3 text-[11px] text-slate-400 dark:text-neutral-500 sm:mb-4">
-                Ranked volume — horizontal comparison
-              </p>
               {chartLoading ? (
                 <Skeleton className="h-[220px] w-full rounded-xl sm:h-[280px]" />
               ) : donutData.length === 0 ? (
@@ -843,12 +834,9 @@ export default function AdminEscalationsPage() {
                   {filteredItems.map((item) => (
                     <li key={item.id} className="min-w-0 space-y-2 p-3">
                       <div className="flex items-start justify-between gap-2">
-                        <Link
-                          href={`/emails/${item.id}`}
-                          className="min-w-0 flex-1 text-sm font-medium leading-snug text-neutral-900 hover:underline dark:text-neutral-50"
-                        >
+                        <span className="min-w-0 flex-1 text-sm font-medium leading-snug text-neutral-900 dark:text-neutral-50">
                           <span className="line-clamp-2">{item.subject || "(No subject)"}</span>
-                        </Link>
+                        </span>
                         <span className="shrink-0 font-mono text-[10px] text-neutral-400">{item.id.slice(0, 8)}</span>
                       </div>
                       <div className="flex flex-wrap gap-1.5 text-xs text-neutral-600 dark:text-neutral-400">
@@ -914,12 +902,9 @@ export default function AdminEscalationsPage() {
                           <tr key={item.id} className="hover:bg-neutral-50 dark:hover:bg-neutral-800/50">
                             <td className="px-4 py-3 font-mono text-xs text-neutral-500">{item.id.slice(0, 8)}</td>
                             <td className="px-4 py-3">
-                              <Link
-                                href={`/emails/${item.id}`}
-                                className="font-medium text-neutral-900 hover:underline dark:text-neutral-50"
-                              >
+                              <span className="font-medium text-neutral-900 dark:text-neutral-50">
                                 {item.subject || "(No subject)"}
-                              </Link>
+                              </span>
                             </td>
                             <td className="px-4 py-3">{item.priorityLabel ?? "—"}</td>
                             <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400">

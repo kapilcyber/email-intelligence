@@ -36,7 +36,7 @@ const TOUR_STEPS: TourStep[] = [
   },
   {
     id: "history",
-    title: "History",
+    title: "Mailbox",
     description: "Open all synced emails with filters. Use this when you need detailed mail-level review.",
     href: "/emails",
     role: "all",
@@ -114,15 +114,15 @@ const TOUR_STEPS: TourStep[] = [
   {
     id: "review",
     title: "Admin: Review",
-    description: "Audit team response performance and tracker quality metrics.",
+    description: "User-wise escalations, leads, and project tracker metrics in one table.",
     href: "/admin/review",
     role: "admin",
   },
 ];
 
-/** Manual tabs: admin → all three; manager → manager only; member → user only. */
+/** Manual tabs: admin → admin only; manager → manager only; member → user only. */
 function visibleTabsForRoles(isAdmin: boolean, isManagerRole: boolean): RoleTab[] {
-  if (isAdmin) return ["user", "manager", "admin"];
+  if (isAdmin) return ["admin"];
   if (isManagerRole) return ["manager"];
   return ["user"];
 }
@@ -219,9 +219,6 @@ export default function HowToUsePage() {
         <h1 className="text-xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50 sm:text-2xl">
           How to use
         </h1>
-        <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400 sm:text-sm">
-          Role-based guides and an optional click-through tour of main pages.
-        </p>
         <div className="mt-3 flex flex-col gap-2 sm:mt-4 sm:flex-row sm:flex-wrap">
           <Button type="button" className="h-10 w-full sm:h-9 sm:w-auto" onClick={startTour}>
             Replay guided tour
@@ -355,8 +352,8 @@ export default function HowToUsePage() {
             </p>
             <p className="font-medium text-neutral-900 dark:text-neutral-100">3) Review module</p>
             <p className="break-words">
-              Use Admin → Review for user-wise escalation reply performance and project tracker count; add new review
-              parameters in future as needed.
+              Use Admin → Review for a single user-wise view: escalation and lead reply counts plus tracker deadlines
+              and sends in the selected date range.
             </p>
           </CardContent>
         </Card>

@@ -37,11 +37,17 @@ class Settings(BaseSettings):
     # Optional: only needed for Graph webhook subscriptions
     webhook_base_url: str | None = None
 
-    # Phase 2 — Ollama (primary) + OpenAI (fallback)
+    # Phase 2 — Ollama (primary) + OpenAI (fallback when Ollama errors or returns bad output)
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3"
+    # Shorter than OpenAI: fail fast locally so fallback runs sooner (seconds per attempt).
+    ollama_request_timeout_seconds: float = 22.0
+    ollama_max_retries: int = 2
+    ollama_retry_delay_seconds: float = 0.25
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
+    # When True (default), use OpenAI after Ollama exhausts retries. Set False to use only Ollama even if OPENAI_API_KEY is set.
+    openai_fallback_enabled: bool = True
 
     # Phase 4 — Admin: comma-separated emails allowed to access admin APIs (empty = allow all authenticated)
     admin_emails: str = ""
@@ -64,6 +70,10 @@ class Settings(BaseSettings):
     daily_summary_send_email_to: str = ""  # Comma-separated; optional, if SMTP configured
     daily_summary_hour_utc: int = 23  # Hour (0-23) UTC to run daily summary
     daily_summary_minute_utc: int = 0
+
+    # Sync Microsoft “Deleted Items” for each User.email (app-only Graph; same Mail.Read as ingest)
+    outlook_deleted_sync_enabled: bool = True
+    outlook_deleted_sync_days: int = 14  # per-mailbox window for each scheduled/manual sync
 
     # Trust / spam from known senders: evaluate senders for phishing, suspicious content
     sender_trust_enabled: bool = True  # Update sender trust_score and override spam when low trust

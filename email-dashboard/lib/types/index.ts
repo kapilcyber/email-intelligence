@@ -104,7 +104,12 @@ export interface FollowUpTrackerProject {
   projectId: string;
   projectName: string;
   teamName: string | null;
+  /** Admin-set project tracker weekdays (team default on admin Tracker page). */
   scheduleDays: string[];
+  /** Weekdays this member is expected to send; same as project unless a per-member override exists. */
+  effectiveScheduleDays?: string[];
+  /** Admin-set personal deadline: send strictly before this weekday (UTC week), if configured. */
+  memberDeadlineBefore?: FollowUpDayKey | null;
   weekStartISO: string;
   weekEndISO: string;
   days: FollowUpTrackerDay[];
@@ -161,6 +166,8 @@ export interface EmailRecord {
   processingStatus?: ProcessingStatus | null;
   /** Department/team (Tech, Sales, Accounts, etc.) */
   assignedTeam?: string | null;
+  /** Admin cross-mailbox lists (e.g. Deleted mail) */
+  mailboxOwnerEmail?: string | null;
 }
 
 export interface EmailsResponse {
@@ -228,6 +235,10 @@ export interface EmailDetail {
   aiErrorMessage?: string | null;
   /** Microsoft Graph message id in the mailbox owner's mailbox; required for delegated reply-all. */
   graphId?: string | null;
+  /** Mailbox this message belongs to (for owner-only actions). */
+  mailboxOwnerEmail?: string | null;
+  /** Set when the owner removed this from History (soft delete). */
+  deletedAt?: string | null;
 }
 
 export interface WebhookSubscription {
@@ -484,6 +495,19 @@ export interface TrackerDayState {
   sent: boolean;
 }
 
+/** Assignee on a project with optional per-member tracker deadline (admin tracker). */
+export interface TrackerMemberRow {
+  userId: string;
+  email: string;
+  displayName: string | null;
+  /** Send on a weekday strictly before this day (UTC), e.g. thu => Mon–Wed only. */
+  deadlineBefore: TrackerDayKey | null;
+  /** null when no per-member deadline is configured. */
+  metThisWeek: boolean | null;
+  /** Expected tracker weekdays for this member; null/undefined = use project tracker days. */
+  scheduleDaysOverride?: string[] | null;
+}
+
 export interface ProjectTrackerRow {
   projectId: string;
   projectName: string;
@@ -492,6 +516,7 @@ export interface ProjectTrackerRow {
   weekStartISO: string;
   weekEndISO: string;
   days: TrackerDayState[];
+  members: TrackerMemberRow[];
 }
 
 export interface TrackerDashboardResponse {
@@ -522,11 +547,22 @@ export interface ReviewEscalationUser {
   pendingCount: number;
 }
 
+export interface ReviewLeadUser {
+  email: string;
+  displayName: string | null;
+  leadCount: number;
+  repliedCount: number;
+  pendingCount: number;
+}
+
 export interface ReviewProjectTrackerUser {
   email: string;
   displayName: string | null;
+  /** Qualifying tracker emails sent in the selected date range. */
   trackerCount: number;
   hasSentTracker: boolean;
+  /** Number of projects where an admin set a per-member deadline for this user. */
+  trackersSetCount: number;
 }
 
 /** Shown after an admin assigns Manager or Admin until the user dismisses it. */

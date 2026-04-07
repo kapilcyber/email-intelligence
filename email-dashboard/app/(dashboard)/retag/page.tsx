@@ -73,9 +73,6 @@ export default function RetagPage() {
     <div className="min-w-0 max-w-full space-y-4 sm:space-y-6">
       <div data-tour-id="retag-header" className="min-w-0">
         <h1 className="text-xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50 sm:text-2xl">ReTag</h1>
-        <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400 sm:text-sm">
-          Emails you moved to another department, and any pending admin approvals.
-        </p>
       </div>
 
       {error && (
@@ -106,7 +103,7 @@ export default function RetagPage() {
               {items.map((item) => (
                 <li
                   key={item.id}
-                  className="flex flex-col gap-2 py-3 first:pt-0 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
+                  className="flex flex-col gap-2 py-3 first:pt-0 sm:flex-row sm:items-start sm:justify-between sm:gap-4"
                 >
                   <div className="min-w-0 flex-1">
                     <Link
@@ -119,8 +116,8 @@ export default function RetagPage() {
                       <span className="font-medium text-neutral-600 dark:text-neutral-300">{item.sender}</span>
                     </p>
                   </div>
-                  <div className="flex w-full justify-end border-t border-neutral-100 pt-2 dark:border-neutral-800 sm:w-auto sm:border-t-0 sm:pt-0">
-                    <Link href={`/emails/${item.id}`} className="shrink-0">
+                  <div className="flex w-full justify-end border-t border-neutral-100 pt-2 dark:border-neutral-800 sm:w-auto sm:shrink-0 sm:justify-end sm:self-start sm:border-t-0 sm:pt-1">
+                    <Link href={`/emails/${item.id}`} className="inline-flex shrink-0">
                       <Button
                         type="button"
                         variant="outline"

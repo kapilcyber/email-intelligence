@@ -57,9 +57,6 @@ export default function AdminTeamsPage() {
     <div className="min-w-0 max-w-full space-y-4 sm:space-y-6">
       <div className="min-w-0">
         <h1 className="text-xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50 sm:text-2xl">Teams</h1>
-        <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400 sm:text-sm">
-          Member counts, mail assignment, escalations, and leads per team.
-        </p>
       </div>
 
       {loading ? (

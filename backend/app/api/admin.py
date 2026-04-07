@@ -22,6 +22,8 @@ from app.api.emails import (
     ConversationOut,
     ConversationsResponse,
     EmailDetailOut,
+    EmailOut,
+    EmailsResponse,
     AttachmentOut,
     ThreadEmailsResponse,
     _display_category,
@@ -1394,6 +1396,122 @@ def admin_list_retagged_for_mailbox(
         }
     except (OperationalError, Exception):
         return {"retagged": [], "total": 0, "page": page, "pageSize": page_size}
+
+
+class SyncOutlookDeletedBody(BaseModel):
+    """Optional lookback window per mailbox; default uses OUTLOOK_DELETED_SYNC_DAYS from settings."""
+
+    days: int | None = Field(None, ge=1, le=90)
+
+
+@router.post("/sync-outlook-deleted")
+def admin_sync_outlook_deleted(
+    body: SyncOutlookDeletedBody | None = Body(None),
+    _admin: str = Depends(get_admin_user),
+):
+    """
+    Enqueue Graph sync of the Deleted Items folder for every distinct `users.email` (registered sign-ins).
+    Requires Celery worker + app-only Mail.Read for those mailboxes. Complements in-app “Remove from History”.
+    """
+    from app.workers.tasks import sync_outlook_deleted_for_all_users_task
+
+    d = body.days if body else None
+    task = sync_outlook_deleted_for_all_users_task.delay(d)
+    return {
+        "ok": True,
+        "taskId": task.id,
+        "message": "Outlook Deleted Items sync enqueued for all registered user mailboxes. Run a Celery worker to process jobs.",
+    }
+
+
+@router.get("/emails", response_model=EmailsResponse, response_model_by_alias=True)
+def admin_list_emails(
+    db: Session = Depends(get_db),
+    _admin: str = Depends(get_admin_user),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=500, alias="pageSize"),
+    search: str | None = Query(None),
+    from_date: str | None = Query(None, alias="from"),
+    to_date: str | None = Query(None, alias="to"),
+    category: str | None = Query(None, description="Filter by AI category"),
+    deleted_only: bool = Query(False, alias="deletedOnly"),
+):
+    """
+    Admin-only: list emails across all synced mailboxes.
+    deletedOnly=false: active mail (not soft-deleted).
+    deletedOnly=true: in-app removed History and/or messages found in Outlook Deleted Items (after sync).
+    """
+    try:
+        q = db.query(Email)
+        if deleted_only:
+            q = q.filter(Email.deleted_at.isnot(None))
+        else:
+            q = q.filter(Email.deleted_at.is_(None))
+        if search and search.strip():
+            s = f"%{search.strip()}%"
+            q = q.filter(
+                (Email.subject.ilike(s))
+                | (Email.sender_email.ilike(s))
+                | (Email.message_id.ilike(s))
+                | (Email.mailbox_owner_email.ilike(s))
+            )
+        if category and category.strip():
+            q = q.filter(Email.ai_category == category.strip())
+        if from_date:
+            try:
+                dt = datetime.fromisoformat(from_date.replace("Z", "+00:00"))
+                q = q.filter(Email.received_at >= dt)
+            except ValueError:
+                pass
+        if to_date:
+            try:
+                dt = datetime.fromisoformat(to_date.replace("Z", "+00:00"))
+                dt = dt + timedelta(days=1)
+                q = q.filter(Email.received_at < dt)
+            except ValueError:
+                pass
+        total = q.count()
+        rows = q.order_by(Email.received_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+        emails = [
+            EmailOut(
+                id=r.id,
+                messageId=r.message_id,
+                subject=r.subject,
+                sender=r.sender_email,
+                receivedAt=r.received_at,
+                folder=r.folder_name or r.folder_id or "",
+                status=r.status,
+                summary=getattr(r, "ai_summary", None) or None,
+                category=_display_category(r),
+                priorityLabel=getattr(r, "ai_priority_label", None),
+                priorityScore=getattr(r, "ai_priority_score", None),
+                aiStatus=getattr(r, "ai_status", None),
+                aiProcessedAt=getattr(r, "ai_processed_at", None),
+                processingStatus=getattr(r, "processing_status", None),
+                assignedTeam=getattr(r, "assigned_team", None),
+                mailboxOwnerEmail=getattr(r, "mailbox_owner_email", None),
+            )
+            for r in rows
+        ]
+        return EmailsResponse(emails=emails, total=total, page=page, pageSize=page_size)
+    except (OperationalError, Exception):
+        return EmailsResponse(emails=[], total=0, page=page, pageSize=page_size)
+
+
+@router.post("/emails/{email_id}/restore")
+def admin_restore_email(
+    email_id: str,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(get_admin_user),
+):
+    """Clear soft-delete so the message appears again in the owner's History."""
+    email = db.query(Email).filter(Email.id == email_id).first()
+    if not email:
+        raise HTTPException(status_code=404, detail="Email not found")
+    email.deleted_at = None
+    email.deleted_by_email = None
+    db.commit()
+    return {"ok": True, "emailId": email_id}
 
 
 @router.patch("/emails/{email_id}/retag")

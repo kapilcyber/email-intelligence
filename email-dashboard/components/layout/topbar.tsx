@@ -24,6 +24,8 @@ import {
   ClipboardList,
   ChevronRight,
   Menu,
+  Layers,
+  Tags,
   type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -73,14 +75,14 @@ function notificationIcon(kind: string): LucideIcon {
  */
 const pathToLabel: Record<string, string> = {
   "/dashboard": "Dashboard",
-  "/emails": "History",
+  "/emails": "Mailbox",
   "/threads": "Threads",
   "/departments": "Departments",
   "/escalations": "Escalations",
   "/leads": "Leads",
-  "/retag": "ReTag",
-  "/mom": "MOM",
   "/follow-up": "Follow UP",
+  "/mom": "MOM",
+  "/retag": "ReTag",
   "/how-to-use": "How to use",
   "/profile": "Profile",
   "/webhook": "Webhook",
@@ -89,7 +91,6 @@ const pathToLabel: Record<string, string> = {
   "/admin/my-projects": "Projects",
   "/admin/team-leaders": "Team leaders",
   "/admin/team-projects": "Projects",
-  "/admin/temporary-team": "Temporary team",
   "/admin/tracker": "Tracker",
   "/admin/review": "Review",
   "/admin/workflow": "Hierarchy",
@@ -201,9 +202,13 @@ export function Topbar({
   );
   const [trackerProjectLabel, setTrackerProjectLabel] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
   const notifTriggerRef = useRef<HTMLDivElement>(null);
+  const toolsTriggerRef = useRef<HTMLDivElement>(null);
   const notifPanelRef = useRef<HTMLDivElement>(null);
+  const toolsPanelRef = useRef<HTMLDivElement>(null);
   const [notifPos, setNotifPos] = useState<{ top: number; left: number } | null>(null);
+  const [toolsPos, setToolsPos] = useState<{ top: number; left: number } | null>(null);
   const [portalMounted, setPortalMounted] = useState(false);
   const [items, setItems] = useState<NotificationItem[]>([]);
   const [notifError, setNotifError] = useState<string | null>(null);
@@ -328,22 +333,30 @@ export function Topbar({
 
   useEffect(() => setPortalMounted(true), []);
 
+  const panelBelowTrigger = (el: HTMLElement | null, panelW: number) => {
+    if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    let left = rect.right - panelW;
+    const vw = window.innerWidth;
+    if (left < 8) left = 8;
+    if (left + panelW > vw - 8) left = Math.max(8, vw - panelW - 8);
+    return { top: rect.bottom + 8, left };
+  };
+
   useLayoutEffect(() => {
-    if (!open) {
-      setNotifPos(null);
-      return;
-    }
+    if (!open) setNotifPos(null);
+    if (!toolsOpen) setToolsPos(null);
     const update = () => {
-      const el = notifTriggerRef.current;
-      if (!el) return;
-      const rect = el.getBoundingClientRect();
-      const panelW = 400;
-      let left = rect.right - panelW;
-      const vw = window.innerWidth;
-      if (left < 8) left = 8;
-      if (left + panelW > vw - 8) left = Math.max(8, vw - panelW - 8);
-      setNotifPos({ top: rect.bottom + 8, left });
+      if (open) {
+        const p = panelBelowTrigger(notifTriggerRef.current, 400);
+        if (p) setNotifPos(p);
+      }
+      if (toolsOpen) {
+        const p = panelBelowTrigger(toolsTriggerRef.current, 320);
+        if (p) setToolsPos(p);
+      }
     };
+    if (!open && !toolsOpen) return;
     update();
     window.addEventListener("resize", update);
     window.addEventListener("scroll", update, true);
@@ -351,28 +364,34 @@ export function Topbar({
       window.removeEventListener("resize", update);
       window.removeEventListener("scroll", update, true);
     };
-  }, [open]);
+  }, [open, toolsOpen]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open && !toolsOpen) return;
     const onDoc = (e: MouseEvent) => {
       const t = e.target as Node;
       if (notifTriggerRef.current?.contains(t)) return;
       if (notifPanelRef.current?.contains(t)) return;
+      if (toolsTriggerRef.current?.contains(t)) return;
+      if (toolsPanelRef.current?.contains(t)) return;
       setOpen(false);
+      setToolsOpen(false);
     };
     document.addEventListener("click", onDoc);
     return () => document.removeEventListener("click", onDoc);
-  }, [open]);
+  }, [open, toolsOpen]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open && !toolsOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") {
+        setOpen(false);
+        setToolsOpen(false);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
+  }, [open, toolsOpen]);
 
   const currentPageLabel =
     breadcrumbItems.length > 0 ? breadcrumbItems[breadcrumbItems.length - 1].label : "Dashboard";
@@ -448,6 +467,21 @@ export function Topbar({
 
       {/* Right actions */}
       <div className="flex shrink-0 items-center gap-0.5">
+        <div className="relative" ref={toolsTriggerRef}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-10 w-10 rounded-lg"
+            aria-label="MOM and ReTag"
+            aria-expanded={toolsOpen}
+            onClick={() => {
+              setOpen(false);
+              setToolsOpen((v) => !v);
+            }}
+          >
+            <Layers className="h-5 w-5" />
+          </Button>
+        </div>
         <div className="relative" ref={notifTriggerRef}>
           <Button
             variant="ghost"
@@ -456,6 +490,7 @@ export function Topbar({
             aria-label="Notifications"
             aria-expanded={open}
             onClick={() => {
+              setToolsOpen(false);
               setOpen((v) => {
                 const next = !v;
                 if (!v) loadNotifications();
@@ -471,6 +506,57 @@ export function Topbar({
             )}
           </Button>
         </div>
+        {portalMounted &&
+          toolsOpen &&
+          toolsPos &&
+          createPortal(
+            <div
+              ref={toolsPanelRef}
+              className="fixed w-[min(100vw-1rem,320px)] overflow-hidden rounded-xl border border-border/90 bg-panel/95 shadow-xl backdrop-blur-md dark:border-border/70 dark:bg-panel/95"
+              style={{ top: toolsPos.top, left: toolsPos.left, zIndex: 500 }}
+              role="dialog"
+              aria-label="MOM and ReTag"
+            >
+              <div className="border-b border-border/80 px-4 py-3">
+                <p className="text-sm font-semibold text-foreground">MOM &amp; ReTag</p>
+              </div>
+              <div className="space-y-0.5 p-2">
+                <Link
+                  href="/mom"
+                  className="flex gap-3 rounded-lg px-3 py-3 outline-none transition-colors hover:bg-muted/70 focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => setToolsOpen(false)}
+                >
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted/90 text-muted-foreground">
+                    <ClipboardList className="h-5 w-5 shrink-0" aria-hidden />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-foreground">MOM</p>
+                    <p className="mt-0.5 text-xs leading-snug text-muted-foreground">
+                      Meeting minutes status and history
+                    </p>
+                  </div>
+                  <ChevronRight className="mt-2 h-4 w-4 shrink-0 text-muted-foreground/45" aria-hidden />
+                </Link>
+                <Link
+                  href="/retag"
+                  className="flex gap-3 rounded-lg px-3 py-3 outline-none transition-colors hover:bg-muted/70 focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => setToolsOpen(false)}
+                >
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted/90 text-muted-foreground">
+                    <Tags className="h-5 w-5 shrink-0" aria-hidden />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-foreground">ReTag</p>
+                    <p className="mt-0.5 text-xs leading-snug text-muted-foreground">
+                      Mail moved to another department from escalations or leads
+                    </p>
+                  </div>
+                  <ChevronRight className="mt-2 h-4 w-4 shrink-0 text-muted-foreground/45" aria-hidden />
+                </Link>
+              </div>
+            </div>,
+            document.body
+          )}
         {portalMounted &&
           open &&
           notifPos &&

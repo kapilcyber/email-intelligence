@@ -8,6 +8,13 @@ import type { ProjectTrackerRow, TrackerDayKey } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { RefreshCw } from "lucide-react";
 
@@ -33,6 +40,136 @@ function formatWeekRange(startISO: string, endISO: string): string {
   }
 }
 
+function draftDaysForMember(p: ProjectTrackerRow, userId: string): TrackerDayKey[] {
+  const m = (p.members ?? []).find((x) => x.userId === userId);
+  if (!m) return [];
+  const ov = m.scheduleDaysOverride;
+  const source = ov != null ? ov : p.scheduleDays;
+  return DAY_ORDER.filter((d) => source.includes(d));
+}
+
+function ProjectMemberScheduleEditor({
+  p,
+  busy,
+  onSaveMemberSchedule,
+  onClearMemberOverride,
+}: {
+  p: ProjectTrackerRow;
+  busy: boolean;
+  onSaveMemberSchedule: (userId: string, days: TrackerDayKey[]) => void;
+  onClearMemberOverride: (userId: string) => void;
+}) {
+  const members = p.members ?? [];
+  const [userId, setUserId] = useState("");
+  const [draftDays, setDraftDays] = useState<TrackerDayKey[]>([]);
+
+  useEffect(() => {
+    if (!userId) {
+      setDraftDays([]);
+      return;
+    }
+    setDraftDays(draftDaysForMember(p, userId));
+  }, [userId, p]);
+
+  const selected = members.find((m) => m.userId === userId);
+  const hasOverride = Boolean(selected && selected.scheduleDaysOverride != null);
+
+  const toggleDraft = (d: TrackerDayKey) => {
+    setDraftDays((prev) => {
+      const next = prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d];
+      return DAY_ORDER.filter((k) => next.includes(k));
+    });
+  };
+
+  const save = () => {
+    if (!userId) return;
+    const ordered = DAY_ORDER.filter((d) => draftDays.includes(d));
+    onSaveMemberSchedule(userId, ordered);
+  };
+
+  const clearOverride = () => {
+    if (!userId) return;
+    onClearMemberOverride(userId);
+  };
+
+  if (members.length === 0) return null;
+
+  return (
+    <div className="min-w-0 rounded-xl border border-neutral-200/80 bg-neutral-50/50 p-3 dark:border-neutral-700 dark:bg-neutral-900/30">
+      <p className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+        Member expected days
+      </p>
+      <p className="mb-3 text-[11px] leading-relaxed text-neutral-500 dark:text-neutral-400">
+        Same weekday chips as project tracker days. Defaults to the project until you save a custom set for the
+        selected member. Their Follow-up page uses these expected days.
+      </p>
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
+          <div className="min-w-0 flex-1 sm:min-w-[10rem]">
+            <label className="mb-1 block text-[10px] font-medium text-neutral-500 dark:text-neutral-400">Member</label>
+            <Select value={userId || undefined} onValueChange={setUserId} disabled={busy}>
+              <SelectTrigger className="h-10 w-full rounded-lg border-neutral-300 dark:border-neutral-600">
+                <SelectValue placeholder="Select member" />
+              </SelectTrigger>
+              <SelectContent>
+                {members.map((m) => (
+                  <SelectItem key={m.userId} value={m.userId}>
+                    <span className="truncate">{m.displayName || m.email}</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+            <Button
+              type="button"
+              size="sm"
+              className="h-10 w-full sm:h-9 sm:w-auto"
+              disabled={busy || !userId}
+              onClick={() => save()}
+            >
+              Save
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-10 w-full sm:h-9 sm:w-auto"
+              disabled={busy || !userId || !hasOverride}
+              onClick={() => clearOverride()}
+            >
+              Use project days
+            </Button>
+          </div>
+        </div>
+        <div className="min-w-0">
+          <div className="grid grid-cols-4 gap-1.5 sm:flex sm:flex-wrap">
+            {DAY_ORDER.map((d) => {
+              const on = draftDays.includes(d);
+              return (
+                <Button
+                  key={d}
+                  type="button"
+                  size="sm"
+                  variant={on ? "default" : "outline"}
+                  className={cn(
+                    "h-9 min-h-9 w-full min-w-0 px-1 text-xs sm:min-w-[3rem] sm:w-auto sm:px-2",
+                    on && "bg-neutral-900 hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900"
+                  )}
+                  disabled={busy || !userId}
+                  onClick={() => toggleDraft(d)}
+                >
+                  {SHORT_LABEL[d]}
+                </Button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AdminTrackerPage() {
   const { data: session, status } = useSession();
   const api = useMemo(
@@ -50,7 +187,14 @@ export default function AdminTrackerPage() {
     setError(null);
     api
       .getAdminTracker()
-      .then((r) => setRows(r.projects ?? []))
+      .then((r) =>
+        setRows(
+          (r.projects ?? []).map((row) => ({
+            ...row,
+            members: row.members ?? [],
+          }))
+        )
+      )
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : "Failed to load tracker");
       })
@@ -69,10 +213,39 @@ export default function AdminTrackerPage() {
     api
       .patchAdminTrackerSchedule(projectId, next)
       .then((updated) => {
-        setRows((prev) => prev.map((p) => (p.projectId === projectId ? updated : p)));
+        const u = { ...updated, members: updated.members ?? [] };
+        setRows((prev) => prev.map((p) => (p.projectId === projectId ? u : p)));
       })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : "Failed to save schedule");
+      })
+      .finally(() => setSavingId(null));
+  };
+
+  const saveMemberSchedule = (projectId: string, scheduleDays: string[], uid: string, days: TrackerDayKey[]) => {
+    setSavingId(projectId);
+    api
+      .patchAdminTrackerSchedule(projectId, scheduleDays, undefined, { [uid]: days })
+      .then((updated) => {
+        const u = { ...updated, members: updated.members ?? [] };
+        setRows((prev) => prev.map((row) => (row.projectId === projectId ? u : row)));
+      })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : "Failed to save member schedule");
+      })
+      .finally(() => setSavingId(null));
+  };
+
+  const clearMemberScheduleOverride = (projectId: string, scheduleDays: string[], uid: string) => {
+    setSavingId(projectId);
+    api
+      .patchAdminTrackerSchedule(projectId, scheduleDays, undefined, { [uid]: null })
+      .then((updated) => {
+        const u = { ...updated, members: updated.members ?? [] };
+        setRows((prev) => prev.map((row) => (row.projectId === projectId ? u : row)));
+      })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : "Failed to clear member schedule");
       })
       .finally(() => setSavingId(null));
   };
@@ -87,9 +260,6 @@ export default function AdminTrackerPage() {
               Showing week: {weekHint}
             </p>
           )}
-          <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400 sm:text-sm">
-            Set expected send days per project; green checkmarks show sends this week.
-          </p>
         </div>
         <Button
           type="button"
@@ -173,6 +343,12 @@ export default function AdminTrackerPage() {
                     })}
                   </div>
                 </div>
+                <ProjectMemberScheduleEditor
+                  p={{ ...p, members: p.members ?? [] }}
+                  busy={savingId === p.projectId}
+                  onSaveMemberSchedule={(uid, days) => saveMemberSchedule(p.projectId, p.scheduleDays, uid, days)}
+                  onClearMemberOverride={(uid) => clearMemberScheduleOverride(p.projectId, p.scheduleDays, uid)}
+                />
                 <div className="min-w-0">
                   <p className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                     This week — sent?

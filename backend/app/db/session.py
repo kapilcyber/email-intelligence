@@ -58,6 +58,8 @@ CREATE TABLE IF NOT EXISTS project_assignments (
     "ALTER TABLE project_assignments ADD COLUMN IF NOT EXISTS reports_to_user_id VARCHAR(36) NULL REFERENCES users(id) ON DELETE SET NULL",
     "CREATE INDEX IF NOT EXISTS ix_project_assignments_reports_to_user_id ON project_assignments (reports_to_user_id)",
     "ALTER TABLE team_projects ADD COLUMN IF NOT EXISTS tracker_schedule_days JSONB NULL",
+    "ALTER TABLE team_projects ADD COLUMN IF NOT EXISTS tracker_member_deadline_days JSONB NULL",
+    "ALTER TABLE team_projects ADD COLUMN IF NOT EXISTS tracker_member_schedule_days JSONB NULL",
 ]
 
 _EMAIL_BCC_DDL_STEPS = [

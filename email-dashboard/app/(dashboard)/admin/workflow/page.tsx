@@ -310,9 +310,6 @@ export default function AdminWorkflowPage() {
           <h1 className="text-xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50 sm:text-2xl">
             Hierarchy
           </h1>
-          <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400 sm:text-sm">
-            Org chart and manager assignments (chart scrolls sideways on small screens).
-          </p>
         </div>
         <div className="grid grid-cols-2 gap-2 sm:flex sm:shrink-0 sm:gap-2">
           <Button

@@ -8,6 +8,7 @@ import { PriorityBadge } from "@/components/status/priority-badge";
 import { RetagMailControl } from "@/components/escalations/retag-mail-control";
 import type { EmailRecord } from "@/lib/types";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 
 function formatDate(iso: string) {
   const d = new Date(iso);
@@ -34,6 +35,10 @@ interface EmailsTableProps {
   /** History / inbox list: department retag (non-admin → approval request). */
   showRetag?: boolean;
   onRetagDone?: () => void;
+  /** Admin deleted-mail list: show mailbox owner column */
+  showMailbox?: boolean;
+  /** Admin: restore soft-deleted message to owner's History */
+  onRestoreEmail?: (emailId: string) => void | Promise<void>;
 }
 
 export function EmailsTable({
@@ -44,6 +49,8 @@ export function EmailsTable({
   getEmailLink,
   showRetag,
   onRetagDone,
+  showMailbox,
+  onRestoreEmail,
 }: EmailsTableProps) {
   const router = useRouter();
   const shouldShowRetag = showRetag ?? true;
@@ -74,9 +81,17 @@ export function EmailsTable({
                 <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Priority</th>
                 <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Received</th>
                 <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Folder</th>
+                {showMailbox ? (
+                  <th className="min-w-[7rem] px-2 py-2 text-left text-xs font-medium text-muted-foreground">Mailbox</th>
+                ) : null}
                 {shouldShowRetag ? (
                   <th className="min-w-0 whitespace-nowrap px-2 py-2 text-left text-xs font-medium text-muted-foreground">
                     Retag
+                  </th>
+                ) : null}
+                {onRestoreEmail ? (
+                  <th className="min-w-0 whitespace-nowrap px-2 py-2 text-left text-xs font-medium text-muted-foreground">
+                    Actions
                   </th>
                 ) : null}
               </tr>
@@ -102,12 +117,19 @@ export function EmailsTable({
                   <td className="px-2 py-2">
                     <Skeleton className="h-4 w-20" />
                   </td>
-                  <td className="px-2 py-2">
-                    <Skeleton className="h-4 w-16" />
-                  </td>
+                  {showMailbox ? (
+                    <td className="px-2 py-2">
+                      <Skeleton className="h-4 w-24" />
+                    </td>
+                  ) : null}
                   {shouldShowRetag ? (
                     <td className="px-2 py-2">
                       <Skeleton className="h-8 w-[180px]" />
+                    </td>
+                  ) : null}
+                  {onRestoreEmail ? (
+                    <td className="px-2 py-2">
+                      <Skeleton className="h-8 w-16" />
                     </td>
                   ) : null}
                 </tr>
@@ -177,13 +199,25 @@ export function EmailsTable({
               <p className="mt-1 truncate text-xs text-muted-foreground" title={folderLabel(email.folder)}>
                 {folderLabel(email.folder)}
               </p>
+              {showMailbox && email.mailboxOwnerEmail ? (
+                <p className="mt-1 truncate text-xs text-muted-foreground" title={email.mailboxOwnerEmail}>
+                  Mailbox: {email.mailboxOwnerEmail}
+                </p>
+              ) : null}
+              {onRestoreEmail ? (
+                <div className="mt-3 border-t border-border/60 pt-3" onClick={(e) => e.stopPropagation()}>
+                  <Button type="button" variant="outline" size="sm" onClick={() => void onRestoreEmail(email.id)}>
+                    Restore
+                  </Button>
+                </div>
+              ) : null}
               {shouldShowRetag ? (
                 <div
                   className="mt-3 border-t border-border/60 pt-3"
                   onClick={(e) => e.stopPropagation()}
                   onKeyDown={(e) => e.stopPropagation()}
                 >
-                  <RetagMailControl emailId={email.id} onDone={onRetagDone ?? (() => {})} compact />
+                  <RetagMailControl emailId={email.id} onDone={onRetagDone ?? (() => { })} compact />
                 </div>
               ) : null}
             </div>
@@ -202,9 +236,17 @@ export function EmailsTable({
                 <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Priority</th>
                 <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Received</th>
                 <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Folder</th>
+                {showMailbox ? (
+                  <th className="min-w-[7rem] px-2 py-2 text-left text-xs font-medium text-muted-foreground">Mailbox</th>
+                ) : null}
                 {shouldShowRetag ? (
                   <th className="min-w-0 whitespace-nowrap px-2 py-2 text-left text-xs font-medium text-muted-foreground">
                     Retag
+                  </th>
+                ) : null}
+                {onRestoreEmail ? (
+                  <th className="min-w-0 whitespace-nowrap px-2 py-2 text-left text-xs font-medium text-muted-foreground">
+                    Actions
                   </th>
                 ) : null}
               </tr>
@@ -221,11 +263,11 @@ export function EmailsTable({
                     onKeyDown={
                       isClickable
                         ? (e) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.preventDefault();
-                              router.push(getEmailLink!(email));
-                            }
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            router.push(getEmailLink!(email));
                           }
+                        }
                         : undefined
                     }
                     role={isClickable ? "button" : undefined}
@@ -253,13 +295,29 @@ export function EmailsTable({
                       {formatDate(email.receivedAt)}
                     </td>
                     <td className="px-2 py-2 text-muted-foreground">{folderLabel(email.folder)}</td>
+                    {showMailbox ? (
+                      <td className="max-w-[10rem] truncate px-2 py-2 text-muted-foreground" title={email.mailboxOwnerEmail ?? ""}>
+                        {email.mailboxOwnerEmail ?? "—"}
+                      </td>
+                    ) : null}
                     {shouldShowRetag ? (
                       <td
                         className="w-[1%] whitespace-nowrap px-2 py-2 align-middle"
                         onClick={(e) => e.stopPropagation()}
                         onKeyDown={(e) => e.stopPropagation()}
                       >
-                        <RetagMailControl emailId={email.id} onDone={onRetagDone ?? (() => {})} compact />
+                        <RetagMailControl emailId={email.id} onDone={onRetagDone ?? (() => { })} compact />
+                      </td>
+                    ) : null}
+                    {onRestoreEmail ? (
+                      <td
+                        className="w-[1%] whitespace-nowrap px-2 py-2 align-middle"
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => e.stopPropagation()}
+                      >
+                        <Button type="button" variant="outline" size="sm" onClick={() => void onRestoreEmail(email.id)}>
+                          Restore
+                        </Button>
                       </td>
                     ) : null}
                   </tr>

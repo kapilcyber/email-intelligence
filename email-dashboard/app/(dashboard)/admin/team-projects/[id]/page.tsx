@@ -54,6 +54,8 @@ export default function AdminProjectWorkflowPage() {
       !myUserId ||
       project.createdByUserId === myUserId);
 
+  const projectCompleted = (project?.status ?? "").toLowerCase() === "completed";
+
   if (!id) {
     return (
       <div className="min-w-0 max-w-full p-4 text-sm text-neutral-500 sm:p-6">
@@ -104,32 +106,23 @@ export default function AdminProjectWorkflowPage() {
                   "—"}
               </p>
             )}
-            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-              {isAdmin ? (
-                <Link href="/admin/team-projects" className="w-full sm:w-auto">
-                  <Button variant="outline" size="sm" type="button" className="w-full sm:w-auto">
-                    Edit on list
-                  </Button>
-                </Link>
-              ) : (
-                <Link href="/admin/my-projects" className="w-full sm:w-auto">
-                  <Button variant="outline" size="sm" type="button" className="w-full sm:w-auto">
-                    Back to projects
-                  </Button>
-                </Link>
-              )}
-            </div>
-            <p className="mt-2 text-xs leading-relaxed text-neutral-400 dark:text-neutral-500">
-              {isAdmin ? (
-                <>
-                  Open <strong>Projects</strong> in the sidebar and click <strong>Edit</strong> on this project to set{" "}
-                  <strong>project lead</strong>, <strong>reports to on this project</strong>, roles, and assignments. This page
-                  does <strong>not</strong> use Admin → Workflow (org Manager/Member/team lead).
-                </>
-              ) : (
-                <>Project role and assignment changes can only be made by admins.</>
-              )}
-            </p>
+            {(!isAdmin || !projectCompleted) && (
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                {isAdmin ? (
+                  <Link href="/admin/team-projects" className="w-full sm:w-auto">
+                    <Button variant="outline" size="sm" type="button" className="w-full sm:w-auto">
+                      Edit on list
+                    </Button>
+                  </Link>
+                ) : (
+                  <Link href="/admin/my-projects" className="w-full sm:w-auto">
+                    <Button variant="outline" size="sm" type="button" className="w-full sm:w-auto">
+                      Back to projects
+                    </Button>
+                  </Link>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="space-y-4">

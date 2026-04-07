@@ -187,6 +187,7 @@ class EmailOut(BaseModel):
     processing_status: str | None = Field(None, alias="processingStatus")  # received | ingested | classified | failed
     # Phase 3 — department/team (Tech, Sales, Accounts, etc.)
     assigned_team: str | None = Field(None, alias="assignedTeam")
+    mailbox_owner_email: str | None = Field(None, alias="mailboxOwnerEmail")
 
     model_config = {"from_attributes": True, "populate_by_name": True}
 
@@ -258,6 +259,8 @@ class EmailDetailOut(BaseModel):
     processing_status: str | None = Field(None, alias="processingStatus")
     ai_error_message: str | None = Field(None, alias="aiErrorMessage")
     graph_id: str | None = Field(None, alias="graphId")
+    mailbox_owner_email: str | None = Field(None, alias="mailboxOwnerEmail")
+    deleted_at: datetime | None = Field(None, alias="deletedAt")
 
     model_config = {"from_attributes": True, "populate_by_name": True}
 
@@ -292,7 +295,10 @@ def list_emails(
     priority_label: str | None = Query(None, alias="priorityLabel", description="Filter by priority label"),
 ):
     try:
-        q = db.query(Email).filter(Email.mailbox_owner_email == current_user_email)
+        q = db.query(Email).filter(
+            Email.mailbox_owner_email == current_user_email,
+            Email.deleted_at.is_(None),
+        )
         if search and search.strip():
             s = f"%{search.strip()}%"
             q = q.filter(
@@ -334,6 +340,7 @@ def list_emails(
                 aiProcessedAt=getattr(r, "ai_processed_at", None),
                 processingStatus=getattr(r, "processing_status", None),
                 assignedTeam=getattr(r, "assigned_team", None),
+                mailboxOwnerEmail=getattr(r, "mailbox_owner_email", None),
             )
             for r in rows
         ]
@@ -356,6 +363,7 @@ def list_conversations(
             db.query(Email)
             .filter(
                 Email.mailbox_owner_email == current_user_email,
+                Email.deleted_at.is_(None),
                 Email.conversation_id.isnot(None),
                 Email.conversation_id != "",
             )
@@ -463,7 +471,11 @@ def export_thread_replies_csv(
             raise HTTPException(status_code=400, detail="Invalid conversation id")
         exists = (
             db.query(Email.id)
-            .filter(Email.mailbox_owner_email == owner, Email.conversation_id == cid)
+            .filter(
+                Email.mailbox_owner_email == owner,
+                Email.conversation_id == cid,
+                Email.deleted_at.is_(None),
+            )
             .first()
         )
         if not exists:
@@ -474,6 +486,7 @@ def export_thread_replies_csv(
             db.query(Email.conversation_id)
             .filter(
                 Email.mailbox_owner_email == owner,
+                Email.deleted_at.is_(None),
                 Email.received_at >= start_dt,
                 Email.received_at < end_dt,
                 Email.conversation_id.isnot(None),
@@ -490,7 +503,11 @@ def export_thread_replies_csv(
     else:
         q = (
             db.query(Email)
-            .filter(Email.mailbox_owner_email == owner, Email.conversation_id.in_(cid_list))
+            .filter(
+                Email.mailbox_owner_email == owner,
+                Email.deleted_at.is_(None),
+                Email.conversation_id.in_(cid_list),
+            )
             .order_by(Email.conversation_id.asc(), Email.received_at.asc())
         )
         all_rows = q.all()
@@ -571,6 +588,7 @@ def backfill_conversation_ids(
             db.query(Email)
             .filter(
                 Email.mailbox_owner_email == current_user_email,
+                Email.deleted_at.is_(None),
                 Email.conversation_id.is_(None),
                 Email.graph_id.isnot(None),
                 Email.graph_id != "",
@@ -619,6 +637,7 @@ def get_conversation_emails(
             db.query(Email)
             .filter(
                 Email.mailbox_owner_email == current_user_email,
+                Email.deleted_at.is_(None),
                 Email.conversation_id == conversation_id,
             )
             .order_by(Email.received_at.asc())
@@ -657,6 +676,8 @@ def get_conversation_emails(
                     processingStatus=getattr(email, "processing_status", None),
                     aiErrorMessage=getattr(email, "ai_error_message", None),
                     graphId=getattr(email, "graph_id", None),
+                    mailboxOwnerEmail=getattr(email, "mailbox_owner_email", None),
+                    deletedAt=getattr(email, "deleted_at", None),
                 )
             )
         return ThreadEmailsResponse(conversationId=conversation_id, emails=out)
@@ -707,6 +728,8 @@ def get_email(
             processingStatus=getattr(email, "processing_status", None),
             aiErrorMessage=getattr(email, "ai_error_message", None),
             graphId=getattr(email, "graph_id", None),
+            mailboxOwnerEmail=getattr(email, "mailbox_owner_email", None),
+            deletedAt=getattr(email, "deleted_at", None),
         )
     except HTTPException:
         raise
@@ -737,6 +760,8 @@ def post_email_reply_all(
         raise HTTPException(status_code=404, detail="Email not found")
     if not _can_read_email_mailbox(email, current_user_email, db):
         raise HTTPException(status_code=404, detail="Email not found")
+    if email.deleted_at is not None:
+        raise HTTPException(status_code=400, detail="This message was removed from History; restore it before replying.")
 
     owner = (email.mailbox_owner_email or "").strip().lower()
     if owner != current_user_email.strip().lower():
@@ -865,6 +890,26 @@ def trigger_backfill(
         return JSONResponse(status_code=400, content={"error": str(e)})
 
 
+@router.post("/emails/{email_id}/soft-delete")
+def soft_delete_email(
+    email_id: str = Path(..., description="Email UUID"),
+    current_user_email: str = Depends(get_current_user_email),
+    db: Session = Depends(get_db),
+):
+    """Remove email from the user's History (soft delete). Admins can review under Admin → Deleted mail."""
+    email = db.query(Email).filter(Email.id == email_id).first()
+    if not email:
+        raise HTTPException(status_code=404, detail="Email not found")
+    owner = (email.mailbox_owner_email or "").strip().lower()
+    if owner != (current_user_email or "").strip().lower():
+        raise HTTPException(status_code=404, detail="Email not found")
+    if email.deleted_at is None:
+        email.deleted_at = datetime.now(timezone.utc)
+        email.deleted_by_email = (current_user_email or "").strip().lower()
+        db.commit()
+    return {"ok": True, "emailId": email_id}
+
+
 @router.post("/emails/{email_id}/retry-ai")
 def retry_ai_classification(
     email_id: str = Path(..., description="Email UUID"),
@@ -876,6 +921,8 @@ def retry_ai_classification(
     if not email:
         raise HTTPException(status_code=404, detail="Email not found")
     if email.mailbox_owner_email != current_user_email:
+        raise HTTPException(status_code=404, detail="Email not found")
+    if email.deleted_at is not None:
         raise HTTPException(status_code=404, detail="Email not found")
     enqueue_classify_email_task(email_id, current_user_email)
     return {"ok": True, "message": "Classification re-queued for this email.", "emailId": email_id}

@@ -143,9 +143,6 @@ export default function AdminTeamLeadersPage() {
         <h1 className="text-xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50 sm:text-2xl">
           Team leaders
         </h1>
-        <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400 sm:text-sm">
-          Managers, member assignment, and login audit (admins).
-        </p>
       </div>
 
       {error && (

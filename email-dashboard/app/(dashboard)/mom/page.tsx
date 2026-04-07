@@ -86,9 +86,6 @@ export default function MomHistoryPage() {
         <h1 className="text-xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50 sm:text-2xl">
           MOM history
         </h1>
-        <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400 sm:text-sm">
-          Minutes of meeting prompts and what you chose after each meeting.
-        </p>
       </div>
 
       <div data-tour-id="mom-filters" className="glass-surface rounded-2xl p-3 sm:p-4">

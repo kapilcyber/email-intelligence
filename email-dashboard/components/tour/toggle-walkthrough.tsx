@@ -16,7 +16,7 @@ type ToggleGuide = {
 const TOGGLE_GUIDES: ToggleGuide[] = [
   {
     key: "history",
-    title: "History",
+    title: "Mailbox",
     href: "/emails",
     match: (p) => p === "/emails" || p.startsWith("/emails/"),
     steps: [
@@ -144,63 +144,63 @@ export function ToggleWalkthrough() {
         ${activeSelector} { box-shadow: 0 0 0 2px rgba(99,102,241,0.75); border-radius: 12px; }
       `}</style>
       <div className="fixed bottom-4 right-4 z-50 w-[min(560px,calc(100vw-2rem))] rounded-xl border border-neutral-700 bg-black/95 p-4 text-white shadow-2xl backdrop-blur">
-      <p className="text-xs font-semibold uppercase tracking-wide text-neutral-300">
-        Toggle walkthrough ({currentIndex + 1}/{TOGGLE_GUIDES.length}) · Feature {currentStepIdx + 1}/{current.steps.length}
-      </p>
-      <p className="mt-1 text-sm font-semibold">{current.title}</p>
-      <p className="mt-2 text-xs text-neutral-200">{currentStep.text}</p>
-      <div className="mt-3 flex flex-wrap gap-2">
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          className="border-neutral-600 bg-black text-white hover:bg-neutral-900"
-          disabled={isFirstStep}
-          onClick={prevStep}
-        >
-          Previous feature
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          className="border-neutral-600 bg-black text-white hover:bg-neutral-900"
-          disabled={isLastStep}
-          onClick={nextStep}
-        >
-          Next feature
-        </Button>
-        {isLastStep && prev ? (
-          <Link href={pageUrl(prev.href)}>
-            <Button type="button" size="sm" variant="outline" className="border-neutral-600 bg-black text-white hover:bg-neutral-900">
-              Previous toggle
-            </Button>
-          </Link>
-        ) : null}
-        {isLastStep && next ? (
-          <Link href={pageUrl(next.href)}>
-            <Button type="button" size="sm" variant="outline" className="border-neutral-600 bg-black text-white hover:bg-neutral-900">
-              Open next toggle
-            </Button>
-          </Link>
-        ) : null}
-        {isLastStep && !next ? (
-          <Link href="/how-to-use">
-            <Button type="button" size="sm" className="bg-white text-black hover:bg-neutral-200">
-              How to use
-            </Button>
-          </Link>
-        ) : null}
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          className="text-neutral-200 hover:bg-neutral-900 hover:text-white"
-          onClick={closeWalkthrough}
-        >
-          Close walkthrough
-        </Button>
-      </div>
+        <p className="text-xs font-semibold uppercase tracking-wide text-neutral-300">
+          Toggle walkthrough ({currentIndex + 1}/{TOGGLE_GUIDES.length}) · Feature {currentStepIdx + 1}/{current.steps.length}
+        </p>
+        <p className="mt-1 text-sm font-semibold">{current.title}</p>
+        <p className="mt-2 text-xs text-neutral-200">{currentStep.text}</p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="border-neutral-600 bg-black text-white hover:bg-neutral-900"
+            disabled={isFirstStep}
+            onClick={prevStep}
+          >
+            Previous feature
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="border-neutral-600 bg-black text-white hover:bg-neutral-900"
+            disabled={isLastStep}
+            onClick={nextStep}
+          >
+            Next feature
+          </Button>
+          {isLastStep && prev ? (
+            <Link href={pageUrl(prev.href)}>
+              <Button type="button" size="sm" variant="outline" className="border-neutral-600 bg-black text-white hover:bg-neutral-900">
+                Previous toggle
+              </Button>
+            </Link>
+          ) : null}
+          {isLastStep && next ? (
+            <Link href={pageUrl(next.href)}>
+              <Button type="button" size="sm" variant="outline" className="border-neutral-600 bg-black text-white hover:bg-neutral-900">
+                Open next toggle
+              </Button>
+            </Link>
+          ) : null}
+          {isLastStep && !next ? (
+            <Link href="/how-to-use">
+              <Button type="button" size="sm" className="bg-white text-black hover:bg-neutral-200">
+                How to use
+              </Button>
+            </Link>
+          ) : null}
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="text-neutral-200 hover:bg-neutral-900 hover:text-white"
+            onClick={closeWalkthrough}
+          >
+            Close walkthrough
+          </Button>
+        </div>
       </div>
     </>
   );

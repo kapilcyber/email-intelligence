@@ -102,7 +102,7 @@ So: **run backfill once** to see existing mail (Phase 1). Keep Celery running fo
 
 - After each email is ingested, a **classify_email_task** runs when an AI provider is configured and stores: **summary**, **category** (Sales, HR, Accounts, Tech, General, Spam), **priority** (score + label: Critical/High/Medium/Low/Spam), and **suggested replies** (1–3 options).
 - **Ollama (primary):** If `OLLAMA_BASE_URL` is set (e.g. `http://localhost:11434/v1`), the classifier tries Ollama first (e.g. `llama3`, `gemma3:4b` via `OLLAMA_MODEL`). Install models with `ollama pull llama3` etc.
-- **OpenAI (fallback):** If Ollama fails (not running, timeout, or invalid response) and `OPENAI_API_KEY` is set, the classifier falls back to OpenAI. You can also use only OpenAI (no Ollama) by setting only `OPENAI_API_KEY`; behaviour is unchanged.
+- **OpenAI (fallback):** If Ollama fails (not running, timeout, empty response, or JSON parse error) and `OPENAI_API_KEY` is set, the classifier retries with OpenAI (`OPENAI_MODEL`, default `gpt-4o-mini`). Set `OPENAI_FALLBACK_ENABLED=false` to never call OpenAI after Ollama (OpenAI-only mode still works if `OLLAMA_BASE_URL` is unset). You can use only OpenAI by leaving `OLLAMA_BASE_URL` empty and setting `OPENAI_API_KEY`.
 - **Existing DB:** run `python scripts/add_phase2_columns.py` once to add the new columns to the `emails` table.
 - **Observability columns:** run `python scripts/add_phase2_observability_columns.py` once to add `processing_status`, `ai_status`, `ai_error_message`, `ai_confidence_score` and backfill existing rows.
 - List and detail APIs return these fields; the dashboard shows them in the emails list and on the email detail page.

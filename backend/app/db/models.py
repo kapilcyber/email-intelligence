@@ -79,6 +79,10 @@ class Email(Base):
     lead_label = Column(String(32), nullable=True, index=True)  # Hot, Warm, Cold
     lead_metadata = Column(JSONB, nullable=True)  # {"buying_signals": ["demo_request", "budget_discussion", ...]}
 
+    # Soft delete: hidden from user History; admins list via /api/admin/emails?deletedOnly=true
+    deleted_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    deleted_by_email = Column(String(512), nullable=True, index=True)
+
     # User/admin retag: removed from escalation/lead, routed to a department; AI re-classify won't override
     retagged_at = Column(DateTime(timezone=True), nullable=True, index=True)
     retagged_by_email = Column(String(512), nullable=True, index=True)
@@ -215,6 +219,10 @@ class TeamProject(Base):
     structure = Column(JSONB, nullable=True)  # {"phases": [...], "notes": "..."}
     # Admin Tracker: expected send days per week, e.g. ["mon","wed","fri"] (lowercase short keys).
     tracker_schedule_days = Column(JSONB, nullable=True)
+    # Per assignee: weekday before which their tracker must arrive (UTC), e.g. {"user-uuid": "thu"} = by Wed night.
+    tracker_member_deadline_days = Column(JSONB, nullable=True)
+    # Per assignee: expected tracker weekdays overriding tracker_schedule_days; key absent = use project schedule.
+    tracker_member_schedule_days = Column(JSONB, nullable=True)
     created_by_user_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     # Optional project-only lead (not org team lead). Must be among assigned users.
     project_lead_user_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)

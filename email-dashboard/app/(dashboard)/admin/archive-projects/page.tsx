@@ -36,9 +36,6 @@ export default function ArchiveProjectsPage() {
         <h1 className="text-xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50 sm:text-2xl">
           Archive Projects
         </h1>
-        <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400 sm:text-sm">
-          Projects move here automatically when status is set to completed.
-        </p>
       </div>
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-400">

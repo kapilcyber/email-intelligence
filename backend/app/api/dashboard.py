@@ -530,6 +530,7 @@ def dashboard_metrics(
 
     total_emails = 0
     total_classified = 0
+    ai_failure_count = 0
     category_counts: dict[str, int] = {}
     priority_counts: dict[str, int] = {}
 
@@ -554,7 +555,6 @@ def dashboard_metrics(
             base = base.filter(Email.received_at >= since)
         total_emails = base.count()
         total_classified = base.filter(Email.ai_processed_at.isnot(None)).count()
-        ai_failure_count = 0
         if hasattr(Email, "ai_status"):
             ai_failure_count = base.filter(Email.ai_status == "failed").count()
         for row in (
@@ -1018,6 +1018,49 @@ def _fu_normalize_schedule_days(raw) -> list[str]:
     return out
 
 
+def _fu_member_deadline_before(project: TeamProject, user_id: str) -> str | None:
+    """Per-assignee tracker deadline weekday (send strictly before this day, UTC week), from admin tracker."""
+    raw = getattr(project, "tracker_member_deadline_days", None)
+    if not raw or not isinstance(raw, dict):
+        return None
+    uid = (user_id or "").strip()
+    if not uid:
+        return None
+    v = raw.get(uid)
+    if v is None:
+        v = raw.get(str(uid))
+    if not isinstance(v, str):
+        return None
+    k = v.strip().lower()
+    if k not in _FU_DAY_KEYS:
+        return None
+    return k
+
+
+def _fu_member_schedule_override(project: TeamProject, user_id: str) -> list[str] | None:
+    """None = use project tracker_schedule_days; list (maybe empty) = per-member expected weekdays."""
+    raw = getattr(project, "tracker_member_schedule_days", None)
+    if not raw or not isinstance(raw, dict):
+        return None
+    uid = (user_id or "").strip()
+    if not uid:
+        return None
+    if uid not in raw and str(uid) not in raw:
+        return None
+    v = raw[uid] if uid in raw else raw.get(str(uid))
+    if not isinstance(v, list):
+        return None
+    return _fu_normalize_schedule_days(v)
+
+
+def _fu_effective_schedule_for_user(project: TeamProject, user_id: str) -> list[str]:
+    base = _fu_normalize_schedule_days(getattr(project, "tracker_schedule_days", None))
+    ov = _fu_member_schedule_override(project, user_id)
+    if ov is None:
+        return base
+    return ov
+
+
 def _fu_like_pat(name: str) -> str:
     s = (name or "").strip()
     if not s:
@@ -1103,6 +1146,7 @@ def dashboard_follow_up_tracker(
         out_projects: list[dict] = []
         for _, p, _ in rows:
             schedule = _fu_normalize_schedule_days(getattr(p, "tracker_schedule_days", None))
+            effective = _fu_effective_schedule_for_user(p, str(user.id))
             sent_dates = sent_by_proj.get(p.id, set())
             days_payload: list[dict] = []
             for di, key in enumerate(_FU_DAY_KEYS):
@@ -1111,7 +1155,7 @@ def dashboard_follow_up_tracker(
                     {
                         "key": key,
                         "label": _FU_DAY_LABELS[key],
-                        "expected": key in schedule,
+                        "expected": key in effective,
                         "sentByMe": d in sent_dates,
                     }
                 )
@@ -1122,6 +1166,8 @@ def dashboard_follow_up_tracker(
                     "projectName": p.name,
                     "teamName": (t.name if t else None),
                     "scheduleDays": schedule,
+                    "effectiveScheduleDays": effective,
+                    "memberDeadlineBefore": _fu_member_deadline_before(p, str(user.id)),
                     "weekStartISO": week_start.isoformat().replace("+00:00", "Z"),
                     "weekEndISO": week_end.isoformat().replace("+00:00", "Z"),
                     "days": days_payload,
@@ -1166,7 +1212,7 @@ def dashboard_follow_up_reminders(
         )
         due_projects: list[TeamProject] = []
         for _, p in rows:
-            sched = _fu_normalize_schedule_days(getattr(p, "tracker_schedule_days", None))
+            sched = _fu_effective_schedule_for_user(p, str(user.id))
             if not sched or today_key not in sched:
                 continue
             due_projects.append(p)
