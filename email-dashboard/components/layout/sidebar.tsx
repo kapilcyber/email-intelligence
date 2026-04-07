@@ -20,7 +20,6 @@ import {
   ChevronRight,
   CalendarRange,
   ClipboardCheck,
-  BellRing,
   BookOpen,
   ShieldCheck,
   Trash2,
@@ -47,7 +46,6 @@ const navItemsTop = [
 const navItemsAfterDepartments = [
   { href: "/escalations", label: "Escalations", icon: AlertCircle },
   { href: "/leads", label: "Leads", icon: List },
-  { href: "/follow-up", label: "Follow UP", icon: BellRing },
   { href: "/how-to-use", label: "How to use", icon: BookOpen },
 ];
 

@@ -64,25 +64,24 @@ import {
   PolarRadiusAxis,
 } from "recharts";
 
-type ChartPeriod = "daily" | "weekly" | "monthly" | "yearly";
 type DashboardTourStep = {
   title: string;
   description: string;
   target: { current: HTMLDivElement | null };
 };
 
+/** All mail in the user’s mailbox (no date window). Same payload drives KPIs and distribution charts. */
 function loadMetrics(
   api: ReturnType<typeof getApi>,
   setMetrics: (m: DashboardMetrics | null) => void,
   setMetricsError: (e: string | null) => void,
   setLoading: (b: boolean) => void,
-  period?: ChartPeriod,
   options?: { silent?: boolean }
 ) {
   const silent = options?.silent ?? false;
   if (!silent) setLoading(true);
   api
-    .getDashboardMetrics(period)
+    .getDashboardMetrics(undefined)
     .then((r) => {
       setMetrics(r);
       setMetricsError(null);
@@ -91,20 +90,6 @@ function loadMetrics(
     .finally(() => {
       if (!silent) setLoading(false);
     });
-}
-
-/** All-time / unscoped metrics for AI category & priority charts (not affected by daily/weekly tab). */
-function loadOverviewMetrics(
-  api: ReturnType<typeof getApi>,
-  setOverview: (m: DashboardMetrics | null) => void,
-  setLoading: (b: boolean) => void
-) {
-  setLoading(true);
-  api
-    .getDashboardMetrics(undefined)
-    .then(setOverview)
-    .catch(() => setOverview(null))
-    .finally(() => setLoading(false));
 }
 
 function loadEmails(
@@ -342,18 +327,12 @@ function DashboardAiChartsEmpty({
 function DashboardAiCharts({
   api,
   metrics,
-  overviewMetrics,
-  overviewLoading,
   loading,
   onClassifyAll,
   isAdmin = false,
 }: {
   api: ReturnType<typeof getApi>;
-  /** Period-scoped (matches KPI / time toggle). */
   metrics: DashboardMetrics | null;
-  /** All-time distribution for category & priority charts so Weekly isn’t empty when mail is older than 7 days. */
-  overviewMetrics: DashboardMetrics | null;
-  overviewLoading: boolean;
   loading: boolean;
   onClassifyAll?: () => void;
   isAdmin?: boolean;
@@ -424,10 +403,8 @@ function DashboardAiCharts({
     });
   }, [leadCountsByUser]);
 
-  const distributionMetrics = overviewMetrics ?? metrics;
-
   const categoryData = useMemo(() => {
-    const counts = distributionMetrics?.categoryCounts ?? {};
+    const counts = metrics?.categoryCounts ?? {};
     const ordered = CATEGORY_ORDER.filter((c) => (counts[c] ?? 0) > 0).map((name) => ({
       name,
       count: counts[name] ?? 0,
@@ -436,20 +413,20 @@ function DashboardAiCharts({
       .filter((k) => !CATEGORY_ORDER.includes(k))
       .map((name) => ({ name, count: counts[name] ?? 0 }));
     return [...ordered, ...rest];
-  }, [distributionMetrics?.categoryCounts]);
+  }, [metrics?.categoryCounts]);
 
   const categoryKpiData = useMemo(() => {
-    const counts = distributionMetrics?.categoryCounts ?? {};
+    const counts = metrics?.categoryCounts ?? {};
     const rows = CATEGORY_ORDER.map((name) => ({
       category: name,
       count: counts[name] ?? 0,
     }));
     const total = rows.reduce((s, r) => s + r.count, 0) || 1;
     return rows.map((r) => ({ ...r, pct: Math.round((r.count / total) * 100) }));
-  }, [distributionMetrics?.categoryCounts]);
+  }, [metrics?.categoryCounts]);
 
   const priorityData = useMemo(() => {
-    const counts = distributionMetrics?.priorityCounts ?? {};
+    const counts = metrics?.priorityCounts ?? {};
     const ordered = PRIORITY_ORDER.filter((p) => (counts[p] ?? 0) > 0).map((name) => ({
       name,
       count: counts[name] ?? 0,
@@ -458,7 +435,7 @@ function DashboardAiCharts({
       .filter((k) => !PRIORITY_ORDER.includes(k))
       .map((name) => ({ name, count: counts[name] ?? 0 }));
     return [...ordered, ...rest];
-  }, [distributionMetrics?.priorityCounts]);
+  }, [metrics?.priorityCounts]);
 
   const prioritySeriesData = useMemo(() => {
     const byName = new Map(priorityData.map((p) => [p.name, p.count]));
@@ -472,9 +449,7 @@ function DashboardAiCharts({
 
   const hasAny = categoryData.length > 0 || priorityData.length > 0;
 
-  /** Wait for at least one metrics payload before choosing empty vs charts (overview is all-time). */
-  const chartsBlocking =
-    overviewMetrics === null && metrics === null && (overviewLoading || loading);
+  const chartsBlocking = metrics === null && loading;
 
   if (chartsBlocking) {
     return (
@@ -920,8 +895,6 @@ function DashboardPageContent() {
     [session?.user?.email, session?.user?.name]
   );
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
-  const [overviewMetrics, setOverviewMetrics] = useState<DashboardMetrics | null>(null);
-  const [overviewLoading, setOverviewLoading] = useState(false);
   const [emails, setEmails] = useState<EmailRecord[]>([]);
   const [loadingMetrics, setLoadingMetrics] = useState(true);
   const [loadingEmails, setLoadingEmails] = useState(true);
@@ -936,7 +909,6 @@ function DashboardPageContent() {
   const [teamMembers, setTeamMembers] = useState<UserOut[] | null>(null);
   const [teams, setTeams] = useState<TeamOut[] | null>(null);
   const [expandedDepartment, setExpandedDepartment] = useState<string | null>(null);
-  const [chartPeriod, setChartPeriod] = useState<ChartPeriod>("weekly");
   const [calendarEvents, setCalendarEvents] = useState<CalendarEventOut[]>([]);
   const [calendarError, setCalendarError] = useState<string | null>(null);
   const [calendarLoading, setCalendarLoading] = useState(false);
@@ -949,8 +921,6 @@ function DashboardPageContent() {
   const syncPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const syncStopRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  /** Refetch period metrics without full-page skeleton when only the time toggle changes (not first load). */
-  const prevChartPeriodRef = useRef<ChartPeriod | undefined>(undefined);
   const syncActionsRef = useRef<HTMLDivElement>(null);
   const kpiCardsRef = useRef<HTMLDivElement>(null);
   const activityMapRef = useRef<HTMLDivElement>(null);
@@ -1081,30 +1051,18 @@ function DashboardPageContent() {
   );
 
   const refresh = useCallback(() => {
-    loadMetrics(api, setMetrics, setMetricsError, setLoadingMetrics, chartPeriod, { silent: true });
-    loadOverviewMetrics(api, setOverviewMetrics, setOverviewLoading);
+    loadMetrics(api, setMetrics, setMetricsError, setLoadingMetrics, { silent: true });
     loadEmails(api, setEmails, setEmailsError, setLoadingEmails);
-  }, [api, chartPeriod]);
+  }, [api]);
 
   useEffect(() => {
     if (status !== "authenticated") {
-      setOverviewMetrics(null);
-      setOverviewLoading(false);
+      setMetrics(null);
+      setMetricsError(null);
       return;
     }
-    loadOverviewMetrics(api, setOverviewMetrics, setOverviewLoading);
+    loadMetrics(api, setMetrics, setMetricsError, setLoadingMetrics, { silent: false });
   }, [status, api]);
-
-  useEffect(() => {
-    if (status !== "authenticated") {
-      prevChartPeriodRef.current = undefined;
-      return;
-    }
-    const prev = prevChartPeriodRef.current;
-    const silent = prev !== undefined && prev !== chartPeriod;
-    prevChartPeriodRef.current = chartPeriod;
-    loadMetrics(api, setMetrics, setMetricsError, setLoadingMetrics, chartPeriod, { silent });
-  }, [status, api, chartPeriod]);
 
   useEffect(() => {
     if (status !== "authenticated") return;
@@ -1346,7 +1304,11 @@ function DashboardPageContent() {
     { title: "Emails Today", value: loadingMetrics ? "—" : (metrics?.emailsIngestedToday ?? 0), subtitle: "Received today" },
     { title: "Queue Size", value: loadingMetrics ? "—" : (metrics?.queueSize ?? 0), subtitle: "Your tasks pending" },
     { title: "Workers", value: loadingMetrics ? "—" : `${metrics?.activeWorkers ?? 0} active`, subtitle: "Active workers" },
-    { title: "Classified", value: loadingMetrics ? "—" : `${metrics?.totalClassified ?? 0} / ${metrics?.totalEmails ?? 0}`, subtitle: "Total emails" },
+    {
+      title: "Classified",
+      value: loadingMetrics ? "—" : `${metrics?.totalClassified ?? 0} / ${metrics?.totalEmails ?? 0}`,
+      subtitle: "All mail in your mailbox",
+    },
   ];
 
   const dashboardTourSteps = useMemo<DashboardTourStep[]>(
@@ -1363,8 +1325,8 @@ function DashboardPageContent() {
         target: kpiCardsRef,
       },
       {
-        title: "Time-Based Activity Map",
-        description: "Use daily/weekly/monthly/yearly toggles to inspect patterns and trends in email activity.",
+        title: "Charts",
+        description: "Category, priority, and team views reflect all email in your synced mailbox.",
         target: activityMapRef,
       },
       {
@@ -1582,7 +1544,7 @@ function DashboardPageContent() {
         ))}
       </section>
 
-      {/* Time-Based Activity Map + right column */}
+      {/* Charts + right column */}
       <div className="grid min-w-0 gap-4 sm:gap-6 lg:grid-cols-3 lg:gap-8">
         <div
           ref={activityMapRef}
@@ -1593,35 +1555,9 @@ function DashboardPageContent() {
           )}
         >
           <section className="min-w-0 overflow-x-hidden rounded-3xl border border-slate-100 bg-gradient-to-br from-white to-[#f7fbff] p-4 shadow-md shadow-slate-100/70 dark:border-neutral-700 dark:from-neutral-900 dark:to-neutral-900 dark:shadow-none sm:p-5 md:p-6">
-            <div className="mb-4 flex flex-col gap-3 sm:mb-5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-3">
-              <h2 className="min-w-0 text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-                Time-Based Activity Map
-              </h2>
-              <div className="flex w-full min-w-0 flex-wrap rounded-lg border border-neutral-200 dark:border-neutral-600 sm:w-auto">
-                {(["daily", "weekly", "monthly", "yearly"] as const).map((p) => (
-                  <button
-                    key={p}
-                    type="button"
-                    onClick={() => setChartPeriod(p)}
-                    className={cn(
-                      "px-2 py-1 text-[10px] font-medium sm:px-3 sm:py-1.5 sm:text-xs",
-                      p === "daily" && "rounded-l-md",
-                      p === "yearly" && "rounded-r-md",
-                      chartPeriod === p
-                        ? "bg-[#1E1E1E] text-white dark:bg-neutral-700"
-                        : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-700"
-                    )}
-                  >
-                    {p.charAt(0).toUpperCase() + p.slice(1)}
-                  </button>
-                ))}
-              </div>
-            </div>
             <DashboardAiCharts
               api={api}
               metrics={metrics}
-              overviewMetrics={overviewMetrics}
-              overviewLoading={overviewLoading}
               loading={loadingMetrics}
               onClassifyAll={refresh}
               isAdmin={!!me?.isAdmin}

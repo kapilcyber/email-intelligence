@@ -26,6 +26,7 @@ import {
   Menu,
   Layers,
   Tags,
+  BellRing,
   type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -472,7 +473,7 @@ export function Topbar({
             variant="ghost"
             size="icon"
             className="h-10 w-10 rounded-lg"
-            aria-label="MOM and ReTag"
+            aria-label="Shortcuts: MOM, ReTag, Follow UP"
             aria-expanded={toolsOpen}
             onClick={() => {
               setOpen(false);
@@ -515,10 +516,10 @@ export function Topbar({
               className="fixed w-[min(100vw-1rem,320px)] overflow-hidden rounded-xl border border-border/90 bg-panel/95 shadow-xl backdrop-blur-md dark:border-border/70 dark:bg-panel/95"
               style={{ top: toolsPos.top, left: toolsPos.left, zIndex: 500 }}
               role="dialog"
-              aria-label="MOM and ReTag"
+              aria-label="Shortcuts"
             >
               <div className="border-b border-border/80 px-4 py-3">
-                <p className="text-sm font-semibold text-foreground">MOM &amp; ReTag</p>
+                <p className="text-sm font-semibold text-foreground">Shortcuts</p>
               </div>
               <div className="space-y-0.5 p-2">
                 <Link
@@ -549,6 +550,22 @@ export function Topbar({
                     <p className="text-sm font-medium text-foreground">ReTag</p>
                     <p className="mt-0.5 text-xs leading-snug text-muted-foreground">
                       Mail moved to another department from escalations or leads
+                    </p>
+                  </div>
+                  <ChevronRight className="mt-2 h-4 w-4 shrink-0 text-muted-foreground/45" aria-hidden />
+                </Link>
+                <Link
+                  href="/follow-up"
+                  className="flex gap-3 rounded-lg px-3 py-3 outline-none transition-colors hover:bg-muted/70 focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => setToolsOpen(false)}
+                >
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted/90 text-muted-foreground">
+                    <BellRing className="h-5 w-5 shrink-0" aria-hidden />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-foreground">Follow UP</p>
+                    <p className="mt-0.5 text-xs leading-snug text-muted-foreground">
+                      Tracker schedules, reminders, and send history
                     </p>
                   </div>
                   <ChevronRight className="mt-2 h-4 w-4 shrink-0 text-muted-foreground/45" aria-hidden />
