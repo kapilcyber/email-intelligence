@@ -152,9 +152,8 @@ export default function AdminReviewPage() {
                   <li key={r.email} className="space-y-3 p-3">
                     <div className="min-w-0">
                       <p className="break-words font-medium text-neutral-900 dark:text-neutral-100">
-                        {r.displayName || r.email}
+                        {r.displayName?.trim() || "—"}
                       </p>
-                      <p className="break-words text-xs text-neutral-500 dark:text-neutral-400">{r.email}</p>
                     </div>
                     <p className="text-[10px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
                       Escalations
@@ -250,112 +249,127 @@ export default function AdminReviewPage() {
                   axis="horizontal"
                   className="rounded-lg border border-border [-webkit-overflow-scrolling:touch]"
                 >
-                  <table className="w-full min-w-[58rem] text-sm">
+                  <table className="w-full min-w-[58rem] border-separate border-spacing-0 text-sm">
                     <thead className="text-neutral-500 dark:text-neutral-400">
-                      <tr className="border-b border-neutral-200 dark:border-neutral-700">
+                      <tr>
                         <th
                           rowSpan={2}
-                          className="border-b border-neutral-200 px-3 py-2.5 text-left align-top font-medium text-neutral-600 dark:border-neutral-700 dark:text-neutral-300"
+                          className="border-b border-neutral-200 bg-transparent px-3 py-2.5 text-left align-top text-sm font-bold text-neutral-700 dark:border-neutral-700 dark:text-neutral-200"
                         >
                           User
                         </th>
                         <th
                           colSpan={3}
-                          className="border-b border-neutral-200 px-2 py-2 text-center text-xs font-semibold uppercase tracking-wide text-neutral-600 dark:border-neutral-700 dark:text-neutral-300"
+                          className="border-b border-l border-neutral-200 bg-transparent px-2 py-2.5 text-center text-sm font-bold uppercase tracking-wide text-neutral-700 dark:border-neutral-700 dark:text-neutral-200"
                           scope="colgroup"
                         >
                           Escalations
                         </th>
                         <th
                           colSpan={3}
-                          className="border-b border-neutral-200 px-2 py-2 text-center text-xs font-semibold uppercase tracking-wide text-neutral-600 dark:border-neutral-700 dark:text-neutral-300"
+                          className="border-b border-l border-neutral-200 bg-transparent px-2 py-2.5 text-center text-sm font-bold uppercase tracking-wide text-neutral-700 dark:border-neutral-700 dark:text-neutral-200"
                           scope="colgroup"
                         >
                           Leads
                         </th>
                         <th
                           colSpan={3}
-                          className="border-b border-neutral-200 px-2 py-2 text-center text-xs font-semibold uppercase tracking-wide text-neutral-600 dark:border-neutral-700 dark:text-neutral-300"
+                          className="border-b border-l border-neutral-200 bg-transparent px-2 py-2.5 text-center text-sm font-bold uppercase tracking-wide text-neutral-700 dark:border-neutral-700 dark:text-neutral-200"
                           scope="colgroup"
                         >
                           Project tracker
                         </th>
                       </tr>
-                      <tr className="border-b border-neutral-200 dark:border-neutral-700">
+                      <tr>
                         <th
-                          className="max-w-[5.5rem] px-2 py-2 text-center text-[11px] font-medium leading-tight"
+                          className="max-w-[5.5rem] border-b border-l border-neutral-200 bg-transparent px-2 py-2 text-center text-xs font-bold leading-tight text-neutral-700 dark:border-neutral-700 dark:text-neutral-200"
                           title="Escalation items in the last 30 days"
                         >
                           Total
                         </th>
                         <th
-                          className="max-w-[5.5rem] px-2 py-2 text-center text-[11px] font-medium leading-tight"
+                          className="max-w-[5.5rem] border-b border-neutral-200 bg-transparent px-2 py-2 text-center text-xs font-bold leading-tight text-neutral-700 dark:border-neutral-700 dark:text-neutral-200"
                           title="Threads where this user sent a reply from Sent"
                         >
                           Replied
                         </th>
                         <th
-                          className="max-w-[5.5rem] px-2 py-2 text-center text-[11px] font-medium leading-tight"
+                          className="max-w-[5.5rem] border-b border-neutral-200 bg-transparent px-2 py-2 text-center text-xs font-bold leading-tight text-neutral-700 dark:border-neutral-700 dark:text-neutral-200"
                           title="Escalations without a detected reply"
                         >
                           Pending
                         </th>
                         <th
-                          className="max-w-[5.5rem] px-2 py-2 text-center text-[11px] font-medium leading-tight"
+                          className="max-w-[5.5rem] border-b border-l border-neutral-200 bg-transparent px-2 py-2 text-center text-xs font-bold leading-tight text-neutral-700 dark:border-neutral-700 dark:text-neutral-200"
                           title="Sales lead items (Hot / Warm / Cold) in the last 30 days"
                         >
                           Total
                         </th>
                         <th
-                          className="max-w-[5.5rem] px-2 py-2 text-center text-[11px] font-medium leading-tight"
+                          className="max-w-[5.5rem] border-b border-neutral-200 bg-transparent px-2 py-2 text-center text-xs font-bold leading-tight text-neutral-700 dark:border-neutral-700 dark:text-neutral-200"
                           title="Lead threads where this user sent a reply"
                         >
                           Replied
                         </th>
                         <th
-                          className="max-w-[5.5rem] px-2 py-2 text-center text-[11px] font-medium leading-tight"
+                          className="max-w-[5.5rem] border-b border-neutral-200 bg-transparent px-2 py-2 text-center text-xs font-bold leading-tight text-neutral-700 dark:border-neutral-700 dark:text-neutral-200"
                           title="Leads without a detected reply"
                         >
                           Pending
                         </th>
                         <th
-                          className="max-w-[5.5rem] px-2 py-2 text-center text-[11px] font-medium leading-tight"
+                          className="max-w-[5.5rem] border-b border-l border-neutral-200 bg-transparent px-2 py-2 text-center text-xs font-bold leading-tight text-neutral-700 dark:border-neutral-700 dark:text-neutral-200"
                           title="Projects where an admin set a per-member tracker deadline for this user"
                         >
                           Deadlines set
                         </th>
                         <th
-                          className="max-w-[5.5rem] px-2 py-2 text-center text-[11px] font-medium leading-tight"
+                          className="max-w-[5.5rem] border-b border-neutral-200 bg-transparent px-2 py-2 text-center text-xs font-bold leading-tight text-neutral-700 dark:border-neutral-700 dark:text-neutral-200"
                           title="Qualifying tracker emails in the last 30 days"
                         >
                           Emails sent
                         </th>
                         <th
-                          className="max-w-[4.5rem] px-2 py-2 text-center text-[11px] font-medium leading-tight"
+                          className="max-w-[4.5rem] border-b border-neutral-200 bg-transparent px-2 py-2 text-center text-xs font-bold leading-tight text-neutral-700 dark:border-neutral-700 dark:text-neutral-200"
                           title="Whether at least one qualifying tracker send appears in the last 30 days"
                         >
-                          Sent?
+                          Sent
                         </th>
                       </tr>
                     </thead>
                     <tbody>
                       {mergedRows.map((r) => (
-                        <tr key={r.email} className="border-b border-neutral-100 dark:border-neutral-800">
-                          <td className="px-3 py-2.5">
+                        <tr key={r.email}>
+                          <td className="border-b border-neutral-100 bg-transparent px-3 py-2.5 dark:border-neutral-800">
                             <div className="font-medium text-neutral-900 dark:text-neutral-100">
-                              {r.displayName || r.email}
+                              {r.displayName?.trim() || "—"}
                             </div>
-                            <div className="text-xs text-neutral-500 dark:text-neutral-400">{r.email}</div>
                           </td>
-                          <td className="px-2 py-2.5 text-center tabular-nums">{r.escalationCount}</td>
-                          <td className="px-2 py-2.5 text-center tabular-nums">{r.escalationReplied}</td>
-                          <td className="px-2 py-2.5 text-center tabular-nums">{r.escalationPending}</td>
-                          <td className="px-2 py-2.5 text-center tabular-nums">{r.leadCount}</td>
-                          <td className="px-2 py-2.5 text-center tabular-nums">{r.leadReplied}</td>
-                          <td className="px-2 py-2.5 text-center tabular-nums">{r.leadPending}</td>
-                          <td className="px-2 py-2.5 text-center tabular-nums">{r.trackersSetCount}</td>
-                          <td className="px-2 py-2.5 text-center tabular-nums">{r.trackerCount}</td>
-                          <td className="px-3 py-2.5 text-center">
+                          <td className="border-b border-b-neutral-100 border-l border-l-neutral-200 bg-transparent px-2 py-2.5 text-center tabular-nums dark:border-b-neutral-800 dark:border-l-neutral-700">
+                            {r.escalationCount}
+                          </td>
+                          <td className="border-b border-neutral-100 bg-transparent px-2 py-2.5 text-center tabular-nums dark:border-neutral-800">
+                            {r.escalationReplied}
+                          </td>
+                          <td className="border-b border-neutral-100 bg-transparent px-2 py-2.5 text-center tabular-nums dark:border-neutral-800">
+                            {r.escalationPending}
+                          </td>
+                          <td className="border-b border-b-neutral-100 border-l border-l-neutral-200 bg-transparent px-2 py-2.5 text-center tabular-nums dark:border-b-neutral-800 dark:border-l-neutral-700">
+                            {r.leadCount}
+                          </td>
+                          <td className="border-b border-neutral-100 bg-transparent px-2 py-2.5 text-center tabular-nums dark:border-neutral-800">
+                            {r.leadReplied}
+                          </td>
+                          <td className="border-b border-neutral-100 bg-transparent px-2 py-2.5 text-center tabular-nums dark:border-neutral-800">
+                            {r.leadPending}
+                          </td>
+                          <td className="border-b border-b-neutral-100 border-l border-l-neutral-200 bg-transparent px-2 py-2.5 text-center tabular-nums dark:border-b-neutral-800 dark:border-l-neutral-700">
+                            {r.trackersSetCount}
+                          </td>
+                          <td className="border-b border-neutral-100 bg-transparent px-2 py-2.5 text-center tabular-nums dark:border-neutral-800">
+                            {r.trackerCount}
+                          </td>
+                          <td className="border-b border-neutral-100 bg-transparent px-3 py-2.5 text-center dark:border-neutral-800">
                             <span
                               className={cn(
                                 "inline-flex rounded-full px-2 py-0.5 text-xs font-medium",

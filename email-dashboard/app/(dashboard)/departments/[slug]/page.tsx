@@ -23,7 +23,7 @@ export default function DepartmentSlugPage() {
   return (
     <div className="min-w-0 max-w-full">
       <DepartmentSubnav />
-      <EmailsView categoryFilter={categoryFilter} title="Departments" listContext="departments" />
+      <EmailsView categoryFilter={categoryFilter} title="Departments" />
     </div>
   );
 }

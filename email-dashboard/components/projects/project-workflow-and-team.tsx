@@ -229,10 +229,6 @@ export function ProjectWorkflowAndTeamSection({
               <GitBranch className="h-5 w-5" />
               Phase workflow
             </CardTitle>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400">
-              Workflow steps from the project form (custom names or default Phase 1 … Phase 5). The status/phase selector
-              stores which numbered phase the project is in.
-            </p>
           </CardHeader>
           <CardContent>
             {phases.length === 0 ? (
@@ -253,12 +249,6 @@ export function ProjectWorkflowAndTeamSection({
                   </Fragment>
                 ))}
               </div>
-            )}
-            {typeof project.structure?.currentPhase === "number" && (
-              <p className="mt-3 text-xs text-neutral-500 dark:text-neutral-400">
-                Current phase:{" "}
-                <span className="font-medium text-neutral-700 dark:text-neutral-300">{project.structure.currentPhase}</span>
-              </p>
             )}
             {!!project.structure?.notes && (
               <p className="mt-4 rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-sm text-neutral-700 dark:border-neutral-700 dark:bg-neutral-800/50 dark:text-neutral-300">

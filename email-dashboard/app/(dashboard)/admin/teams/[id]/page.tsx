@@ -4,10 +4,9 @@ import { useEffect, useState, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { useParams } from "next/navigation";
 import { getApi } from "@/lib/api/client";
-import type { TeamOut, TeamStatusOut, UserOut } from "@/lib/types";
+import type { TeamOut, UserOut } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Mail, AlertCircle, Users } from "lucide-react";
 
 export default function AdminTeamDetailPage() {
   const params = useParams();
@@ -18,7 +17,6 @@ export default function AdminTeamDetailPage() {
     [session?.user?.email, session?.user?.name]
   );
   const [team, setTeam] = useState<TeamOut | null>(null);
-  const [teamStatus, setTeamStatus] = useState<TeamStatusOut | null>(null);
   const [members, setMembers] = useState<UserOut[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -27,14 +25,9 @@ export default function AdminTeamDetailPage() {
     if (status !== "authenticated" || !teamId) return;
     setLoading(true);
     setError(null);
-    Promise.all([
-      api.getTeam(teamId),
-      api.getTeamStatus(teamId),
-      api.getUsers({ teamId }),
-    ])
-      .then(([t, s, u]) => {
+    Promise.all([api.getTeam(teamId), api.getUsers({ teamId })])
+      .then(([t, u]) => {
         setTeam(t);
-        setTeamStatus(s ?? null);
         setMembers(u);
       })
       .catch(() => setError("Failed to load team"))
@@ -65,27 +58,6 @@ export default function AdminTeamDetailPage() {
               {team.memberCount} members
             </p>
           </div>
-          {teamStatus && (
-            <Card className="min-w-0 rounded-2xl border-border">
-              <CardHeader className="p-4 sm:p-6">
-                <CardTitle className="text-base">Team status</CardTitle>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-4 p-4 pt-0 sm:flex-row sm:flex-wrap sm:gap-6 sm:p-6 sm:pt-0">
-                <span className="flex min-w-0 items-center gap-2 text-sm">
-                  <Mail className="h-4 w-4 shrink-0" />
-                  Emails assigned: {teamStatus.emailsAssigned}
-                </span>
-                <span className="flex min-w-0 items-center gap-2 text-sm">
-                  <AlertCircle className="h-4 w-4 shrink-0" />
-                  Escalations: {teamStatus.escalationsCount}
-                </span>
-                <span className="flex min-w-0 items-center gap-2 text-sm">
-                  <Users className="h-4 w-4 shrink-0" />
-                  Leads: {teamStatus.leadsCount}
-                </span>
-              </CardContent>
-            </Card>
-          )}
           <Card className="min-w-0 rounded-2xl border-border">
             <CardHeader className="p-4 sm:p-6">
               <CardTitle className="text-base">Members</CardTitle>

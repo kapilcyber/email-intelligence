@@ -99,10 +99,6 @@ function ProjectMemberScheduleEditor({
       <p className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
         Member expected days
       </p>
-      <p className="mb-3 text-[11px] leading-relaxed text-neutral-500 dark:text-neutral-400">
-        Same weekday chips as project tracker days. Defaults to the project until you save a custom set for the
-        selected member. Their Follow-up page uses these expected days.
-      </p>
       <div className="flex flex-col gap-3">
         <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
           <div className="min-w-0 flex-1 sm:min-w-[10rem]">

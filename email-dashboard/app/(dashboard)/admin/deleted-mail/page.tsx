@@ -82,15 +82,6 @@ function DeletedMailContent() {
     load();
   }, [load]);
 
-  const handleRestore = async (emailId: string) => {
-    try {
-      await api.restoreAdminEmail(emailId);
-      load();
-    } catch {
-      setError("Could not restore email.");
-    }
-  };
-
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const buildPillHref = (slug: string) => {
@@ -194,7 +185,6 @@ function DeletedMailContent() {
         getEmailLink={(e) => `/emails/${e.id}`}
         showRetag={false}
         showMailbox
-        onRestoreEmail={handleRestore}
       />
 
       {totalPages > 1 && (

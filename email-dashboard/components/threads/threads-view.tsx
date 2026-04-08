@@ -467,9 +467,6 @@ export function ThreadsView({ basePath }: ThreadsViewProps) {
               )}
               {!threadLoading && threadEmails && threadEmails.length > 0 && (
                 <div className="space-y-3">
-                  <p className="text-xs font-medium uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
-                    Conversation (reply chain)
-                  </p>
                   {threadEmails.map((email, index) => {
                     const prevAt = index > 0 ? new Date(threadEmails[index - 1].receivedAt).getTime() : null;
                     const currAt = new Date(email.receivedAt).getTime();

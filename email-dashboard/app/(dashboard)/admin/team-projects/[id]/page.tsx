@@ -93,10 +93,13 @@ export default function AdminProjectWorkflowPage() {
               {project.name}
             </h1>
             <p className="mt-1 break-words text-xs text-neutral-500 dark:text-neutral-400 sm:text-sm">
-              {project.teamName ?? "No department"} · <span className="capitalize">{project.status}</span>
-              {typeof project.structure?.currentPhase === "number"
-                ? ` · Phase ${project.structure.currentPhase}`
-                : ""}
+              <span className="font-bold text-neutral-900 dark:text-neutral-100">
+                {project.teamName ?? "No department"}
+              </span>
+              <span className="font-normal text-neutral-400 dark:text-neutral-500"> · </span>
+              <span className="font-bold capitalize text-neutral-900 dark:text-neutral-100">
+                {project.status}
+              </span>
             </p>
             {project.projectLeadUserId && (
               <p className="mt-2 break-words text-sm text-indigo-800 dark:text-indigo-200">

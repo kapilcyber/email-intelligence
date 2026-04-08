@@ -398,10 +398,6 @@ export default function AdminTeamProjectsPage() {
               rows={4}
               className={cn(fieldClass, "min-h-[6rem] resize-y")}
             />
-            <p className="break-words text-xs font-medium leading-relaxed text-neutral-600 dark:text-neutral-400">
-              Team members on this project (pick from selected department, then switch department to add more)
-              {selectedDepartment ? ` (${filteredUsers.length} in ${selectedDepartment})` : ` (${filteredUsers.length} shown)`}
-            </p>
             <div className="space-y-2">
               <Select
                 value={projectLeadUserId || "__none__"}

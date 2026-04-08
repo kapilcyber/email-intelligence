@@ -21,27 +21,18 @@ type Props = {
   title?: string;
   /** Optional subtitle under title. */
   description?: ReactNode;
-  /** When true, hide the title subtitle and the default “Showing category only” line. */
-  suppressSubtitle?: boolean;
   /** Show per-row Retag (non-admin → admin approval; admin → immediate). */
   showRetag?: boolean;
   /** Initial search query from URL/state. */
   initialSearch?: string;
-  /**
-   * When set to `departments`, show an “All departments · N emails” line if no single category is selected
-   * (e.g. `/departments/all`). Does not affect `/emails` unless this prop is passed.
-   */
-  listContext?: "departments";
 };
 
 export function EmailsView({
   categoryFilter,
   title,
   description,
-  suppressSubtitle = false,
   showRetag = false,
   initialSearch = "",
-  listContext,
 }: Props) {
   const category = useMemo(() => {
     if (!categoryFilter) return "";
@@ -108,18 +99,7 @@ export function EmailsView({
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const defaultTitle = title ?? "Emails";
-  const defaultDescription = suppressSubtitle
-    ? null
-    : (description ??
-      (category ? (
-        <>
-          Showing <strong>{category}</strong> only · {total} email{total !== 1 ? "s" : ""}
-        </>
-      ) : listContext === "departments" ? (
-        <>
-          All departments · {total} email{total !== 1 ? "s" : ""}
-        </>
-      ) : null));
+  const defaultDescription = description ?? null;
 
   return (
     <div className="flex min-w-0 max-w-full flex-col gap-4 sm:gap-6">

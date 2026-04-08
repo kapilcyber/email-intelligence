@@ -2,19 +2,16 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { useSession } from "next-auth/react";
-import Link from "next/link";
 import { getApi } from "@/lib/api/client";
 import { downloadAoAAsXlsx } from "@/lib/download-xlsx";
 import { LenisScrollArea } from "@/components/lenis/lenis-scroll-area";
-import { cn } from "@/lib/utils";
 import { chartTooltipProps, useChartTheme } from "@/lib/use-chart-theme";
 import type { EscalationLeadItem, TeamOut, UserEscalationCountOut } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Download, Info, Table2, Users, Tags } from "lucide-react";
-import { DateRangePair } from "@/components/ui/date-range-pair";
+import { Download, Table2, Users } from "lucide-react";
 import {
   XAxis,
   YAxis,
@@ -42,9 +39,6 @@ const PRIORITY_SLICE_FILL: Record<string, string> = {
   Other: "#64748b",
 };
 
-type ViewMode = "all" | "analytics" | "table";
-type DateRange = "all" | "month" | "year" | "custom";
-
 function formatDate(s: string) {
   try {
     const d = new Date(s);
@@ -54,21 +48,6 @@ function formatDate(s: string) {
   }
 }
 
-function getDateRangeFromPreset(preset: DateRange): string {
-  const now = new Date();
-  if (preset === "all") {
-    return "";
-  }
-  if (preset === "month") {
-    const start = new Date(now.getFullYear(), now.getMonth(), 1);
-    return start.toISOString().slice(0, 10);
-  }
-  if (preset === "year") {
-    return `${now.getFullYear()}-01-01`;
-  }
-  return "";
-}
-
 export default function AdminEscalationsPage() {
   const { data: session, status } = useSession();
   const api = useMemo(
@@ -76,10 +55,6 @@ export default function AdminEscalationsPage() {
     [session?.user?.email, session?.user?.name]
   );
 
-  const [viewMode, setViewMode] = useState<ViewMode>("all");
-  const [dateRange, setDateRange] = useState<DateRange>("all");
-  const [customFrom, setCustomFrom] = useState("");
-  const [customTo, setCustomTo] = useState("");
   const [teamFilter, setTeamFilter] = useState<string>("");
   const [search, setSearch] = useState("");
   const [priorityFilter, setPriorityFilter] = useState<string>("");
@@ -88,10 +63,6 @@ export default function AdminEscalationsPage() {
   const [userCounts, setUserCounts] = useState<UserEscalationCountOut[]>([]);
   const [userCountsLoading, setUserCountsLoading] = useState(true);
   const [selectedUserEmail, setSelectedUserEmail] = useState<string | null>(null);
-  const [mailKindTab, setMailKindTab] = useState<"escalations" | "retag">("escalations");
-  const [retagItems, setRetagItems] = useState<EscalationLeadItem[]>([]);
-  const [retagTotal, setRetagTotal] = useState(0);
-  const [retagPage, setRetagPage] = useState(1);
   const [items, setItems] = useState<EscalationLeadItem[]>([]);
   const [chartItems, setChartItems] = useState<EscalationLeadItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -100,13 +71,8 @@ export default function AdminEscalationsPage() {
   const [loading, setLoading] = useState(true);
   const [chartLoading, setChartLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const fromDate = dateRange === "custom" ? customFrom : getDateRangeFromPreset(dateRange);
-  const toDate =
-    dateRange === "custom"
-      ? customTo.trim() || undefined
-      : dateRange === "month" || dateRange === "year"
-        ? new Date().toISOString().slice(0, 10)
-        : undefined;
+  const fromDate = "";
+  const toDate = undefined;
   const chart = useChartTheme();
   const tt = chartTooltipProps(chart);
 
@@ -148,26 +114,6 @@ export default function AdminEscalationsPage() {
       .finally(() => setLoading(false));
   };
 
-  const loadAdminRetag = () => {
-    if (status !== "authenticated" || !selectedUserEmail) return;
-    setLoading(true);
-    setError(null);
-    api
-      .getAdminRetagged({
-        mailbox: selectedUserEmail,
-        page: retagPage,
-        pageSize,
-        from: fromDate || undefined,
-        to: toDate,
-      })
-      .then((r) => {
-        setRetagItems(r.retagged);
-        setRetagTotal(r.total);
-      })
-      .catch(() => setError("Failed to load ReTag list"))
-      .finally(() => setLoading(false));
-  };
-
   const loadCharts = () => {
     if (status !== "authenticated" || !selectedUserEmail) return;
     setChartLoading(true);
@@ -206,35 +152,21 @@ export default function AdminEscalationsPage() {
   }, [status, selectedUserEmail]);
 
   useEffect(() => {
-    if (selectedUserEmail && mailKindTab === "escalations") loadTable();
-  }, [status, api, selectedUserEmail, page, pageSize, teamFilter, fromDate, toDate, mailKindTab]);
+    if (selectedUserEmail) loadTable();
+  }, [status, api, selectedUserEmail, page, pageSize, teamFilter, fromDate, toDate]);
 
   useEffect(() => {
-    if (selectedUserEmail && mailKindTab === "retag") loadAdminRetag();
-  }, [status, api, selectedUserEmail, mailKindTab, retagPage, pageSize, fromDate, toDate]);
-
-  useEffect(() => {
-    if (
-      selectedUserEmail &&
-      mailKindTab === "escalations" &&
-      (viewMode === "all" || viewMode === "analytics")
-    ) {
-      loadCharts();
-    }
-  }, [status, api, selectedUserEmail, viewMode, fromDate, toDate, teamFilter, mailKindTab]);
+    if (selectedUserEmail) loadCharts();
+  }, [status, api, selectedUserEmail, fromDate, toDate, teamFilter]);
 
   useEffect(() => {
     if (status !== "authenticated" || !selectedUserEmail) return;
     const id = window.setInterval(() => {
-      if (mailKindTab === "escalations") {
-        loadTable();
-        if (viewMode === "all" || viewMode === "analytics") loadCharts();
-      } else {
-        loadAdminRetag();
-      }
+      loadTable();
+      loadCharts();
     }, 30000);
     return () => window.clearInterval(id);
-  }, [status, api, selectedUserEmail, page, pageSize, teamFilter, fromDate, toDate, viewMode, mailKindTab]);
+  }, [status, api, selectedUserEmail, page, pageSize, teamFilter, fromDate, toDate]);
 
   const filteredItems = useMemo(() => {
     let list = items;
@@ -311,106 +243,18 @@ export default function AdminEscalationsPage() {
 
   return (
     <div className="flex w-full min-w-0 max-w-full flex-col gap-4 md:gap-6 lg:gap-8">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-        <header className="min-w-0 flex-1">
-          <h1 className="text-xl font-bold tracking-tight text-neutral-900 dark:text-neutral-100 sm:text-2xl">
-            Escalations
-          </h1>
-          {selectedUserEmail && (
-            <p className="mt-1 break-words text-xs leading-relaxed text-neutral-500 dark:text-neutral-400 sm:text-sm">
-              Mailbox:{" "}
-              <span className="font-medium text-neutral-700 dark:text-neutral-300">{selectedUserEmail}</span>
-            </p>
-          )}
-        </header>
+      <header className="min-w-0">
+        <h1 className="text-xl font-bold tracking-tight text-neutral-900 dark:text-neutral-100 sm:text-2xl">
+          Escalations
+        </h1>
         {selectedUserEmail && (
-          <div className="flex w-full min-w-0 flex-col gap-3 sm:w-auto sm:shrink-0 sm:items-end">
-            <div className="grid w-full grid-cols-2 gap-2 rounded-lg border border-neutral-200 p-1 dark:border-neutral-600 sm:flex sm:w-auto sm:gap-0 sm:p-0.5">
-              <button
-                type="button"
-                onClick={() => (setMailKindTab("escalations"), setPage(1))}
-                className={cn(
-                  "min-h-10 rounded-md px-3 py-2 text-xs font-medium sm:min-h-0 sm:py-1.5 sm:text-sm",
-                  mailKindTab === "escalations"
-                    ? "bg-[#1E1E1E] text-white dark:bg-neutral-700"
-                    : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-700"
-                )}
-              >
-                Escalations
-              </button>
-              <button
-                type="button"
-                onClick={() => (setMailKindTab("retag"), setRetagPage(1))}
-                className={cn(
-                  "flex min-h-10 items-center justify-center gap-1 rounded-md px-3 py-2 text-xs font-medium sm:min-h-0 sm:py-1.5 sm:text-sm",
-                  mailKindTab === "retag"
-                    ? "bg-[#1E1E1E] text-white dark:bg-neutral-700"
-                    : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-700"
-                )}
-              >
-                <Tags className="h-3.5 w-3.5 shrink-0" />
-                ReTag
-              </button>
-            </div>
-            {mailKindTab === "escalations" && (
-              <div className="flex w-full flex-col gap-1 rounded-lg border border-neutral-200 p-1 dark:border-neutral-600 sm:w-auto sm:inline-flex sm:flex-row sm:flex-wrap sm:p-0.5">
-                {(["all", "analytics", "table"] as const).map((mode) => (
-                  <button
-                    key={mode}
-                    type="button"
-                    onClick={() => setViewMode(mode)}
-                    className={cn(
-                      "min-h-10 w-full rounded-md px-3 py-2 text-left text-xs font-medium capitalize sm:min-h-0 sm:w-auto sm:py-1.5 sm:text-sm",
-                      viewMode === mode
-                        ? "bg-[#1E1E1E] text-white dark:bg-neutral-700"
-                        : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-700"
-                    )}
-                  >
-                    {mode === "all" ? "All" : mode === "analytics" ? "Analytics only" : "Table only"}
-                  </button>
-                ))}
-              </div>
-            )}
-            <div className="flex w-full min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-              <Select
-                value={dateRange}
-                onValueChange={(v) => {
-                  setDateRange(v as DateRange);
-                  setPage(1);
-                }}
-              >
-                <SelectTrigger className="h-10 w-full min-w-0 rounded-lg border-neutral-300 dark:border-neutral-600 sm:w-[160px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All time</SelectItem>
-                  <SelectItem value="month">This month</SelectItem>
-                  <SelectItem value="year">This year</SelectItem>
-                  <SelectItem value="custom">Custom range</SelectItem>
-                </SelectContent>
-              </Select>
-              {dateRange === "custom" && (
-                <div className="glass-surface w-full min-w-0 rounded-xl p-2 sm:p-3">
-                  <DateRangePair
-                    from={customFrom}
-                    to={customTo}
-                    onFromChange={(v) => {
-                      setCustomFrom(v);
-                      setPage(1);
-                    }}
-                    onToChange={(v) => {
-                      setCustomTo(v);
-                      setPage(1);
-                    }}
-                    className="w-full min-w-0"
-                    fieldClassName="relative min-w-0 flex-1"
-                  />
-                </div>
-              )}
-            </div>
-          </div>
+          <p className="mt-1 break-words text-xs leading-relaxed text-neutral-500 dark:text-neutral-400 sm:text-sm">
+            <span className="font-medium text-neutral-700 dark:text-neutral-300">
+              {selectedUser?.displayName?.trim() || selectedUserEmail.split("@")[0]}
+            </span>
+          </p>
         )}
-      </div>
+      </header>
 
       {error && (
         <div className="rounded-xl border border-red-200/80 bg-red-50/90 p-3 text-sm text-red-800 backdrop-blur-sm dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-300">
@@ -518,32 +362,27 @@ export default function AdminEscalationsPage() {
         </section>
       )}
 
-      {selectedUserEmail && mailKindTab === "escalations" && (
+      {selectedUserEmail && (
         <>
       {/* KPI cards — match dashboard gradient KPI style */}
       <section className="grid min-w-0 gap-3 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3">
         <div className="relative min-w-0 rounded-2xl border border-white/80 bg-gradient-to-br from-[#1e3a8a] via-[#2563eb] to-[#0ea5e9] p-4 text-white shadow-lg shadow-blue-200/70 transition-transform duration-300 hover:-translate-y-0.5 dark:border-neutral-700 dark:bg-neutral-900/60 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-900 dark:shadow-none sm:p-5">
           <p className="text-sm font-medium text-white/80 dark:text-neutral-400">Total escalations</p>
           <p className="mt-1 text-3xl font-semibold text-white dark:text-neutral-100">{total}</p>
-          <p className="mt-0.5 text-xs text-white/75 dark:text-neutral-400">In selected mailbox</p>
-          <Info className="absolute right-4 top-4 h-5 w-5 text-white/50 dark:text-neutral-500" aria-hidden />
         </div>
         <div className="relative min-w-0 rounded-2xl border border-white/80 bg-gradient-to-br from-[#1e3a8a] via-[#2563eb] to-[#0ea5e9] p-4 text-white shadow-lg shadow-blue-200/70 transition-transform duration-300 hover:-translate-y-0.5 dark:border-neutral-700 dark:bg-neutral-900/60 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-900 dark:shadow-none sm:p-5">
           <p className="text-sm font-medium text-white/80 dark:text-neutral-400">By team</p>
           <p className="mt-1 text-3xl font-semibold text-white dark:text-neutral-100">{donutData.length}</p>
-          <p className="mt-0.5 text-xs text-white/75 dark:text-neutral-400">Assigned teams in range</p>
         </div>
         <div className="relative min-w-0 rounded-2xl border border-white/80 bg-gradient-to-br from-[#1e3a8a] via-[#2563eb] to-[#0ea5e9] p-4 text-white shadow-lg shadow-blue-200/70 transition-transform duration-300 hover:-translate-y-0.5 dark:border-neutral-700 dark:bg-neutral-900/60 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-900 dark:shadow-none sm:col-span-2 sm:p-5 lg:col-span-1">
           <p className="text-sm font-medium text-white/80 dark:text-neutral-400">Priority levels</p>
           <p className="mt-1 text-3xl font-semibold text-white dark:text-neutral-100">
             {barData.filter((d) => d.count > 0).length}
           </p>
-          <p className="mt-0.5 text-xs text-white/75 dark:text-neutral-400">With at least one item</p>
         </div>
       </section>
 
       {/* Charts */}
-      {(viewMode === "all" || viewMode === "analytics") && (
         <div className="flex min-w-0 flex-col gap-6 md:gap-8">
           <section className="min-w-0 rounded-3xl border border-slate-100 bg-gradient-to-br from-white to-[#f7fbff] p-4 shadow-md shadow-slate-100/70 dark:border-neutral-700 dark:from-neutral-900 dark:to-neutral-900 dark:shadow-none sm:p-6">
             <h3 className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-neutral-400 sm:mb-4">
@@ -746,16 +585,14 @@ export default function AdminEscalationsPage() {
             </section>
           </div>
         </div>
-      )}
 
       {/* Table */}
-      {(viewMode === "all" || viewMode === "table") && (
         <Card className="min-w-0 max-w-full overflow-hidden rounded-2xl border-border">
           <CardHeader className="space-y-4 p-4 pb-4 sm:p-6">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <CardTitle className="flex min-w-0 items-center gap-2 text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between sm:gap-x-8 sm:gap-y-0">
+              <CardTitle className="flex min-w-0 items-center gap-3.5 whitespace-nowrap text-sm font-semibold leading-snug tracking-normal text-neutral-900 dark:text-neutral-100">
                 <Table2 className="h-5 w-5 shrink-0 text-sky-600 dark:text-sky-400" />
-                <span className="min-w-0 break-words">Escalations table</span>
+                Escalations table
               </CardTitle>
               <div className="grid w-full min-w-0 grid-cols-1 gap-2 sm:flex sm:max-w-none sm:flex-wrap sm:items-center">
                 <Select
@@ -971,114 +808,7 @@ export default function AdminEscalationsPage() {
             )}
           </CardContent>
         </Card>
-      )}
         </>
-      )}
-
-      {selectedUserEmail && mailKindTab === "retag" && (
-        <section className="min-w-0 overflow-hidden rounded-3xl border border-cyan-100 bg-gradient-to-br from-white to-[#edf8ff] p-4 shadow-md shadow-cyan-100/60 dark:border-neutral-700 dark:from-neutral-900 dark:to-neutral-900 dark:shadow-none sm:p-6">
-          <CardHeader className="p-0 pb-3 sm:pb-4">
-            <CardTitle className="flex flex-wrap items-center gap-2 text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-              <Tags className="h-5 w-5 shrink-0 text-cyan-600 dark:text-cyan-400" />
-              <span className="min-w-0 break-words">
-                ReTag — <span className="tabular-nums">{retagTotal}</span>
-              </span>
-            </CardTitle>
-            <p className="mt-1 break-words text-xs text-neutral-500 dark:text-neutral-400 sm:text-sm">
-              {selectedUserEmail} — mail this user retagged from escalation/lead into another department.
-            </p>
-          </CardHeader>
-          <CardContent className="p-0">
-            {loading ? (
-              <Skeleton className="h-48 w-full rounded-lg sm:h-64" />
-            ) : retagItems.length === 0 ? (
-              <p className="py-12 text-center text-sm text-neutral-500 dark:text-neutral-400">No retagged mail.</p>
-            ) : (
-              <>
-                <ul className="divide-y divide-neutral-200 rounded-xl border border-neutral-200/80 dark:divide-neutral-700 dark:border-neutral-700 md:hidden">
-                  {retagItems.map((item) => (
-                    <li key={item.id} className="min-w-0 space-y-2 p-3">
-                      <Link
-                        href={`/emails/${item.id}`}
-                        className="block text-sm font-medium leading-snug text-neutral-900 hover:underline dark:text-neutral-50"
-                      >
-                        <span className="line-clamp-2">{item.subject || "(No subject)"}</span>
-                      </Link>
-                      <p className="text-xs text-neutral-600 dark:text-neutral-400">
-                        <span className="font-medium">Department:</span> {item.assignedTeam ?? "—"}
-                      </p>
-                      <p className="break-words text-xs tabular-nums text-neutral-500 dark:text-neutral-400">
-                        {item.retaggedAt ? formatDate(item.retaggedAt) : "—"}
-                        {item.retagPreviousSummary ? (
-                          <span className="mt-1 block font-normal">{item.retagPreviousSummary}</span>
-                        ) : null}
-                      </p>
-                    </li>
-                  ))}
-                </ul>
-                <div className="hidden min-w-0 md:block">
-                  <LenisScrollArea
-                    axis="horizontal"
-                    className="rounded-xl border border-neutral-200/80 bg-white/40 [-webkit-overflow-scrolling:touch] dark:border-neutral-700 dark:bg-neutral-800/30"
-                  >
-                    <table className="min-w-[560px] w-full text-left text-sm">
-                      <thead className="border-b border-neutral-200 bg-neutral-50/90 dark:border-neutral-700 dark:bg-neutral-800/50">
-                        <tr>
-                          <th className="whitespace-nowrap px-4 py-3">Subject</th>
-                          <th className="whitespace-nowrap px-4 py-3">Department</th>
-                          <th className="whitespace-nowrap px-4 py-3">Retagged</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-neutral-200 dark:divide-neutral-700">
-                        {retagItems.map((item) => (
-                          <tr key={item.id}>
-                            <td className="px-4 py-3">
-                              <Link
-                                href={`/emails/${item.id}`}
-                                className="font-medium text-neutral-900 hover:underline dark:text-neutral-50"
-                              >
-                                {item.subject || "(No subject)"}
-                              </Link>
-                            </td>
-                            <td className="px-4 py-3">{item.assignedTeam ?? "—"}</td>
-                            <td className="px-4 py-3 text-xs text-neutral-500">
-                              {item.retaggedAt ? formatDate(item.retaggedAt) : "—"}
-                              {item.retagPreviousSummary ? ` · ${item.retagPreviousSummary}` : ""}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </LenisScrollArea>
-                </div>
-              </>
-            )}
-            {Math.ceil(retagTotal / pageSize) > 1 && (
-              <div className="mt-4 grid grid-cols-1 gap-2 sm:flex sm:justify-between">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-9 w-full sm:w-auto"
-                  disabled={retagPage <= 1}
-                  onClick={() => setRetagPage((p) => p - 1)}
-                >
-                  Previous
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-9 w-full sm:w-auto"
-                  disabled={retagPage >= Math.ceil(retagTotal / pageSize)}
-                  onClick={() => setRetagPage((p) => p + 1)}
-                >
-                  Next
-                </Button>
-              </div>
-            )}
-          </CardContent>
-        </section>
       )}
     </div>
   );

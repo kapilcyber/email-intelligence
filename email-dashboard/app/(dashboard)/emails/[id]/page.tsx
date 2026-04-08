@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo, useRef } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { getApi } from "@/lib/api/client";
@@ -19,7 +19,6 @@ import {
   AlertTriangle,
   RefreshCw,
   Send,
-  Trash2,
 } from "lucide-react";
 import { PriorityBadge } from "@/components/status/priority-badge";
 import {
@@ -54,7 +53,6 @@ const AI_POLL_TIMEOUT_MS = 3 * 60 * 1000;
 const AI_POLL_MAX_FAILURES = 5;
 
 export default function EmailDetailPage() {
-  const router = useRouter();
   const { data: session, status } = useSession();
   const api = useMemo(
     () => getApi(session?.user?.email ?? null, session?.user?.name ?? null),
@@ -69,7 +67,6 @@ export default function EmailDetailPage() {
   const [pollNotice, setPollNotice] = useState<string | null>(null);
   const [sendReplyIndex, setSendReplyIndex] = useState<number | null>(null);
   const [replyAllMessage, setReplyAllMessage] = useState<{ type: "ok" | "err"; text: string } | null>(null);
-  const [softDeleting, setSoftDeleting] = useState(false);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const clearAiPoll = () => {
@@ -133,10 +130,6 @@ export default function EmailDetailPage() {
     rawBodyContent && isHtml ? sanitizeEmailHtml(rawBodyContent) : rawBodyContent;
   const displayFolder = folderLabel(email.folder);
 
-  const sessionEmail = (session?.user?.email ?? "").trim().toLowerCase();
-  const mailboxOwner = (email.mailboxOwnerEmail ?? "").trim().toLowerCase();
-  const isMailboxOwner = Boolean(sessionEmail && mailboxOwner && sessionEmail === mailboxOwner);
-
   const hasSummary = email.summary != null && String(email.summary).trim() !== "";
   if (email.summary === undefined || email.summary === null) {
     if (typeof window !== "undefined") console.log("[Email detail] summary is undefined for email", email.id);
@@ -167,20 +160,6 @@ export default function EmailDetailPage() {
       });
     } finally {
       setSendReplyIndex(null);
-    }
-  };
-
-  const handleRemoveFromHistory = async () => {
-    if (!id || !email || softDeleting) return;
-    if (!window.confirm("Remove this message from your History? Admins can still see it under Deleted mail.")) return;
-    setSoftDeleting(true);
-    try {
-      await api.softDeleteEmail(id);
-      router.push("/emails");
-    } catch {
-      setReplyAllMessage({ type: "err", text: "Could not remove from History." });
-    } finally {
-      setSoftDeleting(false);
     }
   };
 
@@ -269,24 +248,9 @@ export default function EmailDetailPage() {
               <strong>Admin → Deleted mail</strong>.
             </p>
           ) : null}
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <h1 className="min-w-0 break-words text-xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50 sm:text-2xl">
-              {email.subject || "(No subject)"}
-            </h1>
-            {isMailboxOwner && !email.deletedAt ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="shrink-0 gap-1.5 border-neutral-300 text-neutral-700 dark:border-neutral-600 dark:text-neutral-200"
-                disabled={softDeleting}
-                onClick={() => void handleRemoveFromHistory()}
-              >
-                <Trash2 className="h-4 w-4" aria-hidden />
-                {softDeleting ? "Removing…" : "Remove from History"}
-              </Button>
-            ) : null}
-          </div>
+          <h1 className="min-w-0 break-words text-xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50 sm:text-2xl">
+            {email.subject || "(No subject)"}
+          </h1>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <div className="flex gap-3">
               <Mail className="mt-0.5 h-4 w-4 shrink-0 text-neutral-400" />
@@ -367,11 +331,6 @@ export default function EmailDetailPage() {
                     }`}
                 >
                   {email.aiStatus === "completed" ? "Completed" : email.aiStatus === "failed" ? "Failed" : "Pending"}
-                </span>
-              )}
-              {email.aiProcessedAt && (
-                <span className="text-xs text-neutral-500 dark:text-neutral-400">
-                  Processed {formatDate(email.aiProcessedAt)}
                 </span>
               )}
             </div>
