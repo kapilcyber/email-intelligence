@@ -180,7 +180,7 @@ export function DropdownMenuContent({
         ref={menuRef}
         role="menu"
         className={cn(
-          "fixed flex flex-col overflow-hidden rounded-md border border-border bg-panel text-foreground shadow-lg outline-none",
+          "fixed flex flex-col overflow-hidden rounded-xl border border-border bg-panel text-foreground shadow-lg outline-none backdrop-blur-md",
           className
         )}
         style={{

@@ -26,6 +26,7 @@ KEY_PREFIX = "user_queue_outstanding:"
 TRACKED_TASK_NAMES = frozenset(
     {
         "app.workers.tasks.ingest_email_task",
+        "app.workers.tasks.ingest_email_chunk_task",
         "app.workers.tasks.classify_email_task",
         "app.workers.tasks.notify_sales_lead_task",
         "app.workers.tasks.backfill_emails_task",
@@ -121,6 +122,10 @@ def mailbox_from_tracked_task(task_name: str, args: Any, kwargs: Any) -> str | N
         uid = user_id or resource_to_user_id(resource)
         return normalize_mailbox_key(uid)
 
+    if task_name == "app.workers.tasks.ingest_email_chunk_task":
+        uid = args[0] if args else kwargs.get("user_id")
+        return normalize_mailbox_key(uid)
+
     if task_name == "app.workers.tasks.classify_email_task":
         mb = kwargs.get("mailbox_owner_email")
         if mb:
@@ -195,7 +200,14 @@ def _user_queue_task_postrun(
         return
     mb = mailbox_from_tracked_task(name, args, kwargs)
     if mb:
-        user_queue_decr(mb, 1)
+        if name == "app.workers.tasks.ingest_email_chunk_task":
+            args = _coerce_seq(args)
+            kwargs = _coerce_kwargs(kwargs)
+            gids = args[2] if len(args) > 2 else kwargs.get("graph_ids")
+            n = len(gids) if isinstance(gids, (list, tuple)) else 1
+            user_queue_decr(mb, max(1, n))
+        else:
+            user_queue_decr(mb, 1)
 
 
 def count_active_reserved_for_mailbox(mailbox_key: str | None, celery_app: Any) -> int:

@@ -13,7 +13,6 @@ import {
 import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
-import { DateRangePair } from "@/components/ui/date-range-pair";
 import { getApi } from "@/lib/api/client";
 import { LenisScrollArea } from "@/components/lenis/lenis-scroll-area";
 import { cn } from "@/lib/utils";
@@ -33,12 +32,8 @@ import Link from "next/link";
 import {
   RefreshCw,
   Sparkles,
-  FileText,
-  FileEdit,
   FileStack,
   ClipboardList,
-  MoreHorizontal,
-  Calendar,
   ExternalLink,
   Video,
   type LucideIcon,
@@ -765,13 +760,11 @@ function DashboardSyncActionTile({
   icon: Icon,
   disabled,
   onClick,
-  layout,
 }: {
   title: string;
   icon: LucideIcon;
   disabled: boolean;
   onClick: () => void;
-  layout: "mobileRow" | "xlGrid";
 }) {
   return (
     <button
@@ -780,109 +773,20 @@ function DashboardSyncActionTile({
       disabled={disabled}
       className={cn(
         syncActionTileBase,
-        layout === "mobileRow" &&
-        "min-h-[92px] flex-1 basis-0 px-1 py-2.5 sm:min-h-[104px] sm:px-2 sm:py-3 md:min-h-[118px] md:px-3 md:py-4",
-        layout === "xlGrid" && "h-full min-h-[152px] w-full px-2 py-3 sm:px-3 sm:py-4"
+        "h-full min-h-[86px] w-full px-1.5 py-2 sm:min-h-[96px] sm:px-2 sm:py-2.5 md:min-h-[108px] md:px-2.5 md:py-3 xl:min-h-[148px] xl:px-3 xl:py-4"
       )}
     >
-      <div
-        className={cn(
-          "flex shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-sky-500 text-white shadow-sm dark:from-indigo-600 dark:to-sky-600 sm:rounded-xl",
-          layout === "mobileRow" && "h-9 w-9 sm:h-12 sm:w-12 md:h-16 md:w-16",
-          layout === "xlGrid" && "h-12 w-12 sm:h-14 sm:w-14 md:h-16 md:w-16"
-        )}
-      >
-        <Icon
-          className={cn(
-            layout === "mobileRow" && "h-[1.15rem] w-[1.15rem] sm:h-6 sm:w-6 md:h-8 md:w-8",
-            layout === "xlGrid" && "h-5 w-5 sm:h-6 sm:w-6 md:h-7 md:w-7"
-          )}
-          aria-hidden
-        />
+      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-sky-500 text-white shadow-sm dark:from-indigo-600 dark:to-sky-600 sm:h-14 sm:w-14 sm:rounded-xl md:h-[3.75rem] md:w-[3.75rem] xl:h-16 xl:w-16">
+        <Icon className="h-[1.35rem] w-[1.35rem] sm:h-6 sm:w-6 md:h-7 md:w-7 xl:h-8 xl:w-8" aria-hidden />
       </div>
-      <span
-        className={cn(
-          "line-clamp-2 max-w-full font-medium leading-tight text-neutral-800 dark:text-neutral-200",
-          layout === "mobileRow" && "text-[0.625rem] sm:text-[0.7rem] md:text-xs",
-          layout === "xlGrid" && "text-[0.65rem] sm:text-xs"
-        )}
-      >
+      <span className="line-clamp-2 max-w-full text-[0.75rem] font-semibold leading-snug text-neutral-800 dark:text-neutral-200 sm:text-[0.8125rem] md:text-sm xl:text-[0.9375rem]">
         {title}
       </span>
     </button>
   );
 }
 
-function DashboardSyncDateRangeCard({
-  from,
-  to,
-  onFromChange,
-  onToChange,
-  onSync,
-  syncRangeLoading,
-  syncDisabled,
-  layout,
-}: {
-  from: string;
-  to: string;
-  onFromChange: (v: string) => void;
-  onToChange: (v: string) => void;
-  onSync: () => void;
-  syncRangeLoading: boolean;
-  syncDisabled: boolean;
-  layout: "mobile" | "xlGrid";
-}) {
-  return (
-    <div
-      className={cn(
-        "flex w-full min-w-0 flex-col justify-center gap-3 rounded-2xl border border-white/70 bg-gradient-to-br from-white to-[#edf8ff] shadow-md shadow-cyan-100/60 dark:border-neutral-700 dark:bg-neutral-900/70 dark:from-neutral-900 dark:to-neutral-900 dark:shadow-none",
-        layout === "mobile" && "min-h-[118px] px-3 py-4 sm:px-4 sm:py-5",
-        layout === "xlGrid" && "h-full min-h-[152px] gap-2 px-3 py-3 sm:gap-3 sm:px-3 sm:py-4"
-      )}
-    >
-      <div
-        className={cn(
-          "flex min-w-0 gap-2",
-          layout === "mobile" && "flex-col sm:flex-row sm:items-center sm:gap-3",
-          layout === "xlGrid" && "flex-col"
-        )}
-      >
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sky-100 text-sky-600 dark:bg-sky-900/30 dark:text-sky-400 sm:h-12 sm:w-12">
-          <Calendar className="h-5 w-5 sm:h-6 sm:w-6" aria-hidden />
-        </div>
-        <span className="min-w-0 break-words text-sm font-semibold leading-snug text-neutral-800 dark:text-neutral-100">
-          Sync mails by date range
-        </span>
-      </div>
-      <DateRangePair
-        from={from}
-        to={to}
-        onFromChange={onFromChange}
-        onToChange={onToChange}
-        className={cn(
-          "min-w-0 w-full",
-          layout === "mobile" && "flex flex-wrap items-center gap-2",
-          layout === "xlGrid" && "flex flex-col items-stretch gap-2"
-        )}
-        fieldClassName={
-          layout === "xlGrid" ? "relative min-w-0 w-full" : "relative min-w-0 flex-1"
-        }
-      />
-      <Button
-        type="button"
-        onClick={onSync}
-        disabled={syncRangeLoading || syncDisabled}
-        className="h-10 w-full bg-gradient-to-r from-indigo-600 to-sky-600 text-sm text-white hover:from-indigo-700 hover:to-sky-700"
-      >
-        {syncRangeLoading ? "Syncing mails…" : "Run mail sync"}
-      </Button>
-    </div>
-  );
-}
-
 function syncActionCardTitle(label: string) {
-  if (label === "Sync for today") return "Sync 1 day";
-  if (label === "Sync inbox (7 days)") return "Sync 7 days";
   if (label === "Sync all emails") return "Sync all mail";
   return "Classify all mail";
 }
@@ -922,7 +826,6 @@ function DashboardPageContent() {
   const syncStopRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const syncActionsRef = useRef<HTMLDivElement>(null);
-  const kpiCardsRef = useRef<HTMLDivElement>(null);
   const activityMapRef = useRef<HTMLDivElement>(null);
   const rightColumnRef = useRef<HTMLDivElement>(null);
   const departmentsCardRef = useRef<HTMLDivElement>(null);
@@ -1198,7 +1101,7 @@ function DashboardPageContent() {
     };
   }, []);
 
-  const onSyncInbox = (syncAll = false, days?: number) => {
+  const onSyncAllMail = () => {
     setBackfillStatus(null);
     if (syncPollRef.current) {
       clearInterval(syncPollRef.current);
@@ -1208,9 +1111,8 @@ function DashboardPageContent() {
       clearTimeout(syncStopRef.current);
       syncStopRef.current = null;
     }
-    const body = syncAll ? { all: true } : days !== undefined ? { days } : {};
     api
-      .triggerBackfill(body)
+      .triggerBackfill({ all: true })
       .then((r) => {
         const msg = r.message ?? "Sync started. Refreshing automatically.";
         const noWorkers = (metrics?.activeWorkers ?? 0) === 0;
@@ -1229,7 +1131,7 @@ function DashboardPageContent() {
           }
           syncStopRef.current = null;
         }, 35000);
-        enqueueOutlookDeletedSyncForAdmins(syncAll ? 90 : days !== undefined ? days : 7);
+        enqueueOutlookDeletedSyncForAdmins(90);
       })
       .catch((e) => setBackfillStatus(e instanceof Error ? e.message : "Sync failed."));
   };
@@ -1246,64 +1148,21 @@ function DashboardPageContent() {
       .finally(() => setClassifyLoading(false));
   };
 
-  const [syncFromDate, setSyncFromDate] = useState("");
-  const [syncToDate, setSyncToDate] = useState("");
-  const [syncRangeLoading, setSyncRangeLoading] = useState(false);
-
-  const onSyncByDateRange = () => {
-    const from = (syncFromDate || "").trim();
-    const to = (syncToDate || "").trim();
-    if (!from && !to) {
-      setBackfillStatus("Please choose at least a From date or To date.");
-      return;
-    }
-    setSyncRangeLoading(true);
-    setBackfillStatus(null);
-    if (syncPollRef.current) {
-      clearInterval(syncPollRef.current);
-      syncPollRef.current = null;
-    }
-    if (syncStopRef.current) {
-      clearTimeout(syncStopRef.current);
-      syncStopRef.current = null;
-    }
-    api
-      .triggerBackfill({ from_date: from || undefined, to_date: to || undefined })
-      .then((r) => {
-        const msg = r.message ?? "Sync started. Refreshing automatically.";
-        const noWorkers = (metrics?.activeWorkers ?? 0) === 0;
-        setBackfillStatus(
-          noWorkers
-            ? `${msg} If emails don't appear, start a Celery worker.`
-            : msg
-        );
-        refresh();
-        setTimeout(() => refresh(), 1000);
-        syncPollRef.current = setInterval(() => refresh(), 2500);
-        syncStopRef.current = setTimeout(() => {
-          if (syncPollRef.current) {
-            clearInterval(syncPollRef.current);
-            syncPollRef.current = null;
-          }
-          syncStopRef.current = null;
-        }, 35000);
-        enqueueOutlookDeletedSyncForAdmins(90);
-      })
-      .catch((e) => setBackfillStatus(e instanceof Error ? e.message : "Sync failed."))
-      .finally(() => setSyncRangeLoading(false));
-  };
-
   const actionCards = [
-    { label: "Sync for today", icon: FileText, onClick: () => onSyncInbox(false, 1) },
-    { label: "Sync inbox (7 days)", icon: FileEdit, onClick: () => onSyncInbox(false) },
-    { label: "Sync all emails", icon: FileStack, onClick: () => onSyncInbox(true) },
+    { label: "Sync all emails", icon: FileStack, onClick: onSyncAllMail },
     { label: "Classify all", icon: ClipboardList, onClick: onClassifyAll },
   ];
 
+  const pc = metrics?.priorityCounts;
+  const urgentPriorityCount = (pc?.Critical ?? 0) + (pc?.High ?? 0);
   const kpiCards = [
     { title: "Emails Today", value: loadingMetrics ? "—" : (metrics?.emailsIngestedToday ?? 0), subtitle: "Received today" },
     { title: "Queue Size", value: loadingMetrics ? "—" : (metrics?.queueSize ?? 0), subtitle: "Your tasks pending" },
-    { title: "Workers", value: loadingMetrics ? "—" : `${metrics?.activeWorkers ?? 0} active`, subtitle: "Active workers" },
+    {
+      title: "Critical & High",
+      value: loadingMetrics ? "—" : urgentPriorityCount,
+      subtitle: "Priority in your mailbox",
+    },
     {
       title: "Classified",
       value: loadingMetrics ? "—" : `${metrics?.totalClassified ?? 0} / ${metrics?.totalEmails ?? 0}`,
@@ -1314,15 +1173,10 @@ function DashboardPageContent() {
   const dashboardTourSteps = useMemo<DashboardTourStep[]>(
     () => [
       {
-        title: "Sync action cards",
+        title: "Sync & metrics",
         description:
-          "These cards control inbox sync and AI classification. On large screens they share one row with equal width; on smaller screens the four quick actions stay in a row with date-range sync below. Start with Sync 1 day or Sync 7 days for routine use.",
+          "Sync all mail pulls from Microsoft but only queues messages that are not already in the database. Classify all runs AI on pending messages. Beside them: emails today, queue, Critical & High, and classification progress. On wide screens this is one row; on smaller screens a 2-column grid.",
         target: syncActionsRef,
-      },
-      {
-        title: "KPI summary cards",
-        description: "These four cards show key status: emails today, queue size, active workers, and classification progress.",
-        target: kpiCardsRef,
       },
       {
         title: "Charts",
@@ -1440,106 +1294,48 @@ function DashboardPageContent() {
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
           <p className="font-medium">Why no emails?</p>
           <p className="mt-1 break-words text-xs">
-            Ensure PostgreSQL, Redis, and Celery worker are running, then use <strong>Sync 1 day</strong> or{" "}
-            <strong>Sync 7 days</strong> below.
+            Ensure PostgreSQL, Redis, and Celery worker are running, then use <strong>Sync all mail</strong> below.
           </p>
         </div>
       )}
 
-      {/* Sync actions: mobile/tablet = row of 4 + date card below; xl+ = five equal-width columns */}
+      {/* Sync + classify + KPIs: 2-column on small screens, one row of 6 from md */}
       <section
         ref={syncActionsRef}
         className={cn(
-          "flex min-w-0 flex-col gap-4",
-          isActiveTourSection(0) && "rounded-xl ring-2 ring-indigo-400/70",
+          "grid min-w-0 grid-cols-2 gap-3 sm:gap-4 md:grid-cols-6 xl:grid-cols-6 xl:gap-5",
+          isActiveTourSection(0) && "rounded-xl ring-2 ring-indigo-400/70 p-1",
           isBlurredTourSection(0) && "opacity-55"
         )}
       >
-        <div className="flex w-full min-w-0 flex-col gap-3 sm:gap-4">
-          <div className="flex min-w-0 w-full flex-nowrap items-stretch gap-1.5 sm:gap-3 md:gap-4 xl:hidden">
-            {actionCards.map(({ label, icon, onClick }) => {
-              const disabled =
-                (label === "Classify all" && classifyLoading) || (label.startsWith("Sync") && loadingMetrics);
-              return (
-                <DashboardSyncActionTile
-                  key={label}
-                  title={syncActionCardTitle(label)}
-                  icon={icon}
-                  disabled={disabled}
-                  onClick={onClick}
-                  layout="mobileRow"
-                />
-              );
-            })}
-          </div>
-
-          <div className="hidden min-w-0 xl:grid xl:grid-cols-5 xl:items-stretch xl:gap-5">
-            {actionCards.map(({ label, icon, onClick }) => {
-              const disabled =
-                (label === "Classify all" && classifyLoading) || (label.startsWith("Sync") && loadingMetrics);
-              return (
-                <div key={label} className="flex min-h-[152px] min-w-0">
-                  <DashboardSyncActionTile
-                    title={syncActionCardTitle(label)}
-                    icon={icon}
-                    disabled={disabled}
-                    onClick={onClick}
-                    layout="xlGrid"
-                  />
-                </div>
-              );
-            })}
-            <div className="flex min-h-[152px] min-w-0">
-              <DashboardSyncDateRangeCard
-                layout="xlGrid"
-                from={syncFromDate}
-                to={syncToDate}
-                onFromChange={setSyncFromDate}
-                onToChange={setSyncToDate}
-                onSync={onSyncByDateRange}
-                syncRangeLoading={syncRangeLoading}
-                syncDisabled={loadingMetrics}
+        {actionCards.map(({ label, icon, onClick }) => {
+          const disabled =
+            (label === "Classify all" && classifyLoading) || (label.startsWith("Sync") && loadingMetrics);
+          return (
+            <div key={label} className="flex min-h-0 min-w-0">
+              <DashboardSyncActionTile
+                title={syncActionCardTitle(label)}
+                icon={icon}
+                disabled={disabled}
+                onClick={onClick}
               />
             </div>
-          </div>
-
-          <div className="xl:hidden">
-            <DashboardSyncDateRangeCard
-              layout="mobile"
-              from={syncFromDate}
-              to={syncToDate}
-              onFromChange={setSyncFromDate}
-              onToChange={setSyncToDate}
-              onSync={onSyncByDateRange}
-              syncRangeLoading={syncRangeLoading}
-              syncDisabled={loadingMetrics}
-            />
-          </div>
-        </div>
-      </section>
-
-      {/* KPI cards */}
-      <section
-        ref={kpiCardsRef}
-        className={cn(
-          "grid grid-cols-2 gap-4 sm:gap-5 lg:grid-cols-4",
-          isActiveTourSection(1) && "rounded-xl ring-2 ring-indigo-400/70 p-1",
-          isBlurredTourSection(1) && "opacity-55"
-        )}
-      >
+          );
+        })}
         {kpiCards.map(({ title, value, subtitle }) => (
           <div
             key={title}
-            className="relative min-w-0 rounded-2xl border border-white/80 bg-gradient-to-br from-[#1e3a8a] via-[#2563eb] to-[#0ea5e9] p-3 text-white shadow-lg shadow-blue-200/70 transition-transform duration-300 hover:-translate-y-0.5 dark:border-neutral-700 dark:bg-neutral-900/60 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-900 dark:shadow-none sm:p-5"
+            className="relative flex min-h-[86px] min-w-0 flex-col justify-center rounded-2xl border border-white/80 bg-gradient-to-br from-[#1e3a8a] via-[#2563eb] to-[#0ea5e9] p-3 text-white shadow-lg shadow-blue-200/70 transition-transform duration-300 hover:-translate-y-0.5 dark:border-neutral-700 dark:bg-neutral-900/60 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-900 dark:shadow-none sm:min-h-[96px] sm:p-4 md:min-h-[108px] md:p-4 xl:min-h-[148px] xl:p-5"
           >
-            <button type="button" className="absolute right-1.5 top-1.5 rounded p-1 text-white/70 hover:bg-white/15 hover:text-white dark:text-neutral-400 dark:hover:bg-neutral-700 dark:hover:text-neutral-300 sm:right-2 sm:top-2" aria-label="More">
-              <MoreHorizontal className="h-4 w-4" />
-            </button>
-            <p className="pr-7 text-xs font-medium leading-tight text-white/80 dark:text-neutral-400 sm:text-sm">{title}</p>
-            <p className="mt-1 min-w-0 break-words text-xl font-semibold tabular-nums leading-tight text-white dark:text-neutral-100 sm:text-2xl md:text-3xl">
+            <p className="text-[0.65rem] font-medium leading-tight text-white/80 dark:text-neutral-400 sm:text-xs md:text-sm">
+              {title}
+            </p>
+            <p className="mt-0.5 min-w-0 break-words text-lg font-semibold tabular-nums leading-tight text-white dark:text-neutral-100 sm:text-xl md:text-2xl xl:text-3xl">
               {value}
             </p>
-            <p className="mt-0.5 text-[10px] leading-tight text-white/75 dark:text-neutral-400 sm:text-xs">{subtitle}</p>
+            <p className="mt-0.5 text-[9px] leading-tight text-white/75 dark:text-neutral-400 sm:text-[10px] md:text-xs">
+              {subtitle}
+            </p>
           </div>
         ))}
       </section>
@@ -1550,8 +1346,8 @@ function DashboardPageContent() {
           ref={activityMapRef}
           className={cn(
             "min-w-0 lg:col-span-2",
-            isActiveTourSection(2) && "rounded-xl ring-2 ring-indigo-400/70 p-1",
-            isBlurredTourSection(2) && "opacity-55"
+            isActiveTourSection(1) && "rounded-xl ring-2 ring-indigo-400/70 p-1",
+            isBlurredTourSection(1) && "opacity-55"
           )}
         >
           <section className="min-w-0 overflow-x-hidden rounded-3xl border border-slate-100 bg-gradient-to-br from-white to-[#f7fbff] p-4 shadow-md shadow-slate-100/70 dark:border-neutral-700 dark:from-neutral-900 dark:to-neutral-900 dark:shadow-none sm:p-5 md:p-6">
@@ -1568,52 +1364,15 @@ function DashboardPageContent() {
           ref={rightColumnRef}
           className={cn(
             "flex min-w-0 flex-col gap-4 sm:gap-6",
-            dashboardTourOpen && ![3, 4].includes(dashboardTourStep) && "opacity-55"
+            dashboardTourOpen && ![2, 3].includes(dashboardTourStep) && "opacity-55"
           )}
         >
-          {myProjects.length > 0 && (
-            <div className="rounded-3xl border border-neutral-100 bg-gradient-to-br from-white to-[#f8fbff] p-4 shadow-md shadow-neutral-100/70 dark:border-neutral-700 dark:from-neutral-900 dark:to-neutral-900 dark:shadow-none sm:p-5">
-              <div className="mb-4 flex items-center justify-between gap-2">
-                <h2 className="min-w-0 text-sm font-semibold text-neutral-900 dark:text-neutral-100">My projects</h2>
-                <button type="button" className="rounded p-1 text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-700" aria-label="More">
-                  <MoreHorizontal className="h-4 w-4" />
-                </button>
-              </div>
-              <ul className="space-y-2">
-                {myProjects.slice(0, 6).map((p) => (
-                  <li key={p.projectId} className="rounded-lg border border-neutral-200 bg-neutral-50/50 p-3 dark:border-neutral-700 dark:bg-neutral-800/40">
-                    <div className="flex items-start justify-between gap-2">
-                      <p className="min-w-0 flex-1 break-words text-sm font-medium text-neutral-900 dark:text-neutral-100">
-                        {p.projectName}
-                      </p>
-                      <span className="rounded bg-neutral-200 px-2 py-0.5 text-[10px] font-medium uppercase text-neutral-700 dark:bg-neutral-700 dark:text-neutral-200">
-                        {p.status}
-                      </span>
-                    </div>
-                    <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-                      Team: {p.teamName ?? "—"} · Role: {p.role ?? "—"}
-                    </p>
-                    {p.responsibilities && (
-                      <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-300">
-                        {p.responsibilities}
-                      </p>
-                    )}
-                    {p.structure?.notes && (
-                      <p className="mt-1 line-clamp-2 text-[11px] text-neutral-500 dark:text-neutral-400">
-                        {p.structure.notes}
-                      </p>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
           <div
             ref={meetingsCardRef}
             className={cn(
               "min-w-0 overflow-hidden rounded-3xl border border-sky-100 bg-gradient-to-br from-white via-sky-50 to-cyan-50 p-4 shadow-md shadow-sky-100/60 dark:border-neutral-700 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 dark:shadow-none sm:p-5",
-              isActiveTourSection(3) && "ring-2 ring-sky-400/70",
-              isBlurredTourSection(3) && "opacity-55"
+              isActiveTourSection(2) && "ring-2 ring-sky-400/70",
+              isBlurredTourSection(2) && "opacity-55"
             )}
           >
             <div className="mb-4 flex items-start justify-between gap-3 border-b border-sky-100/90 pb-3 dark:border-neutral-700">
@@ -1765,26 +1524,51 @@ function DashboardPageContent() {
               </div>
             )}
           </div>
+          {myProjects.length > 0 && (
+            <div className="rounded-3xl border border-neutral-100 bg-gradient-to-br from-white to-[#f8fbff] p-4 shadow-md shadow-neutral-100/70 dark:border-neutral-700 dark:from-neutral-900 dark:to-neutral-900 dark:shadow-none sm:p-5">
+              <div className="mb-4">
+                <h2 className="min-w-0 text-sm font-semibold text-neutral-900 dark:text-neutral-100">My projects</h2>
+              </div>
+              <ul className="space-y-2">
+                {myProjects.slice(0, 6).map((p) => (
+                  <li key={p.projectId} className="rounded-lg border border-neutral-200 bg-neutral-50/50 p-3 dark:border-neutral-700 dark:bg-neutral-800/40">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="min-w-0 flex-1 break-words text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                        {p.projectName}
+                      </p>
+                      <span className="rounded bg-neutral-200 px-2 py-0.5 text-[10px] font-medium uppercase text-neutral-700 dark:bg-neutral-700 dark:text-neutral-200">
+                        {p.status}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                      Team: {p.teamName ?? "—"} · Role: {p.role ?? "—"}
+                    </p>
+                    {p.responsibilities && (
+                      <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-300">
+                        {p.responsibilities}
+                      </p>
+                    )}
+                    {p.structure?.notes && (
+                      <p className="mt-1 line-clamp-2 text-[11px] text-neutral-500 dark:text-neutral-400">
+                        {p.structure.notes}
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {me?.isAdmin ? (
             <div
               ref={departmentsCardRef}
               className={cn(
                 "min-w-0 overflow-hidden rounded-3xl border border-indigo-100 bg-gradient-to-br from-white via-indigo-50/80 to-violet-50/90 p-4 shadow-md shadow-indigo-100/50 dark:border-neutral-700 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 dark:shadow-none sm:p-5",
-                isActiveTourSection(4) && "ring-2 ring-indigo-400/70",
-                isBlurredTourSection(4) && "opacity-55"
+                isActiveTourSection(3) && "ring-2 ring-indigo-400/70",
+                isBlurredTourSection(3) && "opacity-55"
               )}
             >
-              <div className="mb-4 flex items-start justify-between gap-3 border-b border-indigo-100/90 pb-3 dark:border-neutral-700">
-                <div className="min-w-0">
-                  <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">Departments & Teams</h2>
-                </div>
-                <button
-                  type="button"
-                  className="shrink-0 rounded-lg p-1.5 text-indigo-500 hover:bg-white/80 dark:text-neutral-300 dark:hover:bg-neutral-800"
-                  aria-label="More"
-                >
-                  <MoreHorizontal className="h-4 w-4" />
-                </button>
+              <div className="mb-4 border-b border-indigo-100/90 pb-3 dark:border-neutral-700">
+                <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">Departments & Teams</h2>
               </div>
               {teamMembers === null && teams === null ? (
                 <ul className="space-y-3">
@@ -1860,21 +1644,12 @@ function DashboardPageContent() {
               ref={departmentsCardRef}
               className={cn(
                 "min-w-0 overflow-hidden rounded-3xl border border-indigo-100 bg-gradient-to-br from-white via-indigo-50/80 to-violet-50/90 p-4 shadow-md shadow-indigo-100/50 dark:border-neutral-700 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 dark:shadow-none sm:p-5",
-                isActiveTourSection(4) && "ring-2 ring-indigo-400/70",
-                isBlurredTourSection(4) && "opacity-55"
+                isActiveTourSection(3) && "ring-2 ring-indigo-400/70",
+                isBlurredTourSection(3) && "opacity-55"
               )}
             >
-              <div className="mb-4 flex items-start justify-between gap-3 border-b border-indigo-100/90 pb-3 dark:border-neutral-700">
-                <div className="min-w-0">
-                  <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">Reporting manager</h2>
-                </div>
-                <button
-                  type="button"
-                  className="shrink-0 rounded-lg p-1.5 text-indigo-500 hover:bg-white/80 dark:text-neutral-300 dark:hover:bg-neutral-800"
-                  aria-label="More"
-                >
-                  <MoreHorizontal className="h-4 w-4" />
-                </button>
+              <div className="mb-4 border-b border-indigo-100/90 pb-3 dark:border-neutral-700">
+                <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">Reporting manager</h2>
               </div>
               <div className="space-y-3">
                 <div className="rounded-xl border border-indigo-100/80 bg-white/70 px-3 py-2.5 dark:border-neutral-700 dark:bg-neutral-800/50">

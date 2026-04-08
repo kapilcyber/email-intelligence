@@ -661,7 +661,7 @@ export function Sidebar({
   return (
     <aside
       className={cn(
-        "flex shrink-0 flex-col overflow-x-hidden border-r border-border bg-panel-elevated [contain:layout] " +
+        "flex shrink-0 flex-col overflow-x-hidden border-r border-border bg-panel-elevated/95 backdrop-blur-xl supports-[backdrop-filter]:bg-panel-elevated/88 [contain:layout] " +
         SIDEBAR_LAYOUT_ANIM,
         isMobile
           ? cn(
@@ -674,7 +674,7 @@ export function Sidebar({
     >
       <div
         className={cn(
-          "flex h-16 shrink-0 items-center overflow-hidden border-b border-border bg-panel-elevated shadow-sm transition-[padding,gap] " +
+          "flex h-16 shrink-0 items-center overflow-hidden border-b border-border bg-panel-elevated/80 backdrop-blur-md transition-[padding,gap] " +
           SIDEBAR_LAYOUT_ANIM,
           navCollapsed ? "justify-center px-2" : "gap-3 px-4"
         )}

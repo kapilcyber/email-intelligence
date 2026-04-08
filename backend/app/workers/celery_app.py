@@ -32,7 +32,16 @@ celery_app.conf.update(
     task_default_retry_delay=60,
     task_max_retries=5,
     broker_connection_retry_on_startup=True,
+    result_expires=3600,
 )
+# High-volume paths: do not store task return values in the result backend (Redis traffic)
+celery_app.conf.task_annotations = {
+    "app.workers.tasks.ingest_email_task": {"ignore_result": True},
+    "app.workers.tasks.ingest_email_chunk_task": {"ignore_result": True},
+    "app.workers.tasks.backfill_emails_task": {"ignore_result": True},
+    "app.workers.tasks.classify_email_task": {"ignore_result": True},
+    "app.workers.tasks.notify_sales_lead_task": {"ignore_result": True},
+}
 # End-of-day summary: run daily at configured hour (default 23:00 UTC)
 _beat: dict = {
     "daily-summary": {

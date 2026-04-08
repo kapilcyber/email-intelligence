@@ -40,7 +40,7 @@ function SignInPageContent() {
 
   return (
     <div className="flex min-h-[100dvh] flex-col items-center justify-center gap-6 bg-app-gradient py-8 pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))] pb-[max(2rem,env(safe-area-inset-bottom,0px))] pt-[max(2rem,env(safe-area-inset-top,0px))]">
-      <div className="w-full min-w-0 max-w-sm rounded-2xl border border-border bg-panel p-6 shadow-sm sm:p-8">
+      <div className="glass-surface w-full min-w-0 max-w-sm rounded-2xl p-6 sm:p-8">
         <h1 className="mb-2 text-center text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
           Email Intelligence
         </h1>
@@ -61,7 +61,7 @@ function SignInPageContent() {
           type="button"
           onClick={handleSignIn}
           disabled={loading}
-          className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-3 text-sm font-medium text-accent-foreground transition hover:bg-accent/90 disabled:opacity-50"
+          className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-3 text-sm font-medium text-accent-foreground shadow-md shadow-accent/25 transition duration-200 ease-out hover:bg-accent/90 hover:shadow-lg hover:shadow-accent/20 disabled:opacity-50 motion-reduce:transition-none"
         >
           {loading ? (
             "Signing in…"

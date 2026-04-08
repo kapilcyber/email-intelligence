@@ -43,6 +43,20 @@ def enqueue_ingest_email_task(
     ingest_email_task.delay(resource, graph_id, user_id=uid, folder_display_name=folder_display_name)
 
 
+def enqueue_ingest_chunk_task(
+    user_id: str,
+    folder_display_name: str | None,
+    graph_ids: list[str],
+) -> None:
+    """Enqueue one task that ingests many Graph message ids (backfill path)."""
+    if not graph_ids:
+        return
+    uid = (user_id or "").strip()
+    mb = normalize_mailbox_key(uid)
+    user_queue_incr(mb, len(graph_ids))
+    ingest_email_chunk_task.delay(uid, folder_display_name, list(graph_ids))
+
+
 def enqueue_classify_email_task(email_id: str, mailbox_owner_email: str | None = None) -> None:
     """Enqueue classify; increments per-mailbox counter. Resolves mailbox from DB if omitted."""
     mb = normalize_mailbox_key(mailbox_owner_email)
@@ -76,6 +90,103 @@ def _normalize_message(user_id: str, graph_id: str) -> dict | None:
         if r.status_code != 200:
             return None
         return r.json()
+
+
+def _persist_message_from_graph(
+    db,
+    data: dict,
+    user_id: str,
+    folder_display_name: str | None,
+) -> None:
+    """Persist one message from full Graph JSON; enqueue classify for new non-deleted rows."""
+    message_id = data.get("internetMessageId") or data.get("id")
+    if not message_id:
+        return
+    raw_uid = (user_id or "").strip()
+    mailbox_norm = raw_uid.lower() if "@" in raw_uid else raw_uid
+    is_del_folder = _is_outlook_deleted_folder(folder_display_name)
+    existing = db.query(Email).filter(
+        Email.message_id == message_id,
+        Email.mailbox_owner_email == mailbox_norm,
+    ).first()
+    if existing:
+        if is_del_folder:
+            folder = data.get("parentFolderId") or existing.folder_id
+            fn = (folder_display_name or "").strip() or "Deleted Items"
+            existing.graph_id = data.get("id") or existing.graph_id
+            existing.folder_id = folder
+            existing.folder_name = fn
+            if existing.deleted_at is None:
+                existing.deleted_at = datetime.now(timezone.utc)
+            db.commit()
+        return
+    sender_info = (data.get("sender") or {}).get("emailAddress") or {}
+    sender_email = sender_info.get("address") or "unknown"
+    sender_name = sender_info.get("name")
+    sender_id = _ensure_sender(db, sender_email, sender_name)
+    received = data.get("receivedDateTime")
+    if received:
+        try:
+            received_dt = datetime.fromisoformat(received.replace("Z", "+00:00"))
+        except Exception:
+            received_dt = datetime.now(timezone.utc)
+    else:
+        received_dt = datetime.now(timezone.utc)
+    folder = data.get("parentFolderId") or "inbox"
+    if folder_display_name:
+        folder_name = folder_display_name
+    else:
+        folder_name = (data.get("parentFolderId") or "").lower()
+        if "inbox" in folder_name or folder == "inbox":
+            folder_name = "Inbox"
+        elif len(folder_name) > 40 and " " not in folder_name:
+            folder_name = "Mail"
+    now_utc = datetime.now(timezone.utc)
+    outlook_deleted_at = now_utc if is_del_folder else None
+    email = Email(
+        graph_id=data.get("id"),
+        message_id=message_id,
+        conversation_id=data.get("conversationId") or None,
+        subject=data.get("subject"),
+        body_preview=data.get("bodyPreview"),
+        body_content=data.get("body", {}).get("content") if isinstance(data.get("body"), dict) else None,
+        body_content_type=(data.get("body") or {}).get("contentType") if isinstance(data.get("body"), dict) else None,
+        sender_email=sender_email,
+        sender_id=sender_id,
+        sender_display_name=sender_name,
+        cc_recipients=_parse_recipients(data.get("ccRecipients")),
+        bcc_recipients=_parse_recipients(data.get("bccRecipients")),
+        to_recipients=_parse_recipients(data.get("toRecipients")),
+        received_at=received_dt,
+        sent_at=_parse_sent_at(data.get("sentDateTime")),
+        is_read=data.get("isRead", False),
+        folder_id=folder,
+        folder_name=folder_name or "Inbox",
+        mailbox_owner_email=mailbox_norm,
+        status="stored",
+        raw_payload={k: v for k, v in data.items() if k not in ("body",)},
+        deleted_at=outlook_deleted_at,
+    )
+    if getattr(Email, "processing_status", None) is not None:
+        email.processing_status = "ingested"
+    db.add(email)
+    db.commit()
+    db.refresh(email)
+    email_id_to_classify = email.id
+    for att in (data.get("attachments") or []):
+        if att.get("@odata.type") == "#microsoft.graph.fileAttachment":
+            a = Attachment(
+                email_id=email.id,
+                graph_attachment_id=att.get("id"),
+                name=att.get("name") or "attachment",
+                content_type=att.get("contentType"),
+                size=att.get("size"),
+                is_inline=att.get("isInline", False),
+            )
+            db.add(a)
+    db.commit()
+    if email_id_to_classify and not is_del_folder:
+        enqueue_classify_email_task(email_id_to_classify, mailbox_norm)
 
 
 def _parse_recipients(recipients: list) -> list[dict]:
@@ -159,100 +270,72 @@ def ingest_email_task(
         return
     db = SessionLocal()
     try:
-        message_id = data.get("internetMessageId") or data.get("id")
-        if not message_id:
-            return
-        raw_uid = (user_id or "").strip()
-        mailbox_norm = raw_uid.lower() if "@" in raw_uid else raw_uid
-        is_del_folder = _is_outlook_deleted_folder(folder_display_name)
-        existing = db.query(Email).filter(
-            Email.message_id == message_id,
-            Email.mailbox_owner_email == mailbox_norm,
-        ).first()
-        if existing:
-            if is_del_folder:
-                folder = data.get("parentFolderId") or existing.folder_id
-                fn = (folder_display_name or "").strip() or "Deleted Items"
-                existing.graph_id = data.get("id") or existing.graph_id
-                existing.folder_id = folder
-                existing.folder_name = fn
-                if existing.deleted_at is None:
-                    existing.deleted_at = datetime.now(timezone.utc)
-                db.commit()
-            return
-        sender_info = (data.get("sender") or {}).get("emailAddress") or {}
-        sender_email = sender_info.get("address") or "unknown"
-        sender_name = sender_info.get("name")
-        sender_id = _ensure_sender(db, sender_email, sender_name)
-        received = data.get("receivedDateTime")
-        if received:
-            try:
-                received_dt = datetime.fromisoformat(received.replace("Z", "+00:00"))
-            except Exception:
-                received_dt = datetime.now(timezone.utc)
-        else:
-            received_dt = datetime.now(timezone.utc)
-        folder = data.get("parentFolderId") or "inbox"
-        # Use display name from backfill when known (e.g. "Inbox"); else avoid showing raw Graph folder ID
-        if folder_display_name:
-            folder_name = folder_display_name
-        else:
-            folder_name = (data.get("parentFolderId") or "").lower()
-            if "inbox" in folder_name or folder == "inbox":
-                folder_name = "Inbox"
-            elif len(folder_name) > 40 and " " not in folder_name:
-                folder_name = "Mail"  # opaque folder ID, avoid showing long string
-        now_utc = datetime.now(timezone.utc)
-        outlook_deleted_at = now_utc if is_del_folder else None
-        email = Email(
-            graph_id=data.get("id"),
-            message_id=message_id,
-            conversation_id=data.get("conversationId") or None,
-            subject=data.get("subject"),
-            body_preview=data.get("bodyPreview"),
-            body_content=data.get("body", {}).get("content") if isinstance(data.get("body"), dict) else None,
-            body_content_type=(data.get("body") or {}).get("contentType") if isinstance(data.get("body"), dict) else None,
-            sender_email=sender_email,
-            sender_id=sender_id,
-            sender_display_name=sender_name,
-            cc_recipients=_parse_recipients(data.get("ccRecipients")),
-            bcc_recipients=_parse_recipients(data.get("bccRecipients")),
-            to_recipients=_parse_recipients(data.get("toRecipients")),
-            received_at=received_dt,
-            sent_at=_parse_sent_at(data.get("sentDateTime")),
-            is_read=data.get("isRead", False),
-            folder_id=folder,
-            folder_name=folder_name or "Inbox",
-            mailbox_owner_email=mailbox_norm,
-            status="stored",
-            raw_payload={k: v for k, v in data.items() if k not in ("body",)},
-            deleted_at=outlook_deleted_at,
-        )
-        if getattr(Email, "processing_status", None) is not None:
-            email.processing_status = "ingested"
-        db.add(email)
-        db.commit()
-        db.refresh(email)
-        email_id_to_classify = email.id
-        for att in (data.get("attachments") or []):
-            if att.get("@odata.type") == "#microsoft.graph.fileAttachment":
-                a = Attachment(
-                    email_id=email.id,
-                    graph_attachment_id=att.get("id"),
-                    name=att.get("name") or "attachment",
-                    content_type=att.get("contentType"),
-                    size=att.get("size"),
-                    is_inline=att.get("isInline", False),
-                )
-                db.add(a)
-        db.commit()
-        if email_id_to_classify and not is_del_folder:
-            enqueue_classify_email_task(email_id_to_classify, mailbox_norm)
+        _persist_message_from_graph(db, data, user_id, folder_display_name)
     except Exception as e:
         db.rollback()
         raise self.retry(exc=e)
     finally:
         db.close()
+
+
+@celery_app.task(name="app.workers.tasks.ingest_email_chunk_task")
+def ingest_email_chunk_task(
+    user_id: str,
+    folder_display_name: str | None,
+    graph_ids: list[str],
+):
+    """
+    Ingest many messages in one Celery task (backfill). Reduces broker/Redis traffic vs one task per message.
+    Failures fall back to single-message tasks (correct per-mailbox queue accounting).
+    """
+    if not user_id or not graph_ids:
+        return
+    _ensure_tables()
+    uid = (user_id or "").strip()
+    res_prefix = f"Users('{uid}')/Messages"
+    for graph_id in graph_ids:
+        if not graph_id:
+            continue
+        try:
+            data = _normalize_message(uid, graph_id)
+            if not data:
+                enqueue_ingest_email_task(
+                    f"{res_prefix}('{graph_id}')",
+                    graph_id,
+                    user_id=uid,
+                    folder_display_name=folder_display_name,
+                )
+                continue
+            db = SessionLocal()
+            try:
+                _persist_message_from_graph(db, data, uid, folder_display_name)
+            except Exception as e:
+                db.rollback()
+                logger.warning(
+                    "ingest_email_chunk_task: persist failed user=%s graph_id=%s: %s",
+                    uid,
+                    graph_id,
+                    e,
+                )
+                enqueue_ingest_email_task(
+                    f"{res_prefix}('{graph_id}')",
+                    graph_id,
+                    user_id=uid,
+                    folder_display_name=folder_display_name,
+                )
+            finally:
+                db.close()
+        except Exception as e:
+            logger.exception("ingest_email_chunk_task: message loop user=%s graph_id=%s: %s", uid, graph_id, e)
+            try:
+                enqueue_ingest_email_task(
+                    f"{res_prefix}('{graph_id}')",
+                    graph_id,
+                    user_id=uid,
+                    folder_display_name=folder_display_name,
+                )
+            except Exception:
+                pass
 
 
 @celery_app.task(name="app.workers.tasks.sync_outlook_deleted_for_all_users_task")
@@ -717,6 +800,63 @@ def get_queue_stats_for_user(mailbox_owner_email: str) -> dict:
     }
 
 
+def _mailbox_norm_for_backfill(user_id: str) -> str:
+    raw = (user_id or "").strip()
+    return raw.lower() if "@" in raw else raw
+
+
+def _load_existing_ids_for_graph_page(
+    db, mailbox_norm: str, items: list
+) -> tuple[set[str], set[str]]:
+    """graph_ids and message_ids already stored for this mailbox (matches ingest dedupe)."""
+    graph_ids: list[str] = []
+    message_keys: list[str] = []
+    for it in items or []:
+        gid = it.get("id")
+        if gid:
+            graph_ids.append(gid)
+        imid = it.get("internetMessageId")
+        if imid:
+            message_keys.append(imid)
+        if gid:
+            message_keys.append(gid)
+    graph_ids = list(dict.fromkeys(graph_ids))
+    message_keys = list(dict.fromkeys(message_keys))
+    existing_g: set[str] = set()
+    existing_m: set[str] = set()
+    if graph_ids:
+        for row in (
+            db.query(Email.graph_id)
+            .filter(Email.mailbox_owner_email == mailbox_norm, Email.graph_id.in_(graph_ids))
+            .all()
+        ):
+            if row[0]:
+                existing_g.add(row[0])
+    if message_keys:
+        for row in (
+            db.query(Email.message_id)
+            .filter(Email.mailbox_owner_email == mailbox_norm, Email.message_id.in_(message_keys))
+            .all()
+        ):
+            if row[0]:
+                existing_m.add(row[0])
+    return existing_g, existing_m
+
+
+def _backfill_item_already_stored(
+    graph_id: str | None,
+    internet_message_id: str | None,
+    existing_g: set[str],
+    existing_m: set[str],
+) -> bool:
+    if graph_id and graph_id in existing_g:
+        return True
+    for mid in (internet_message_id, graph_id):
+        if mid and mid in existing_m:
+            return True
+    return False
+
+
 @celery_app.task(name="app.workers.tasks.backfill_emails_task")
 def backfill_emails_task(
     user_id: str,
@@ -727,7 +867,8 @@ def backfill_emails_task(
 ):
     """
     Historical sync: last N days, all messages when days <= 0, or by date range (from_date/to_date).
-    Paginates through Graph (follows @odata.nextLink) and enqueues all messages.
+    Paginates through Graph (follows @odata.nextLink) and enqueues messages not yet stored for this mailbox
+    (Inbox/Sent); Deleted Items still enqueues all so ingest can update deletion state.
     Use folder_id 'inbox' for Inbox, 'sentitems' for Sent Items (so sent replies appear in threads).
     from_date/to_date: optional YYYY-MM-DD; when set, only messages in that range are synced.
     """
@@ -762,9 +903,22 @@ def backfill_emails_task(
             since = (now_utc - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
         filter_expr = f"{date_field} ge {since}"
 
-    params = {"$top": 999, "$filter": filter_expr, "$orderby": f"{date_field} desc"}
+    cfg = get_settings()
+    chunk_sz = max(1, min(200, int(getattr(cfg, "sync_ingest_chunk_size", 40) or 40)))
+    params = {
+        "$top": 999,
+        "$filter": filter_expr,
+        "$orderby": f"{date_field} desc",
+        # Smaller list payloads; full message is fetched per id during ingest
+        "$select": "id,internetMessageId,receivedDateTime,sentDateTime",
+    }
     total_enqueued = 0
+    total_skipped_existing = 0
     fid = str(folder_id).lower()
+    skip_if_already_in_db = fid != "deleteditems"
+    mailbox_norm = _mailbox_norm_for_backfill(user_id)
+    if skip_if_already_in_db:
+        _ensure_tables()
     if fid == "deleteditems":
         folder_display = "Deleted Items"
     elif is_sent:
@@ -781,21 +935,47 @@ def backfill_emails_task(
         while next_url:
             r = client.get(next_url, params=next_params, headers=get_auth_headers())
             if r.status_code != 200:
-                return {"ok": False, "error": r.text, "enqueued": total_enqueued, "folder_id": folder_id}
+                return {
+                    "ok": False,
+                    "error": r.text,
+                    "enqueued": total_enqueued,
+                    "skippedExisting": total_skipped_existing,
+                    "folder_id": folder_id,
+                }
             data = r.json()
             value = data.get("value", [])
+            existing_g: set[str] = set()
+            existing_m: set[str] = set()
+            if skip_if_already_in_db and value:
+                db_page = SessionLocal()
+                try:
+                    existing_g, existing_m = _load_existing_ids_for_graph_page(db_page, mailbox_norm, value)
+                finally:
+                    db_page.close()
+            batch: list[str] = []
             for item in value:
                 msg_id = item.get("id")
-                if msg_id:
-                    enqueue_ingest_email_task(
-                        f"Users('{user_id}')/Messages('{msg_id}')",
-                        msg_id,
-                        user_id,
-                        folder_display_name=folder_display,
-                    )
-                    total_enqueued += 1
+                if not msg_id:
+                    continue
+                if skip_if_already_in_db and _backfill_item_already_stored(
+                    msg_id, item.get("internetMessageId"), existing_g, existing_m
+                ):
+                    total_skipped_existing += 1
+                    continue
+                batch.append(msg_id)
+                total_enqueued += 1
+                if len(batch) >= chunk_sz:
+                    enqueue_ingest_chunk_task(user_id, folder_display, batch)
+                    batch = []
+            if batch:
+                enqueue_ingest_chunk_task(user_id, folder_display, batch)
             next_link = data.get("@odata.nextLink")
             next_url = next_link if isinstance(next_link, str) else None
             next_params = None
 
-    return {"ok": True, "enqueued": total_enqueued, "folder_id": folder_id}
+    return {
+        "ok": True,
+        "enqueued": total_enqueued,
+        "skippedExisting": total_skipped_existing,
+        "folder_id": folder_id,
+    }

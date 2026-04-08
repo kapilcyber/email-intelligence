@@ -158,7 +158,7 @@ export function Select({
       <div
         ref={menuRef}
         role="listbox"
-        className="fixed flex flex-col overflow-hidden rounded-md border border-border bg-panel text-foreground shadow-lg outline-none"
+        className="fixed flex flex-col overflow-hidden rounded-xl border border-border bg-panel text-foreground shadow-lg outline-none backdrop-blur-md"
         style={{
           top: menuBox.top,
           left: menuBox.left,
@@ -197,7 +197,7 @@ export function Select({
         disabled={disabled}
         onClick={() => !disabled && setOpen(!open)}
         className={cn(
-          "flex h-9 w-full items-center justify-between rounded-md border border-border bg-panel px-3 py-2 text-sm text-foreground shadow-sm",
+          "flex h-9 w-full items-center justify-between rounded-lg border border-border bg-panel px-3 py-2 text-sm text-foreground shadow-sm transition-[color,box-shadow,background-color,border-color] duration-200 ease-out motion-reduce:transition-none",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
           "disabled:pointer-events-none disabled:opacity-50",
           compound && triggerClassName

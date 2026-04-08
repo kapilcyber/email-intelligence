@@ -75,6 +75,9 @@ class Settings(BaseSettings):
     outlook_deleted_sync_enabled: bool = True
     outlook_deleted_sync_days: int = 14  # per-mailbox window for each scheduled/manual sync
 
+    # Backfill → ingest: enqueue N messages per Celery task (fewer Redis round-trips; better under many users)
+    sync_ingest_chunk_size: int = 40
+
     # Trust / spam from known senders: evaluate senders for phishing, suspicious content
     sender_trust_enabled: bool = True  # Update sender trust_score and override spam when low trust
     sender_trust_min_score: float = 0.3  # Below this, treat as spam even if category was not Spam
