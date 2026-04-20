@@ -1,5 +1,6 @@
 "use client";
 
+import { motion } from "framer-motion";
 import {
   Suspense,
   useEffect,
@@ -18,6 +19,7 @@ import { LenisScrollArea } from "@/components/lenis/lenis-scroll-area";
 import { cn } from "@/lib/utils";
 import { chartTooltipProps, useChartTheme } from "@/lib/use-chart-theme";
 import { formatMomTimeRange } from "@/lib/mom-eligibility";
+import { CLASSIFY_BATCH_SUMMARY_EVENT } from "@/lib/classify-batch-summary-event";
 import type {
   DashboardMetrics,
   EmailRecord,
@@ -239,13 +241,14 @@ function MeasuredChart({
 }
 
 function DashboardAiChartsEmpty({
-  api,
   onClassifyAll,
+  onMetricsRefresh,
+  classifyLoading,
 }: {
-  api: ReturnType<typeof getApi>;
-  onClassifyAll?: () => void;
+  onClassifyAll?: () => Promise<void>;
+  onMetricsRefresh?: () => void;
+  classifyLoading: boolean;
 }) {
-  const [classifyLoading, setClassifyLoading] = useState(false);
   const [classifyMessage, setClassifyMessage] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -257,33 +260,32 @@ function DashboardAiChartsEmpty({
 
   const handleClick = () => {
     if (!onClassifyAll) return;
-    setClassifyLoading(true);
     setClassifyMessage(null);
     if (pollRef.current) {
       clearInterval(pollRef.current);
       pollRef.current = null;
     }
-    api
-      .triggerClassifyBackfill()
-      .then((r) => {
-        const msg = r.message ?? "Classification started. This may take a few minutes. The page will refresh automatically.";
-        setClassifyMessage(msg);
-        onClassifyAll();
-        pollRef.current = setInterval(() => {
-          onClassifyAll();
-        }, 8000);
-        setTimeout(() => {
-          if (pollRef.current) {
-            clearInterval(pollRef.current);
-            pollRef.current = null;
-          }
-        }, 120000);
+    void onClassifyAll()
+      .then(() => {
+        setClassifyMessage(
+          "Classification started. This may take a few minutes. Metrics will refresh automatically while charts populate."
+        );
+        if (onMetricsRefresh) {
+          pollRef.current = setInterval(() => {
+            onMetricsRefresh();
+          }, 8000);
+          setTimeout(() => {
+            if (pollRef.current) {
+              clearInterval(pollRef.current);
+              pollRef.current = null;
+            }
+          }, 120000);
+        }
       })
       .catch((err: unknown) => {
         const msg = err instanceof Error ? err.message : "Failed to enqueue. Is the backend running?";
         setClassifyMessage(msg);
-      })
-      .finally(() => setClassifyLoading(false));
+      });
   };
   return (
     <section className="rounded-2xl border border-neutral-200 bg-neutral-50/50 p-6 dark:border-neutral-800 dark:bg-neutral-900/30">
@@ -324,12 +326,16 @@ function DashboardAiCharts({
   metrics,
   loading,
   onClassifyAll,
+  onMetricsRefresh,
+  classifyLoading,
   isAdmin = false,
 }: {
   api: ReturnType<typeof getApi>;
   metrics: DashboardMetrics | null;
   loading: boolean;
-  onClassifyAll?: () => void;
+  onClassifyAll?: () => Promise<void>;
+  onMetricsRefresh?: () => void;
+  classifyLoading: boolean;
   isAdmin?: boolean;
 }) {
   const [escalationByUser, setEscalationByUser] = useState<UserEscalationCountOut[] | null>(null);
@@ -458,7 +464,13 @@ function DashboardAiCharts({
   }
 
   if (!hasAny) {
-    return <DashboardAiChartsEmpty api={api} onClassifyAll={onClassifyAll} />;
+    return (
+      <DashboardAiChartsEmpty
+        onClassifyAll={onClassifyAll}
+        onMetricsRefresh={onMetricsRefresh}
+        classifyLoading={classifyLoading}
+      />
+    );
   }
 
   return (
@@ -753,7 +765,7 @@ function DashboardAiCharts({
 }
 
 const syncActionTileBase =
-  "flex min-w-0 flex-col items-center justify-center gap-1.5 rounded-xl border border-white/70 bg-gradient-to-br from-white to-[#eef5ff] text-center shadow-md shadow-sky-100/60 transition duration-300 hover:-translate-y-0.5 hover:border-sky-200 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900/70 dark:from-neutral-900 dark:to-neutral-900 dark:hover:border-neutral-600 dark:hover:shadow-none sm:rounded-2xl sm:gap-2 md:gap-3";
+  "flex min-w-0 flex-col items-center justify-center gap-1.5 rounded-xl border border-white/70 bg-gradient-to-br from-white to-[#eef5ff] text-center shadow-md shadow-sky-100/60 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900/70 dark:from-neutral-900 dark:to-neutral-900 dark:hover:border-neutral-600 dark:hover:shadow-none sm:rounded-2xl sm:gap-2 md:gap-3";
 
 function DashboardSyncActionTile({
   title,
@@ -767,7 +779,9 @@ function DashboardSyncActionTile({
   onClick: () => void;
 }) {
   return (
-    <button
+    <motion.button
+      whileHover={{ scale: disabled ? 1 : 1.02 }}
+      whileTap={{ scale: disabled ? 1 : 0.98 }}
       type="button"
       onClick={onClick}
       disabled={disabled}
@@ -782,7 +796,7 @@ function DashboardSyncActionTile({
       <span className="line-clamp-2 max-w-full text-[0.75rem] font-semibold leading-snug text-neutral-800 dark:text-neutral-200 sm:text-[0.8125rem] md:text-sm xl:text-[0.9375rem]">
         {title}
       </span>
-    </button>
+    </motion.button>
   );
 }
 
@@ -825,6 +839,8 @@ function DashboardPageContent() {
   const syncPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const syncStopRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const classifyPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const classifyPollMetaRef = useRef<{ since: string; last: number; stable: number } | null>(null);
   const syncActionsRef = useRef<HTMLDivElement>(null);
   const activityMapRef = useRef<HTMLDivElement>(null);
   const rightColumnRef = useRef<HTMLDivElement>(null);
@@ -877,7 +893,7 @@ function DashboardPageContent() {
     setCalendarLoading(true);
     setCalendarError(null);
     try {
-      // Meetings panel refresh should fetch recent mailbox mail first (Inbox + Sent),
+      // Meetings panel refresh should fetch recent mailbox mail first (full-folder Graph sync),
       // then reload meeting events from synced messages.
       await api.triggerBackfill({ days: 30 });
       enqueueOutlookDeletedSyncForAdmins(30);
@@ -1098,6 +1114,7 @@ function DashboardPageContent() {
       if (syncPollRef.current) clearInterval(syncPollRef.current);
       if (syncStopRef.current) clearTimeout(syncStopRef.current);
       if (mePollRef.current) clearInterval(mePollRef.current);
+      if (classifyPollRef.current) clearInterval(classifyPollRef.current);
     };
   }, []);
 
@@ -1137,15 +1154,66 @@ function DashboardPageContent() {
   };
 
   const [classifyLoading, setClassifyLoading] = useState(false);
-  const onClassifyAll = () => {
+  const onClassifyAll = (): Promise<void> => {
     setClassifyLoading(true);
-    api
+    const since = new Date().toISOString();
+    if (classifyPollRef.current) {
+      clearInterval(classifyPollRef.current);
+      classifyPollRef.current = null;
+    }
+    classifyPollMetaRef.current = { since, last: -1, stable: 0 };
+    return api
       .triggerClassifyBackfill()
       .then(() => {
         enqueueOutlookDeletedSyncForAdmins();
         refresh();
+        classifyPollRef.current = setInterval(() => {
+          const meta = classifyPollMetaRef.current;
+          if (!meta) return;
+          void (async () => {
+            try {
+              const st = await api.getClassificationBatchStatus(meta.since);
+              const c = st.classifiedSinceCount ?? 0;
+              if (c === 0) {
+                meta.stable = 0;
+                return;
+              }
+              if (c === meta.last) meta.stable += 1;
+              else {
+                meta.last = c;
+                meta.stable = 0;
+              }
+              if (meta.stable >= 3) {
+                if (classifyPollRef.current) {
+                  clearInterval(classifyPollRef.current);
+                  classifyPollRef.current = null;
+                }
+                classifyPollMetaRef.current = null;
+                const sum = await api.postClassificationBatchSummary({ since: meta.since });
+                if (sum.summary && (sum.count ?? 0) > 0) {
+                  window.dispatchEvent(
+                    new CustomEvent(CLASSIFY_BATCH_SUMMARY_EVENT, {
+                      detail: { summary: sum.summary, count: sum.count },
+                    })
+                  );
+                }
+              }
+            } catch {
+              /* ignore transient errors while polling */
+            }
+          })();
+        }, 2000);
+        window.setTimeout(() => {
+          if (classifyPollRef.current) {
+            clearInterval(classifyPollRef.current);
+            classifyPollRef.current = null;
+          }
+          classifyPollMetaRef.current = null;
+        }, 120_000);
       })
-      .finally(() => setClassifyLoading(false));
+      .finally(() => {
+        setClassifyLoading(false);
+      });
   };
 
   const actionCards = [
@@ -1308,42 +1376,54 @@ function DashboardPageContent() {
           isBlurredTourSection(0) && "opacity-55"
         )}
       >
-        {actionCards.map(({ label, icon, onClick }) => {
+        {actionCards.map(({ label, icon, onClick }, i) => {
           const disabled =
             (label === "Classify all" && classifyLoading) || (label.startsWith("Sync") && loadingMetrics);
           return (
-            <div key={label} className="flex min-h-0 min-w-0">
+            <motion.div
+              key={label}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.1, duration: 0.5, ease: "easeOut" }}
+              className="flex min-h-0 min-w-0"
+            >
               <DashboardSyncActionTile
                 title={syncActionCardTitle(label)}
                 icon={icon}
                 disabled={disabled}
                 onClick={onClick}
               />
-            </div>
+            </motion.div>
           );
         })}
-        {kpiCards.map(({ title, value, subtitle }) => (
-          <div
+        {kpiCards.map(({ title, value, subtitle }, i) => (
+          <motion.div
             key={title}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: (actionCards.length + i) * 0.1, duration: 0.5, ease: "easeOut" }}
             className="relative flex min-h-[86px] min-w-0 flex-col justify-center rounded-2xl border border-white/80 bg-gradient-to-br from-[#1e3a8a] via-[#2563eb] to-[#0ea5e9] p-3 text-white shadow-lg shadow-blue-200/70 transition-transform duration-300 hover:-translate-y-0.5 dark:border-neutral-700 dark:bg-neutral-900/60 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-900 dark:shadow-none sm:min-h-[96px] sm:p-4 md:min-h-[108px] md:p-4 xl:min-h-[148px] xl:p-5"
           >
             <p className="text-[0.65rem] font-medium leading-tight text-white/80 dark:text-neutral-400 sm:text-xs md:text-sm">
               {title}
             </p>
-            <p className="mt-0.5 min-w-0 break-words text-lg font-semibold tabular-nums leading-tight text-white dark:text-neutral-100 sm:text-xl md:text-2xl xl:text-3xl">
+            <p className="mt-0.5 min-w-0 break-words text-base font-semibold tabular-nums leading-tight text-white dark:text-neutral-100 sm:text-lg md:text-xl xl:text-2xl">
               {value}
             </p>
             <p className="mt-0.5 text-[9px] leading-tight text-white/75 dark:text-neutral-400 sm:text-[10px] md:text-xs">
               {subtitle}
             </p>
-          </div>
+          </motion.div>
         ))}
       </section>
 
       {/* Charts + right column */}
       <div className="grid min-w-0 gap-4 sm:gap-6 lg:grid-cols-3 lg:gap-8">
-        <div
+        <motion.div
           ref={activityMapRef}
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3, duration: 0.5, ease: "easeOut" }}
           className={cn(
             "min-w-0 lg:col-span-2",
             isActiveTourSection(1) && "rounded-xl ring-2 ring-indigo-400/70 p-1",
@@ -1355,13 +1435,18 @@ function DashboardPageContent() {
               api={api}
               metrics={metrics}
               loading={loadingMetrics}
-              onClassifyAll={refresh}
+              onClassifyAll={onClassifyAll}
+              onMetricsRefresh={refresh}
+              classifyLoading={classifyLoading}
               isAdmin={!!me?.isAdmin}
             />
           </section>
-        </div>
-        <div
+        </motion.div>
+        <motion.div
           ref={rightColumnRef}
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: 0.4, duration: 0.5, ease: "easeOut" }}
           className={cn(
             "flex min-w-0 flex-col gap-4 sm:gap-6",
             dashboardTourOpen && ![2, 3].includes(dashboardTourStep) && "opacity-55"
@@ -1669,7 +1754,7 @@ function DashboardPageContent() {
               </div>
             </div>
           )}
-        </div>
+        </motion.div>
       </div>
     </div>
   );

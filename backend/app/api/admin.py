@@ -3,7 +3,7 @@ Phase 4: Admin APIs — teams, users, workflow (who leads whom), team status.
 """
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, Query, HTTPException, Body
-from sqlalchemy import exists, func, or_, desc
+from sqlalchemy import exists, func, or_, desc, text, not_
 from sqlalchemy.orm import Session, aliased
 from sqlalchemy.exc import OperationalError, ProgrammingError
 from pydantic import BaseModel, Field
@@ -32,6 +32,42 @@ from app.api.emails import (
 from app.config import get_settings
 
 router = APIRouter()
+
+
+def _admin_sent_folder_clause():
+    """Sent Items: well-known sync used 'Sent'; full-folder sync uses Outlook displayName (e.g. Sent Items)."""
+    fn = func.lower(func.coalesce(Email.folder_name, ""))
+    return or_(fn == "sent", fn == "sent items", Email.folder_name.ilike("sent items%"))
+
+
+def _external_participant_sql_filter(internal_domain: str):
+    """
+    Postgres: at least one of sender / to / cc / bcc has an @domain where domain != internal_domain.
+    Table name must match emails.__tablename__.
+    """
+    d = (internal_domain or "").strip().lower().lstrip("@")
+    if not d:
+        return None
+    return text(
+        """
+        (
+          (strpos(coalesce(lower(emails.sender_email), ''), '@') > 0
+            AND lower(split_part(emails.sender_email, '@', 2)) != :domain)
+          OR EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements(
+              coalesce(emails.to_recipients, '[]'::jsonb)
+              || coalesce(emails.cc_recipients, '[]'::jsonb)
+              || coalesce(emails.bcc_recipients, '[]'::jsonb)
+            ) AS addr
+            WHERE (addr->>'email') IS NOT NULL
+              AND strpos(lower(addr->>'email'), '@') > 0
+              AND lower(split_part(addr->>'email', '@', 2)) != :domain
+          )
+        )
+        """
+    ).bindparams(domain=d)
+
 
 # Mailboxes to exclude from "Users — escalation count" / "Users — lead count" (e.g. default backfill mailbox already on admin dashboard)
 def _excluded_mailboxes_for_user_lists() -> set[str]:
@@ -1435,11 +1471,23 @@ def admin_list_emails(
     to_date: str | None = Query(None, alias="to"),
     category: str | None = Query(None, description="Filter by AI category"),
     deleted_only: bool = Query(False, alias="deletedOnly"),
+    external_participants: bool = Query(
+        False,
+        alias="externalParticipants",
+        description="If true, only messages with sender or any to/cc/bcc address outside company_internal_email_domain",
+    ),
+    mail_direction: str | None = Query(
+        None,
+        alias="mailDirection",
+        description="Optional sent|received based on synced folder (Sent vs non-Sent, e.g. Inbox).",
+    ),
 ):
     """
     Admin-only: list emails across all synced mailboxes.
     deletedOnly=false: active mail (not soft-deleted).
     deletedOnly=true: in-app removed History and/or messages found in Outlook Deleted Items (after sync).
+    externalParticipants=true: cross-domain traffic vs settings.company_internal_email_domain (same rows as mailbox; filtered view).
+    mailDirection=sent|received: restrict to Sent Items vs other folders (uses folder_name from Graph sync).
     """
     try:
         q = db.query(Email)
@@ -1447,6 +1495,16 @@ def admin_list_emails(
             q = q.filter(Email.deleted_at.isnot(None))
         else:
             q = q.filter(Email.deleted_at.is_(None))
+        if external_participants:
+            dom = getattr(get_settings(), "company_internal_email_domain", None) or "cachedigitech.com"
+            ext = _external_participant_sql_filter(dom)
+            if ext is not None:
+                q = q.filter(ext)
+        md = (mail_direction or "").strip().lower()
+        if md == "sent":
+            q = q.filter(_admin_sent_folder_clause())
+        elif md == "received":
+            q = q.filter(not_(_admin_sent_folder_clause()))
         if search and search.strip():
             s = f"%{search.strip()}%"
             q = q.filter(

@@ -39,6 +39,7 @@ celery_app.conf.task_annotations = {
     "app.workers.tasks.ingest_email_task": {"ignore_result": True},
     "app.workers.tasks.ingest_email_chunk_task": {"ignore_result": True},
     "app.workers.tasks.backfill_emails_task": {"ignore_result": True},
+    "app.workers.tasks.backfill_mailbox_all_folders_task": {"ignore_result": True},
     "app.workers.tasks.classify_email_task": {"ignore_result": True},
     "app.workers.tasks.notify_sales_lead_task": {"ignore_result": True},
 }

@@ -1,5 +1,5 @@
 """
-Sync last 7 days for all users in the DB, then run classification (escalation + leads).
+Sync last 7 days from all Outlook mail folders for each user in the DB, then run classification (escalation + leads).
 Run from backend: python scripts/sync_all_users_7days.py
 Requires: Celery worker running to process the enqueued tasks.
 """
@@ -13,8 +13,7 @@ def main():
     from app.config import get_settings
     from app.db.session import init_db, SessionLocal
     from app.db.models import User
-    from app.workers.tasks import backfill_emails_task, backfill_classify_emails_task
-    from app.workers.user_queue import user_queue_incr
+    from app.workers.tasks import backfill_mailbox_all_folders_task, backfill_classify_emails_task
 
     get_settings()
     init_db()
@@ -30,11 +29,10 @@ def main():
         print("No user emails found in users table. Add users first (e.g. scripts/seed_users.py).")
         return 1
 
-    print(f"Found {len(emails)} users. Enqueueing sync (last 7 days) for each...")
+    print(f"Found {len(emails)} users. Enqueueing full-folder sync (last 7 days) for each...")
     for email in emails:
-        user_queue_incr(email, 1)
-        backfill_emails_task.delay(email, "inbox", 7)
-        print(f"  Enqueued backfill: {email}")
+        backfill_mailbox_all_folders_task.delay(email, 7)
+        print(f"  Enqueued full mailbox backfill: {email}")
 
     print("Enqueueing classification backfill for all mailboxes (escalation + leads)...")
     backfill_classify_emails_task.delay(limit=2000, mailbox_owner_email=None)

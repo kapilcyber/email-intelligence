@@ -23,9 +23,9 @@
     --ring: 217 91% 60%;
     --accent: 199 89% 48%;
     --accent-foreground: 0 0% 100%;
-    --app-gradient-from: 213 100% 98%;
-    --app-gradient-via: 0 0% 100%;
-    --app-gradient-to: 188 92% 95%;
+    --app-gradient-from: 220 95% 96%;
+    --app-gradient-via: 270 85% 98%;
+    --app-gradient-to: 200 90% 96%;
   }
 
   .dark {
@@ -40,9 +40,9 @@
     --ring: 212 100% 72%;
     --accent: 199 89% 55%;
     --accent-foreground: 224 39% 8%;
-    --app-gradient-from: 222 35% 11%;
-    --app-gradient-via: 224 39% 9%;
-    --app-gradient-to: 226 33% 7%;
+    --app-gradient-from: 230 45% 10%;
+    --app-gradient-via: 260 30% 12%;
+    --app-gradient-to: 215 50% 9%;
   }
 
   body {
@@ -71,54 +71,79 @@
 
   .bg-app-gradient {
     background-image: linear-gradient(
-      168deg,
+      -45deg,
       hsl(var(--app-gradient-from)) 0%,
-      hsl(var(--app-gradient-via)) 42%,
+      hsl(var(--app-gradient-via)) 50%,
       hsl(var(--app-gradient-to)) 100%
     );
     background-attachment: fixed;
-    background-repeat: no-repeat;
-    background-size: cover;
+    background-size: 400% 400%;
+    animation: gradient-flow 18s ease infinite;
+  }
+
+  @keyframes gradient-flow {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
   }
 
   .glass-surface {
     border: 1px solid hsl(var(--border) / 0.85);
-    background: hsl(var(--panel) / 0.84);
-    backdrop-filter: blur(16px) saturate(1.15);
-    -webkit-backdrop-filter: blur(16px) saturate(1.15);
+    background: hsl(var(--panel) / 0.75);
+    backdrop-filter: blur(24px) saturate(1.2);
+    -webkit-backdrop-filter: blur(24px) saturate(1.2);
     box-shadow:
-      inset 0 1px 0 hsl(0 0% 100% / 0.58),
-      0 12px 32px hsl(var(--foreground) / 0.07),
-      0 2px 8px hsl(var(--foreground) / 0.04);
+      inset 0 1px 0 hsl(0 0% 100% / 0.4),
+      0 16px 40px -10px hsl(var(--foreground) / 0.08),
+      0 4px 12px -2px hsl(var(--foreground) / 0.05);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .glass-surface:hover {
+    background: hsl(var(--panel) / 0.82);
+    box-shadow:
+      inset 0 1px 0 hsl(0 0% 100% / 0.5),
+      0 24px 48px -12px hsl(var(--foreground) / 0.12),
+      0 8px 24px -4px hsl(var(--foreground) / 0.06);
   }
 
   .glass-surface-strong {
     border: 1px solid hsl(var(--border) / 0.9);
-    background: hsl(var(--panel-elevated) / 0.92);
-    backdrop-filter: blur(20px) saturate(1.12);
-    -webkit-backdrop-filter: blur(20px) saturate(1.12);
+    background: hsl(var(--panel-elevated) / 0.85);
+    backdrop-filter: blur(32px) saturate(1.3);
+    -webkit-backdrop-filter: blur(32px) saturate(1.3);
     box-shadow:
-      inset 0 1px 0 hsl(0 0% 100% / 0.68),
-      0 18px 42px hsl(var(--foreground) / 0.09),
-      0 2px 10px hsl(var(--foreground) / 0.05);
+      inset 0 1px 0 hsl(0 0% 100% / 0.4),
+      0 20px 40px -12px hsl(var(--foreground) / 0.15),
+      0 8px 16px -4px hsl(var(--foreground) / 0.08);
   }
 
   .dark .glass-surface {
-    border-color: hsl(var(--border) / 0.62);
-    background: hsl(var(--panel) / 0.74);
+    border-color: hsl(var(--border) / 0.5);
+    background: hsl(var(--panel) / 0.65);
     box-shadow:
       inset 0 1px 0 hsl(0 0% 100% / 0.07),
-      0 12px 36px hsl(0 0% 0% / 0.38),
-      0 2px 10px hsl(0 0% 0% / 0.22);
+      inset 0 0 20px hsl(var(--app-gradient-from) / 0.05),
+      0 16px 40px -10px hsl(0 0% 0% / 0.6),
+      0 4px 12px -2px hsl(0 0% 0% / 0.4);
+  }
+
+  .dark .glass-surface:hover {
+    background: hsl(var(--panel) / 0.7);
+    box-shadow:
+      inset 0 1px 0 hsl(0 0% 100% / 0.1),
+      inset 0 0 20px hsl(var(--app-gradient-from) / 0.1),
+      0 24px 48px -12px hsl(0 0% 0% / 0.7),
+      0 8px 24px -4px hsl(0 0% 0% / 0.5);
   }
 
   .dark .glass-surface-strong {
-    border-color: hsl(var(--border) / 0.76);
-    background: hsl(var(--panel-elevated) / 0.8);
+    border-color: hsl(var(--border) / 0.6);
+    background: hsl(var(--panel-elevated) / 0.75);
     box-shadow:
       inset 0 1px 0 hsl(0 0% 100% / 0.09),
-      0 18px 44px hsl(0 0% 0% / 0.42),
-      0 2px 12px hsl(0 0% 0% / 0.25);
+      0 20px 44px -12px hsl(0 0% 0% / 0.6),
+      0 8px 16px -4px hsl(0 0% 0% / 0.4);
   }
 
   /* Dark-mode compatibility shim for legacy light-only utility usage across pages. */

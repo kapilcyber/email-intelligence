@@ -196,6 +196,10 @@ function createApi(userEmail: string | null, userDisplayName?: string | null) {
       to?: string;
       category?: string;
       deletedOnly?: boolean;
+      /** Cross-domain: sender or any recipient not on company internal domain (backend setting). */
+      externalParticipants?: boolean;
+      /** sent | received — from synced folder (Sent vs non-Sent). */
+      mailDirection?: "sent" | "received";
     }) => {
       const searchParams = new URLSearchParams();
       if (params?.page != null) searchParams.set("page", String(params.page));
@@ -205,6 +209,10 @@ function createApi(userEmail: string | null, userDisplayName?: string | null) {
       if (params?.to) searchParams.set("to", params.to);
       if (params?.category) searchParams.set("category", params.category);
       if (params?.deletedOnly === true) searchParams.set("deletedOnly", "true");
+      if (params?.externalParticipants === true) searchParams.set("externalParticipants", "true");
+      if (params?.mailDirection === "sent" || params?.mailDirection === "received") {
+        searchParams.set("mailDirection", params.mailDirection);
+      }
       const q = searchParams.toString();
       return withUser<EmailsResponse>(`/api/admin/emails${q ? `?${q}` : ""}`);
     },
@@ -263,6 +271,15 @@ function createApi(userEmail: string | null, userDisplayName?: string | null) {
       withUser<{ ok: boolean; taskId?: string; message?: string; error?: string }>(
         "/api/emails/classify-backfill",
         { method: "POST", body: JSON.stringify(body ?? {}) }
+      ),
+    getClassificationBatchStatus: (since: string) =>
+      withUser<{ classifiedSinceCount: number; latestAiProcessedAt: string | null }>(
+        `/api/emails/classification-batch-status?since=${encodeURIComponent(since)}`
+      ),
+    postClassificationBatchSummary: (body: { since: string }) =>
+      withUser<{ ok: boolean; count: number; summary: string | null; error?: string }>(
+        "/api/emails/classification-batch-summary",
+        { method: "POST", body: JSON.stringify(body) }
       ),
     retryAi: (emailId: string) =>
       withUser<{ ok: boolean; message?: string; emailId?: string }>(`/api/emails/${emailId}/retry-ai`, { method: "POST" }),

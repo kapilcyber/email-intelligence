@@ -3,7 +3,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from app.workers.celery_app import celery_app
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, or_
 from sqlalchemy.orm import sessionmaker
 from app.config import get_settings
 from app.db.models import Base, Email, Attachment, Sender, Team, User, DailySummary, EscalationThread
@@ -19,6 +19,12 @@ from app.workers.user_queue import (
     user_queue_incr,
     count_active_reserved_for_mailbox,
     user_queue_get,
+)
+from app.graph.mail_folders import (
+    filter_folders_for_sync,
+    list_user_mail_folders_flat,
+    parse_skip_folder_name_substrings,
+    parse_skip_well_known_names,
 )
 
 logger = logging.getLogger(__name__)
@@ -92,6 +98,13 @@ def _normalize_message(user_id: str, graph_id: str) -> dict | None:
         return r.json()
 
 
+def _is_outlook_only_soft_delete(deleted_at, deleted_by_email) -> bool:
+    """True when row was hidden as deleted-in-Outlook (sync), not via in-app Remove from History."""
+    if deleted_at is None:
+        return False
+    return not (deleted_by_email or "").strip()
+
+
 def _persist_message_from_graph(
     db,
     data: dict,
@@ -118,6 +131,26 @@ def _persist_message_from_graph(
             existing.folder_name = fn
             if existing.deleted_at is None:
                 existing.deleted_at = datetime.now(timezone.utc)
+            db.commit()
+        else:
+            # Message is present in Inbox/Sent (or other non-deleted sync): refresh folder/graph id
+            # and clear Outlook-only soft delete when the user restored the mail in Outlook.
+            folder = data.get("parentFolderId") or existing.folder_id
+            if folder_display_name:
+                folder_name = folder_display_name
+            else:
+                folder_name = (data.get("parentFolderId") or "").lower()
+                if "inbox" in folder_name or folder == "inbox":
+                    folder_name = "Inbox"
+                elif len(folder_name) > 40 and " " not in folder_name:
+                    folder_name = "Mail"
+            existing.graph_id = data.get("id") or existing.graph_id
+            existing.folder_id = folder
+            if folder_name:
+                existing.folder_name = str(folder_name)
+            if _is_outlook_only_soft_delete(existing.deleted_at, getattr(existing, "deleted_by_email", None)):
+                existing.deleted_at = None
+                existing.deleted_by_email = None
             db.commit()
         return
     sender_info = (data.get("sender") or {}).get("emailAddress") or {}
@@ -808,7 +841,11 @@ def _mailbox_norm_for_backfill(user_id: str) -> str:
 def _load_existing_ids_for_graph_page(
     db, mailbox_norm: str, items: list
 ) -> tuple[set[str], set[str]]:
-    """graph_ids and message_ids already stored for this mailbox (matches ingest dedupe)."""
+    """graph_ids and message_ids already stored for this mailbox (matches ingest dedupe).
+
+    Rows soft-deleted only from Outlook Deleted Items sync (deleted_at set, deleted_by_email empty)
+    are omitted so inbox/sent backfill can re-ingest and clear deletion when the user restores mail.
+    """
     graph_ids: list[str] = []
     message_keys: list[str] = []
     for it in items or []:
@@ -824,22 +861,24 @@ def _load_existing_ids_for_graph_page(
     message_keys = list(dict.fromkeys(message_keys))
     existing_g: set[str] = set()
     existing_m: set[str] = set()
+    conds = []
     if graph_ids:
-        for row in (
-            db.query(Email.graph_id)
-            .filter(Email.mailbox_owner_email == mailbox_norm, Email.graph_id.in_(graph_ids))
-            .all()
-        ):
-            if row[0]:
-                existing_g.add(row[0])
+        conds.append(Email.graph_id.in_(graph_ids))
     if message_keys:
-        for row in (
-            db.query(Email.message_id)
-            .filter(Email.mailbox_owner_email == mailbox_norm, Email.message_id.in_(message_keys))
-            .all()
-        ):
-            if row[0]:
-                existing_m.add(row[0])
+        conds.append(Email.message_id.in_(message_keys))
+    if not conds:
+        return existing_g, existing_m
+    for gid, mid, deleted_at, deleted_by in (
+        db.query(Email.graph_id, Email.message_id, Email.deleted_at, Email.deleted_by_email)
+        .filter(Email.mailbox_owner_email == mailbox_norm, or_(*conds))
+        .all()
+    ):
+        if _is_outlook_only_soft_delete(deleted_at, deleted_by):
+            continue
+        if gid:
+            existing_g.add(gid)
+        if mid:
+            existing_m.add(mid)
     return existing_g, existing_m
 
 
@@ -864,19 +903,26 @@ def backfill_emails_task(
     days: int = 7,
     from_date: str | None = None,
     to_date: str | None = None,
+    folder_display_name: str | None = None,
+    folder_well_known_name: str | None = None,
 ):
     """
     Historical sync: last N days, all messages when days <= 0, or by date range (from_date/to_date).
     Paginates through Graph (follows @odata.nextLink) and enqueues messages not yet stored for this mailbox
-    (Inbox/Sent); Deleted Items still enqueues all so ingest can update deletion state.
-    Use folder_id 'inbox' for Inbox, 'sentitems' for Sent Items (so sent replies appear in threads).
+    (Inbox/Sent), or stored but Outlook-deleted-only (so restore-in-Outlook can clear deleted state).
+    Deleted Items still enqueues all so ingest can update deletion state.
+    Use folder_id 'inbox' for Inbox, 'sentitems' for Sent Items (so sent replies appear in threads),
+    or a mailFolder Graph id when syncing arbitrary folders (Archive, custom folders, etc.).
+    Optional folder_display_name / folder_well_known_name come from Graph folder enumeration.
     from_date/to_date: optional YYYY-MM-DD; when set, only messages in that range are synced.
     """
     from datetime import timedelta
 
     base_url = f"https://graph.microsoft.com/v1.0/users/{user_id}/mailFolders/{folder_id}/messages"
     now_utc = datetime.now(timezone.utc)
-    is_sent = str(folder_id).lower() == "sentitems"
+    wkn = (folder_well_known_name or "").strip().lower()
+    fid_l = str(folder_id).lower()
+    is_sent = fid_l == "sentitems" or wkn == "sentitems"
     date_field = "sentDateTime" if is_sent else "receivedDateTime"
 
     if (from_date or "").strip() or (to_date or "").strip():
@@ -915,15 +961,17 @@ def backfill_emails_task(
     total_enqueued = 0
     total_skipped_existing = 0
     fid = str(folder_id).lower()
-    skip_if_already_in_db = fid != "deleteditems"
+    skip_if_already_in_db = not (fid == "deleteditems" or wkn == "deleteditems")
     mailbox_norm = _mailbox_norm_for_backfill(user_id)
     if skip_if_already_in_db:
         _ensure_tables()
-    if fid == "deleteditems":
+    if folder_display_name and str(folder_display_name).strip():
+        folder_display = str(folder_display_name).strip()
+    elif fid == "deleteditems" or wkn == "deleteditems":
         folder_display = "Deleted Items"
     elif is_sent:
         folder_display = "Sent"
-    elif fid == "inbox":
+    elif fid == "inbox" or wkn == "inbox":
         folder_display = "Inbox"
     else:
         folder_display = folder_id
@@ -978,4 +1026,60 @@ def backfill_emails_task(
         "enqueued": total_enqueued,
         "skippedExisting": total_skipped_existing,
         "folder_id": folder_id,
+    }
+
+
+@celery_app.task(name="app.workers.tasks.backfill_mailbox_all_folders_task")
+def backfill_mailbox_all_folders_task(
+    user_id: str,
+    days: int = 7,
+    from_date: str | None = None,
+    to_date: str | None = None,
+):
+    """
+    List every mail folder for the mailbox (Graph), then enqueue one backfill_emails_task per folder.
+    Covers Inbox, Sent Items, Archive, custom folders, etc. Skips Recoverable Items / Sync Issues by default.
+    """
+    uid = (user_id or "").strip()
+    if not uid:
+        return {"ok": False, "error": "missing user_id"}
+    try:
+        raw = list_user_mail_folders_flat(uid)
+    except Exception as e:
+        logger.exception("backfill_mailbox_all_folders_task: list folders failed user=%s", uid)
+        return {"ok": False, "error": str(e)}
+
+    cfg = get_settings()
+    skip_wkn = parse_skip_well_known_names(getattr(cfg, "mailbox_sync_skip_well_known_names", None))
+    name_subs = parse_skip_folder_name_substrings(getattr(cfg, "mailbox_sync_skip_folder_name_contains", None))
+    max_folders = max(1, int(getattr(cfg, "mailbox_sync_max_folders", 500) or 500))
+    folders = filter_folders_for_sync(
+        raw,
+        skip_well_known_names=skip_wkn,
+        skip_name_substrings=name_subs,
+        max_folders=max_folders,
+    )
+    mb = normalize_mailbox_key(uid)
+    if folders:
+        user_queue_incr(mb, len(folders))
+    enq = 0
+    for f in folders:
+        fid = f.get("id")
+        if not fid:
+            continue
+        backfill_emails_task.delay(
+            uid,
+            fid,
+            days,
+            from_date=from_date,
+            to_date=to_date,
+            folder_display_name=f.get("displayName"),
+            folder_well_known_name=f.get("wellKnownName"),
+        )
+        enq += 1
+    return {
+        "ok": True,
+        "folderJobsEnqueued": enq,
+        "foldersDiscovered": len(raw),
+        "foldersAfterFilter": len(folders),
     }

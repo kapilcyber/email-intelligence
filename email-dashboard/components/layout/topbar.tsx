@@ -27,14 +27,20 @@ import {
   Layers,
   Tags,
   BellRing,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ShortcutFeatureOverlay, type ShortcutFeatureId } from "@/components/shortcuts/shortcut-feature-overlay";
 import { getApi } from "@/lib/api/client";
 import { ME_UPDATED_EVENT } from "@/lib/me-sync-events";
 import { LenisScrollArea } from "@/components/lenis/lenis-scroll-area";
 import { cn } from "@/lib/utils";
 import type { NotificationItem, SystemStatus } from "@/lib/types";
+import {
+  CLASSIFY_BATCH_SUMMARY_EVENT,
+  type ClassifyBatchSummaryDetail,
+} from "@/lib/classify-batch-summary-event";
 
 const NOTIF_GROUP_ORDER = ["priority", "mail", "sales", "ai", "meetings", "other"] as const;
 const NOTIF_GROUP_LABEL: Record<string, string> = {
@@ -204,6 +210,7 @@ export function Topbar({
   const [trackerProjectLabel, setTrackerProjectLabel] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [shortcutFeature, setShortcutFeature] = useState<ShortcutFeatureId | null>(null);
   const notifTriggerRef = useRef<HTMLDivElement>(null);
   const toolsTriggerRef = useRef<HTMLDivElement>(null);
   const notifPanelRef = useRef<HTMLDivElement>(null);
@@ -214,6 +221,7 @@ export function Topbar({
   const [items, setItems] = useState<NotificationItem[]>([]);
   const [notifError, setNotifError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [classifyBatchSummary, setClassifyBatchSummary] = useState<ClassifyBatchSummaryDetail | null>(null);
   const [isAdminEffective, setIsAdminEffective] = useState(false);
   const [isManagerRole, setIsManagerRole] = useState(false);
   const [meHydrated, setMeHydrated] = useState(false);
@@ -316,6 +324,21 @@ export function Topbar({
   }, [status, api]);
 
   useEffect(() => {
+    const onBatchSummary = (e: Event) => {
+      const ce = e as CustomEvent<ClassifyBatchSummaryDetail>;
+      const d = ce.detail;
+      if (d?.summary) {
+        setClassifyBatchSummary({ summary: d.summary, count: d.count });
+        setToolsOpen(false);
+        setShortcutFeature(null);
+        setOpen(true);
+      }
+    };
+    window.addEventListener(CLASSIFY_BATCH_SUMMARY_EVENT, onBatchSummary);
+    return () => window.removeEventListener(CLASSIFY_BATCH_SUMMARY_EVENT, onBatchSummary);
+  }, []);
+
+  useEffect(() => {
     if (status !== "authenticated") return;
     const m = pathname.match(/^\/admin\/tracker\/([^/]+)$/);
     if (!m) {
@@ -333,6 +356,10 @@ export function Topbar({
   }, [pathname, status, api]);
 
   useEffect(() => setPortalMounted(true), []);
+
+  useEffect(() => {
+    setShortcutFeature(null);
+  }, [pathname]);
 
   const panelBelowTrigger = (el: HTMLElement | null, panelW: number) => {
     if (!el) return null;
@@ -383,16 +410,17 @@ export function Topbar({
   }, [open, toolsOpen]);
 
   useEffect(() => {
-    if (!open && !toolsOpen) return;
+    if (!open && !toolsOpen && !shortcutFeature) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         setOpen(false);
         setToolsOpen(false);
+        setShortcutFeature(null);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, toolsOpen]);
+  }, [open, toolsOpen, shortcutFeature]);
 
   const currentPageLabel =
     breadcrumbItems.length > 0 ? breadcrumbItems[breadcrumbItems.length - 1].label : "Dashboard";
@@ -473,10 +501,11 @@ export function Topbar({
             variant="ghost"
             size="icon"
             className="h-10 w-10 rounded-lg"
-            aria-label="Shortcuts: MOM, ReTag, Follow UP"
+            aria-label="Action: MOM, ReTag, Follow UP"
             aria-expanded={toolsOpen}
             onClick={() => {
               setOpen(false);
+              setShortcutFeature(null);
               setToolsOpen((v) => !v);
             }}
           >
@@ -492,6 +521,7 @@ export function Topbar({
             aria-expanded={open}
             onClick={() => {
               setToolsOpen(false);
+              setShortcutFeature(null);
               setOpen((v) => {
                 const next = !v;
                 if (!v) loadNotifications();
@@ -516,16 +546,19 @@ export function Topbar({
               className="fixed w-[min(100vw-1rem,320px)] overflow-hidden rounded-xl border border-border/90 bg-panel/95 shadow-xl backdrop-blur-md dark:border-border/70 dark:bg-panel/95"
               style={{ top: toolsPos.top, left: toolsPos.left, zIndex: 500 }}
               role="dialog"
-              aria-label="Shortcuts"
+              aria-label="Action"
             >
               <div className="border-b border-border/80 px-4 py-3">
-                <p className="text-sm font-semibold text-foreground">Shortcuts</p>
+                <p className="text-sm font-semibold text-foreground">Action</p>
               </div>
               <div className="space-y-0.5 p-2">
-                <Link
-                  href="/mom"
-                  className="flex gap-3 rounded-lg px-3 py-3 outline-none transition-colors hover:bg-muted/70 focus-visible:ring-2 focus-visible:ring-ring"
-                  onClick={() => setToolsOpen(false)}
+                <button
+                  type="button"
+                  className="flex w-full gap-3 rounded-lg px-3 py-3 text-left outline-none transition-colors hover:bg-muted/70 focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => {
+                    setToolsOpen(false);
+                    setShortcutFeature("mom");
+                  }}
                 >
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted/90 text-muted-foreground">
                     <ClipboardList className="h-5 w-5 shrink-0" aria-hidden />
@@ -537,11 +570,14 @@ export function Topbar({
                     </p>
                   </div>
                   <ChevronRight className="mt-2 h-4 w-4 shrink-0 text-muted-foreground/45" aria-hidden />
-                </Link>
-                <Link
-                  href="/retag"
-                  className="flex gap-3 rounded-lg px-3 py-3 outline-none transition-colors hover:bg-muted/70 focus-visible:ring-2 focus-visible:ring-ring"
-                  onClick={() => setToolsOpen(false)}
+                </button>
+                <button
+                  type="button"
+                  className="flex w-full gap-3 rounded-lg px-3 py-3 text-left outline-none transition-colors hover:bg-muted/70 focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => {
+                    setToolsOpen(false);
+                    setShortcutFeature("retag");
+                  }}
                 >
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted/90 text-muted-foreground">
                     <Tags className="h-5 w-5 shrink-0" aria-hidden />
@@ -553,11 +589,14 @@ export function Topbar({
                     </p>
                   </div>
                   <ChevronRight className="mt-2 h-4 w-4 shrink-0 text-muted-foreground/45" aria-hidden />
-                </Link>
-                <Link
-                  href="/follow-up"
-                  className="flex gap-3 rounded-lg px-3 py-3 outline-none transition-colors hover:bg-muted/70 focus-visible:ring-2 focus-visible:ring-ring"
-                  onClick={() => setToolsOpen(false)}
+                </button>
+                <button
+                  type="button"
+                  className="flex w-full gap-3 rounded-lg px-3 py-3 text-left outline-none transition-colors hover:bg-muted/70 focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => {
+                    setToolsOpen(false);
+                    setShortcutFeature("follow-up");
+                  }}
                 >
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted/90 text-muted-foreground">
                     <BellRing className="h-5 w-5 shrink-0" aria-hidden />
@@ -569,7 +608,7 @@ export function Topbar({
                     </p>
                   </div>
                   <ChevronRight className="mt-2 h-4 w-4 shrink-0 text-muted-foreground/45" aria-hidden />
-                </Link>
+                </button>
               </div>
             </div>,
             document.body
@@ -584,10 +623,7 @@ export function Topbar({
               style={{ top: notifPos.top, left: notifPos.left, zIndex: 500 }}
             >
               <div className="flex items-center justify-between gap-3 border-b border-border/80 px-4 py-3">
-                <div>
-                  <p className="text-sm font-semibold text-foreground">Your updates</p>
-                  <p className="text-[11px] text-muted-foreground">Mailbox, leads, meetings &amp; AI</p>
-                </div>
+                <p className="text-sm font-semibold text-foreground">Your updates</p>
                 <Button
                   type="button"
                   variant="ghost"
@@ -606,9 +642,34 @@ export function Topbar({
                 </p>
               )}
               <LenisScrollArea className="max-h-[min(70vh,22rem)] min-h-0">
-                {loading && items.length === 0 ? (
+                {classifyBatchSummary ? (
+                  <div className="border-b border-border/70 bg-muted/15 p-3 dark:bg-muted/10">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="px-0.5 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        Classification recap
+                      </p>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 shrink-0 rounded-lg text-muted-foreground hover:text-foreground"
+                        aria-label="Dismiss classification recap"
+                        onClick={() => setClassifyBatchSummary(null)}
+                      >
+                        <X className="h-4 w-4" aria-hidden />
+                      </Button>
+                    </div>
+                    <p className="mt-1 whitespace-pre-wrap px-0.5 text-xs leading-relaxed text-foreground">
+                      {classifyBatchSummary.summary}
+                    </p>
+                    <p className="mt-1.5 px-0.5 text-[10px] text-muted-foreground">
+                      {classifyBatchSummary.count} messages summarized together
+                    </p>
+                  </div>
+                ) : null}
+                {loading && items.length === 0 && !classifyBatchSummary ? (
                   <p className="px-4 py-8 text-center text-sm text-muted-foreground">Loading updates…</p>
-                ) : items.length === 0 ? (
+                ) : items.length === 0 && !classifyBatchSummary ? (
                   notifError ? (
                     <p className="px-4 py-8 text-center text-sm text-muted-foreground">
                       Couldn&apos;t load this list. Fix the message above if shown, then tap refresh.
@@ -624,6 +685,8 @@ export function Topbar({
                       </p>
                     </div>
                   )
+                ) : items.length === 0 && classifyBatchSummary ? (
+                  <p className="px-4 py-4 text-center text-xs text-muted-foreground">No other alerts right now.</p>
                 ) : (
                   <div className="space-y-1 p-2">
                     {groupedNotifications.map(({ key, label, items: groupItems }, gi) => (
@@ -693,6 +756,11 @@ export function Topbar({
             </div>,
             document.body
           )}
+        <ShortcutFeatureOverlay
+          portalMounted={portalMounted}
+          feature={shortcutFeature}
+          onClose={() => setShortcutFeature(null)}
+        />
         <Button
           variant="ghost"
           size="icon"

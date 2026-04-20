@@ -6,6 +6,8 @@ declare module "next-auth/jwt" {
     refreshToken?: string;
     expiresAt?: number;
     error?: "RefreshAccessTokenError";
+    /** Profile photo URL (OIDC `picture` claim), surfaced as `session.user.image`. */
+    picture?: string | null;
   }
 }
 

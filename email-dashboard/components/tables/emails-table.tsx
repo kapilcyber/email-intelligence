@@ -31,6 +31,8 @@ interface EmailsTableProps {
   className?: string;
   /** When set, rows are clickable and navigate to this path with email id */
   getEmailLink?: (email: EmailRecord) => string;
+  /** When true, rows are not links (no open detail); list is view-only. Overrides navigation if getEmailLink were set. */
+  readOnly?: boolean;
   /** History / inbox list: department retag (non-admin → approval request). */
   showRetag?: boolean;
   onRetagDone?: () => void;
@@ -44,12 +46,14 @@ export function EmailsTable({
   emptyMessage = "No emails found.",
   className,
   getEmailLink,
+  readOnly = false,
   showRetag,
   onRetagDone,
   showMailbox,
 }: EmailsTableProps) {
   const router = useRouter();
   const shouldShowRetag = showRetag ?? true;
+  const isClickable = !!getEmailLink && !readOnly;
 
   if (isLoading) {
     return (
@@ -143,9 +147,8 @@ export function EmailsTable({
     <div className={cn("min-w-0", className)}>
       <div className="glass-surface space-y-3 rounded-2xl p-3 md:hidden">
         {emails.map((email) => {
-          const isClickable = !!getEmailLink;
           const go = () => {
-            if (getEmailLink) router.push(getEmailLink(email));
+            if (getEmailLink && !readOnly) router.push(getEmailLink(email));
           };
           const onKeyDown = (e: KeyboardEvent) => {
             if (!isClickable) return;
@@ -227,8 +230,10 @@ export function EmailsTable({
             </thead>
             <tbody>
               {emails.map((email) => {
-                const rowClass = "border-b border-border/60 transition-colors hover:bg-muted/60";
-                const isClickable = !!getEmailLink;
+                const rowClass = cn(
+                  "border-b border-border/60 transition-colors",
+                  !readOnly && "hover:bg-muted/60"
+                );
                 return (
                   <tr
                     key={email.id}

@@ -7,17 +7,19 @@ from typing import Any
 from urllib.parse import quote
 from fastapi import APIRouter, Depends, Query, Body, Path, HTTPException, Header
 from fastapi.responses import Response
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import OperationalError
 from pydantic import BaseModel, Field
 from app.db.session import get_db
 from app.db.models import Email, Attachment, User
 from app.workers.tasks import (
-    backfill_emails_task,
+    backfill_mailbox_all_folders_task,
     backfill_classify_emails_task,
     enqueue_classify_email_task,
 )
 from app.config import get_settings
+from app.ai.classifier import generate_classification_batch_summary_text
 from app.graph.auth import get_auth_headers
 from app.api.deps import get_current_user_email
 from app.http_client import httpx_client
@@ -162,8 +164,8 @@ def _graph_reply_all_delegated(graph_access_token: str, graph_message_id: str, c
 
 class BackfillBody(BaseModel):
     user_id: str | None = None  # If omitted, uses MAILBOX_EMAIL from .env
-    folder_id: str = "inbox"
-    days: int = 7  # Last N days; use 0 or all=True to sync all emails from the folder
+    folder_id: str = "inbox"  # Legacy; full sync walks all Graph mail folders
+    days: int = 7  # Last N days; use 0 or all=True to sync all emails from each folder
     all: bool = False  # When True, sync all emails (ignores days)
     from_date: str | None = None  # YYYY-MM-DD: sync only from this date (inclusive)
     to_date: str | None = None  # YYYY-MM-DD: sync only up to this date (inclusive)
@@ -847,6 +849,7 @@ def trigger_backfill(
     Enqueue a job to sync existing emails from Microsoft Graph into the database.
     user_id: mailbox to sync. If omitted, uses the logged-in user's email (X-User-Email).
     Users can only sync their own mailbox unless body.user_id equals current user.
+    Sync walks every mail folder (Inbox, Sent, Archive, custom folders, etc.); Recoverable Items / Sync Issues are skipped by default (see settings).
     """
     user_id = body.user_id or current_user_email
     if not user_id or not user_id.strip():
@@ -864,30 +867,139 @@ def trigger_backfill(
             uid = uid.lower()
         from_date = (body.from_date or "").strip() or None
         to_date = (body.to_date or "").strip() or None
-        from app.workers.user_queue import user_queue_incr
-
-        user_queue_incr(uid, 1)
-        user_queue_incr(uid, 1)
         if body.from_date or body.to_date:
             days = 0
-            task_inbox = backfill_emails_task.delay(uid, "inbox", days, from_date, to_date)
-            task_sent = backfill_emails_task.delay(uid, "sentitems", days, from_date, to_date)
-            msg = f"Backfill ({from_date or '…'} to {to_date or '…'}) enqueued for Inbox and Sent Items."
+            task = backfill_mailbox_all_folders_task.delay(uid, days, from_date, to_date)
+            msg = f"Full mailbox backfill ({from_date or '…'} to {to_date or '…'}) enqueued for all folders."
         else:
             days = 0 if body.all else body.days
-            task_inbox = backfill_emails_task.delay(uid, "inbox", days)
-            task_sent = backfill_emails_task.delay(uid, "sentitems", days)
-            msg = "Backfill enqueued for Inbox and Sent Items." if body.all else f"Backfill (last {body.days} days) enqueued for Inbox and Sent Items."
+            task = backfill_mailbox_all_folders_task.delay(uid, days)
+            msg = (
+                "Full mailbox backfill enqueued (all folders including Archive)."
+                if body.all
+                else f"Full mailbox backfill (last {body.days} days) enqueued for all folders."
+            )
         return {
             "ok": True,
-            "taskId": task_inbox.id,
-            "taskIds": [task_inbox.id, task_sent.id],
+            "taskId": task.id,
+            "taskIds": [task.id],
             "userId": uid,
-            "message": f"{msg} Your sent replies will appear in Threads. Run a Celery worker; then refresh.",
+            "message": f"{msg} Run a Celery worker; then refresh.",
         }
     except Exception as e:
         from fastapi.responses import JSONResponse
         return JSONResponse(status_code=400, content={"error": str(e)})
+
+
+class ClassificationBatchSummaryBody(BaseModel):
+    since: str = Field(..., description="ISO8601: include emails with ai_processed_at >= this instant")
+
+
+@router.get("/emails/classification-batch-status")
+def classification_batch_status(
+    since: str = Query(..., description="ISO8601 window start (UTC)"),
+    current_user_email: str = Depends(get_current_user_email),
+    db: Session = Depends(get_db),
+):
+    """How many messages finished AI classification at or after `since` (for bulk recap polling)."""
+    mbox = (current_user_email or "").strip().lower()
+    if not mbox:
+        raise HTTPException(status_code=400, detail="Missing user")
+    try:
+        since_dt = datetime.fromisoformat(since.replace("Z", "+00:00"))
+        if since_dt.tzinfo is None:
+            since_dt = since_dt.replace(tzinfo=timezone.utc)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid since datetime")
+    base = (
+        db.query(Email)
+        .filter(
+            Email.mailbox_owner_email == mbox,
+            Email.deleted_at.is_(None),
+            Email.ai_processed_at.isnot(None),
+            Email.ai_processed_at >= since_dt,
+            Email.ai_status == "completed",
+        )
+    )
+    count = base.count()
+    latest = (
+        db.query(func.max(Email.ai_processed_at))
+        .filter(
+            Email.mailbox_owner_email == mbox,
+            Email.deleted_at.is_(None),
+            Email.ai_processed_at.isnot(None),
+            Email.ai_processed_at >= since_dt,
+            Email.ai_status == "completed",
+        )
+        .scalar()
+    )
+    return {
+        "classifiedSinceCount": count,
+        "latestAiProcessedAt": latest.isoformat() if latest else None,
+    }
+
+
+@router.post("/emails/classification-batch-summary")
+def classification_batch_summary(
+    body: ClassificationBatchSummaryBody,
+    current_user_email: str = Depends(get_current_user_email),
+    db: Session = Depends(get_db),
+):
+    """
+    Build one Ollama/OpenAI plain-text recap for all messages classified (completed) at or after `since`.
+    """
+    import uuid as uuid_mod
+
+    mbox = (current_user_email or "").strip().lower()
+    if not mbox:
+        raise HTTPException(status_code=400, detail="Missing user")
+    try:
+        since_dt = datetime.fromisoformat(body.since.replace("Z", "+00:00"))
+        if since_dt.tzinfo is None:
+            since_dt = since_dt.replace(tzinfo=timezone.utc)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid since datetime")
+
+    settings = get_settings()
+    use_ollama = bool(settings.ollama_base_url and settings.ollama_base_url.strip())
+    use_openai = bool(settings.openai_api_key and settings.openai_api_key.strip())
+    if not use_ollama and not use_openai:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=400,
+            content={"error": "No AI provider configured for summaries."},
+        )
+
+    rows = (
+        db.query(Email)
+        .filter(
+            Email.mailbox_owner_email == mbox,
+            Email.deleted_at.is_(None),
+            Email.ai_processed_at.isnot(None),
+            Email.ai_processed_at >= since_dt,
+            Email.ai_status == "completed",
+        )
+        .order_by(Email.ai_processed_at.asc())
+        .limit(200)
+        .all()
+    )
+    if not rows:
+        return {"ok": True, "count": 0, "summary": None}
+
+    lines: list[str] = []
+    for i, e in enumerate(rows, 1):
+        subj = (e.subject or "—").replace("\n", " ")[:220]
+        summ = ((e.ai_summary or "—").replace("\n", " "))[:400]
+        cat = (e.ai_category or "—").strip()
+        pri = (e.ai_priority_label or "—").strip()
+        sender = (e.sender_email or "—").strip()
+        lines.append(
+            f"{i}. Subject: {subj}\n   From: {sender}\n   Category: {cat} | Priority: {pri}\n   AI summary: {summ}"
+        )
+    bundle = "\n".join(lines)
+    cid = str(uuid_mod.uuid4())[:8]
+    text = generate_classification_batch_summary_text(bundle, correlation_id=cid)
+    return {"ok": True, "count": len(rows), "summary": text if text.strip() else None}
 
 
 @router.post("/emails/{email_id}/soft-delete")

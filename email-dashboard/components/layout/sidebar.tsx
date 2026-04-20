@@ -24,6 +24,7 @@ import {
   ShieldCheck,
   Trash2,
   ListTree,
+  Globe2,
   type LucideIcon,
 } from "lucide-react";
 import { LenisScrollArea } from "@/components/lenis/lenis-scroll-area";
@@ -36,6 +37,22 @@ import type { TeamOut } from "@/lib/types";
 const SIDEBAR_LAYOUT_ANIM = "duration-200 ease-out motion-reduce:transition-none";
 /** Compositor-only fades for text (no max-width transition). */
 const SIDEBAR_LABEL_FADE = "duration-200 ease-out motion-reduce:transition-none";
+
+function userInitials(displayName: string): string {
+  const s = displayName.trim();
+  if (!s) return "?";
+  if (s.includes("@")) {
+    const local = s.split("@")[0] ?? "";
+    return (local.slice(0, 2) || "?").toUpperCase();
+  }
+  const parts = s.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    const a = parts[0]?.[0] ?? "";
+    const b = parts[1]?.[0] ?? "";
+    return `${a}${b}`.toUpperCase() || "?";
+  }
+  return s.slice(0, 2).toUpperCase() || "?";
+}
 
 const navItemsTop = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -70,6 +87,7 @@ const adminNavBeforePipeline = [
 const adminNavAfterPipeline = [
   { href: "/admin/workflow", label: "Hierarchy", icon: Network },
   { href: "/admin/deleted-mail", label: "Deleted mail", icon: Trash2 },
+  { href: "/admin/external-mail", label: "External mail", icon: Globe2 },
   { href: "/admin/approvals", label: "Approvals", icon: ShieldCheck },
   { href: "/admin/archive-projects", label: "Archive Projects", icon: FolderOpen },
 ];
@@ -80,6 +98,7 @@ const ADMIN_ONLY_HREFS = new Set([
   "/admin/workflow",
   "/admin/approvals",
   "/admin/deleted-mail",
+  "/admin/external-mail",
 ]);
 
 const SIDEBAR_FLYOUT_Z = 500;
@@ -590,6 +609,11 @@ export function Sidebar({
   const showElevatedAdminNav = showFullAdminNav || showManagerAdminNav;
   const name = session?.user?.name ?? session?.user?.email ?? "User";
   const navCollapsed = collapsed && !isMobile;
+  const profileImage = (session?.user?.image ?? "").trim() || null;
+  const [avatarImgFailed, setAvatarImgFailed] = useState(false);
+  useEffect(() => {
+    setAvatarImgFailed(false);
+  }, [profileImage]);
 
   const renderElevatedAdminLink = (item: { href: string; label: string; icon: LucideIcon }) => {
     const { href, label, icon: Icon } = item;
@@ -601,7 +625,7 @@ export function Sidebar({
         onClick={() => isMobile && onMobileClose?.()}
         className={cn(
           "flex min-w-0 items-center overflow-hidden rounded-lg py-2.5 text-sm font-medium transition-[padding,gap,color,background-color] " +
-            SIDEBAR_LAYOUT_ANIM,
+          SIDEBAR_LAYOUT_ANIM,
           isActive
             ? "bg-foreground text-background"
             : "text-muted-foreground hover:bg-muted hover:text-foreground",
@@ -668,21 +692,41 @@ export function Sidebar({
             "fixed inset-y-0 left-0 z-[560] w-[min(18rem,88vw)] pt-[env(safe-area-inset-top,0px)] shadow-xl transition-transform motion-reduce:transition-none",
             mobileOpen ? "translate-x-0" : "-translate-x-full pointer-events-none"
           )
-          : cn("transition-[width]", navCollapsed ? "w-[4rem]" : "w-64")
+          : cn("transition-[width]", navCollapsed ? "w-24" : "w-64")
       )}
       aria-hidden={isMobile && !mobileOpen}
     >
       <div
         className={cn(
-          "flex h-16 shrink-0 items-center overflow-hidden border-b border-border bg-panel-elevated/80 backdrop-blur-md transition-[padding,gap] " +
+          "flex h-16 shrink-0 items-center border-b border-border bg-panel-elevated/80 backdrop-blur-md transition-[padding,gap] " +
           SIDEBAR_LAYOUT_ANIM,
-          navCollapsed ? "justify-center px-2" : "gap-3 px-4"
+          navCollapsed
+            ? "justify-center gap-2 overflow-visible px-2"
+            : "gap-3 overflow-hidden px-4"
         )}
       >
         <div
+          className="relative flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted ring-1 ring-border/80"
+          title={name}
+          aria-label={`${name} profile`}
+        >
+          {profileImage && !avatarImgFailed ? (
+            <img
+              src={profileImage}
+              alt=""
+              className="h-full w-full object-cover"
+              onError={() => setAvatarImgFailed(true)}
+            />
+          ) : (
+            <span className="select-none text-[11px] font-semibold leading-none text-foreground" aria-hidden>
+              {userInitials(name)}
+            </span>
+          )}
+        </div>
+        <div
           className={cn(
             "min-w-0 overflow-hidden leading-snug transition-opacity " + SIDEBAR_LABEL_FADE,
-            navCollapsed ? "w-0 shrink-0 opacity-0" : "max-w-[min(100%,12rem)] flex-1 opacity-100"
+            navCollapsed ? "hidden" : "max-w-[min(100%,12rem)] flex-1 opacity-100"
           )}
           aria-hidden={navCollapsed}
         >
@@ -696,14 +740,15 @@ export function Sidebar({
             else onToggle();
           }}
           className={cn(
-            "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors " +
+            "flex shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors " +
             SIDEBAR_LABEL_FADE,
-            "hover:bg-muted hover:text-foreground"
+            "hover:bg-muted hover:text-foreground",
+            navCollapsed && !isMobile ? "h-9 w-9" : "h-10 w-10"
           )}
           aria-label={isMobile ? "Close navigation menu" : navCollapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
           {navCollapsed && !isMobile ? (
-            <ChevronRight className="h-6 w-6" aria-hidden />
+            <ChevronRight className="h-5 w-5" aria-hidden />
           ) : (
             <PanelLeftClose className="h-6 w-6" aria-hidden />
           )}

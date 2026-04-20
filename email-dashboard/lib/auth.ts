@@ -49,6 +49,7 @@ async function refreshAzureAccessToken(token: JWT): Promise<JWT> {
 /**
  * Azure AD sign-in with delegated Mail.Send for reply-all from the user's mailbox.
  * Overrides default `profile` so we do NOT call Graph `/me/photos` during sign-in.
+ * Uses `picture` from the OIDC profile when Azure sends it (optional claim); otherwise initials in the UI.
  */
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -68,13 +69,16 @@ export const authOptions: NextAuthOptions = {
           name?: string | null;
           email?: string | null;
           preferred_username?: string | null;
+          picture?: string | null;
         };
         const email = (p.email || p.preferred_username || "").trim() || null;
+        const image =
+          typeof p.picture === "string" && p.picture.trim() ? p.picture.trim() : null;
         return {
           id: p.sub ?? email ?? "unknown",
           name: p.name ?? email?.split("@")[0] ?? null,
           email,
-          image: null,
+          image,
         };
       },
     }),
@@ -84,7 +88,17 @@ export const authOptions: NextAuthOptions = {
   },
   trustHost: true,
   callbacks: {
-    async jwt({ token, account }): Promise<JWT> {
+    async session({ session, token }) {
+      if (session.user) {
+        session.user.name = (token.name as string | null | undefined) ?? session.user.name;
+        session.user.email = (token.email as string | null | undefined) ?? session.user.email;
+        session.user.image =
+          (typeof token.picture === "string" && token.picture.trim() ? token.picture : null) ??
+          session.user.image;
+      }
+      return session;
+    },
+    async jwt({ token, account, user }): Promise<JWT> {
       if (account) {
         const acc = account as {
           access_token?: string;
@@ -95,12 +109,16 @@ export const authOptions: NextAuthOptions = {
           typeof acc.expires_at === "number"
             ? acc.expires_at
             : Math.floor(Date.now() / 1000 + 3600);
+        const image = user && "image" in user ? (user as { image?: string | null }).image : null;
         return {
           ...token,
           accessToken: acc.access_token,
           refreshToken: acc.refresh_token,
           expiresAt: exp,
           error: undefined,
+          name: user?.name ?? token.name,
+          email: user?.email ?? token.email,
+          picture: image ?? token.picture,
         };
       }
       if (token.error === "RefreshAccessTokenError") {

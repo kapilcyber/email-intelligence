@@ -71,6 +71,19 @@ class Settings(BaseSettings):
     daily_summary_hour_utc: int = 23  # Hour (0-23) UTC to run daily summary
     daily_summary_minute_utc: int = 0
 
+    # Admin “External mail” filter: treat addresses in this domain as internal; others are external
+    company_internal_email_domain: str = "cachedigitech.com"
+
+    # Full-mailbox sync: skip these Graph mailFolder wellKnownName values (recoverable = litigation hold; huge)
+    mailbox_sync_skip_well_known_names: str = (
+        "recoverableitemsroot,recoverableitemsdeletions,recoverableitemsversions,"
+        "recoverableitemspurges,recoverableitemssubstrateholds,syncissues"
+    )
+    # Case-insensitive substring match on displayName (comma-separated)
+    mailbox_sync_skip_folder_name_contains: str = "sync issues"
+    # Safety cap when enumerating folders (remaining folders are not enqueued)
+    mailbox_sync_max_folders: int = 500
+
     # Sync Microsoft “Deleted Items” for each User.email (app-only Graph; same Mail.Read as ingest)
     outlook_deleted_sync_enabled: bool = True
     outlook_deleted_sync_days: int = 14  # per-mailbox window for each scheduled/manual sync
