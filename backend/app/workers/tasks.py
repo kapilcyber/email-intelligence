@@ -6,7 +6,18 @@ from app.workers.celery_app import celery_app
 from sqlalchemy import create_engine, or_
 from sqlalchemy.orm import sessionmaker
 from app.config import get_settings
-from app.db.models import Base, Email, Attachment, Sender, Team, User, DailySummary, EscalationThread
+from app.db.models import (
+    Base,
+    Email,
+    Attachment,
+    Sender,
+    Team,
+    User,
+    UserLoginEvent,
+    DailySummary,
+    EscalationThread,
+    MailboxMessageRule,
+)
 from app.graph.auth import get_auth_headers
 from app.ai.classifier import classify_email_content
 from app.ai.escalation import compute_escalation
@@ -26,6 +37,7 @@ from app.graph.mail_folders import (
     parse_skip_folder_name_substrings,
     parse_skip_well_known_names,
 )
+from app.graph.message_rules import GraphMessageRulesError, list_inbox_message_rules
 
 logger = logging.getLogger(__name__)
 
@@ -393,6 +405,160 @@ def sync_outlook_deleted_for_all_users_task(days: int | None = None):
             user_key = e.lower()
             backfill_emails_task.delay(user_key, "deleteditems", d)
             enq += 1
+        return {"ok": True, "mailboxesEnqueued": enq, "days": d}
+    finally:
+        db.close()
+
+
+@celery_app.task(name="app.workers.tasks.sync_mailbox_message_rules_task")
+def sync_mailbox_message_rules_task(user_id: str):
+    """
+    Full snapshot of Graph inbox messageRules for one mailbox (upsert + remove orphans).
+    Requires application permission MailboxSettings.Read (admin consent).
+    """
+    _ensure_tables()
+    uid = (user_id or "").strip()
+    if not uid:
+        return {"ok": False, "error": "missing user_id"}
+    mailbox_norm = uid.lower() if "@" in uid else uid
+    try:
+        rules = list_inbox_message_rules(uid)
+    except GraphMessageRulesError as e:
+        logger.warning(
+            "sync_mailbox_message_rules_task: Graph failed user=%s status=%s: %s",
+            uid,
+            e.status_code,
+            (e.message or "")[:500],
+        )
+        return {"ok": False, "error": e.message, "statusCode": e.status_code}
+    now = datetime.now(timezone.utc)
+    fetched_ids: set[str] = set()
+    db = SessionLocal()
+    try:
+        for item in rules:
+            gid = item.get("id")
+            if not gid or not isinstance(gid, str):
+                continue
+            fetched_ids.add(gid)
+            row = (
+                db.query(MailboxMessageRule)
+                .filter(
+                    MailboxMessageRule.mailbox_owner_email == mailbox_norm,
+                    MailboxMessageRule.graph_rule_id == gid,
+                )
+                .first()
+            )
+            seq_raw = item.get("sequence")
+            rule_sequence: int | None = None
+            if isinstance(seq_raw, int):
+                rule_sequence = seq_raw
+            elif isinstance(seq_raw, str) and seq_raw.strip().lstrip("-").isdigit():
+                try:
+                    rule_sequence = int(seq_raw.strip())
+                except ValueError:
+                    rule_sequence = None
+            disp = item.get("displayName")
+            display_name = disp if isinstance(disp, str) else (str(disp) if disp is not None else None)
+            if row:
+                row.display_name = display_name
+                row.rule_sequence = rule_sequence
+                row.is_enabled = item.get("isEnabled")
+                row.has_error = item.get("hasError")
+                row.is_read_only = item.get("isReadOnly")
+                row.rule_payload = item
+                row.synced_at = now
+            else:
+                db.add(
+                    MailboxMessageRule(
+                        id=str(uuid.uuid4()),
+                        mailbox_owner_email=mailbox_norm,
+                        graph_rule_id=gid,
+                        display_name=display_name,
+                        rule_sequence=rule_sequence,
+                        is_enabled=item.get("isEnabled"),
+                        has_error=item.get("hasError"),
+                        is_read_only=item.get("isReadOnly"),
+                        rule_payload=item,
+                        synced_at=now,
+                    )
+                )
+        for orphan in (
+            db.query(MailboxMessageRule).filter(MailboxMessageRule.mailbox_owner_email == mailbox_norm).all()
+        ):
+            if orphan.graph_rule_id not in fetched_ids:
+                db.delete(orphan)
+        db.commit()
+        return {"ok": True, "rulesSynced": len(fetched_ids)}
+    except Exception as e:
+        db.rollback()
+        logger.exception("sync_mailbox_message_rules_task: persist failed user=%s: %s", uid, e)
+        return {"ok": False, "error": str(e)}
+    finally:
+        db.close()
+
+
+@celery_app.task(name="app.workers.tasks.sync_message_rules_for_all_users_task")
+def sync_message_rules_for_all_users_task(ignore_sync_disabled: bool = False):
+    """Enqueue inbox messageRules sync for every registered User.email (Celery Beat / admin)."""
+    cfg = get_settings()
+    if not ignore_sync_disabled and not cfg.outlook_message_rules_sync_enabled:
+        return {"ok": True, "skipped": True, "message": "outlook_message_rules_sync_enabled is false"}
+    db = SessionLocal()
+    try:
+        rows = db.query(User.email).filter(User.email.isnot(None), User.email != "").distinct().all()
+        enq = 0
+        for (addr,) in rows:
+            e = (addr or "").strip()
+            if not e or "@" not in e:
+                continue
+            sync_mailbox_message_rules_task.delay(e.lower())
+            enq += 1
+        return {"ok": True, "mailboxesEnqueued": enq}
+    finally:
+        db.close()
+
+
+@celery_app.task(name="app.workers.tasks.sync_logged_in_users_mailboxes_task")
+def sync_logged_in_users_mailboxes_task(days: int | None = None):
+    """
+    Enqueue full-mailbox backfill for each user that currently has an open session (dashboard / OAuth).
+    Intended for Celery Beat (default every 5 minutes). Uses same Graph path as POST /api/emails/backfill.
+    """
+    cfg = get_settings()
+    if not getattr(cfg, "mailbox_auto_sync_logged_in_enabled", True):
+        logger.info("sync_logged_in_users_mailboxes_task: skipped (mailbox_auto_sync_logged_in_enabled is false)")
+        return {"ok": True, "skipped": True, "message": "mailbox_auto_sync_logged_in_enabled is false"}
+    d = days if days is not None else int(getattr(cfg, "mailbox_auto_sync_logged_in_days", 0) or 0)
+    db = SessionLocal()
+    try:
+        open_user_ids = (
+            db.query(UserLoginEvent.user_id)
+            .filter(UserLoginEvent.is_logged_in.is_(True))
+            .distinct()
+            .all()
+        )
+        ids = [row[0] for row in open_user_ids if row and row[0]]
+        if not ids:
+            logger.info("sync_logged_in_users_mailboxes_task: no active login sessions (user_login_events)")
+            return {"ok": True, "mailboxesEnqueued": 0, "message": "no active login sessions"}
+        rows = (
+            db.query(User.email)
+            .filter(User.id.in_(ids), User.email.isnot(None), User.email != "")
+            .distinct()
+            .all()
+        )
+        enq = 0
+        for (addr,) in rows:
+            e = (addr or "").strip()
+            if not e or "@" not in e:
+                continue
+            backfill_mailbox_all_folders_task.delay(e.lower(), d)
+            enq += 1
+        logger.info(
+            "sync_logged_in_users_mailboxes_task: enqueued full-folder sync for %s mailbox(es), days=%s",
+            enq,
+            d,
+        )
         return {"ok": True, "mailboxesEnqueued": enq, "days": d}
     finally:
         db.close()
@@ -1077,9 +1243,13 @@ def backfill_mailbox_all_folders_task(
             folder_well_known_name=f.get("wellKnownName"),
         )
         enq += 1
+    cfg = get_settings()
+    if getattr(cfg, "outlook_message_rules_sync_on_backfill", True):
+        sync_mailbox_message_rules_task.delay(uid)
     return {
         "ok": True,
         "folderJobsEnqueued": enq,
         "foldersDiscovered": len(raw),
         "foldersAfterFilter": len(folders),
+        "messageRulesSyncEnqueued": bool(getattr(cfg, "outlook_message_rules_sync_on_backfill", True)),
     }

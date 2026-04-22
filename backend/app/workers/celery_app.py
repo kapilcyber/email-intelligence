@@ -4,8 +4,10 @@ time.clock = getattr(time, "perf_counter", time.time)
 
 import logging
 import sys
+from datetime import timedelta
+
 from celery import Celery
-from celery.schedules import crontab
+from celery.schedules import crontab, schedule
 from celery.signals import worker_init
 from app.config import get_settings
 
@@ -40,6 +42,9 @@ celery_app.conf.task_annotations = {
     "app.workers.tasks.ingest_email_chunk_task": {"ignore_result": True},
     "app.workers.tasks.backfill_emails_task": {"ignore_result": True},
     "app.workers.tasks.backfill_mailbox_all_folders_task": {"ignore_result": True},
+    "app.workers.tasks.sync_mailbox_message_rules_task": {"ignore_result": True},
+    "app.workers.tasks.sync_message_rules_for_all_users_task": {"ignore_result": True},
+    "app.workers.tasks.sync_logged_in_users_mailboxes_task": {"ignore_result": True},
     "app.workers.tasks.classify_email_task": {"ignore_result": True},
     "app.workers.tasks.notify_sales_lead_task": {"ignore_result": True},
 }
@@ -60,6 +65,38 @@ if getattr(settings, "outlook_deleted_sync_enabled", True):
         "schedule": crontab(minute=20, hour="*/4"),
         "options": {"queue": "celery"},
     }
+if getattr(settings, "outlook_message_rules_sync_enabled", True):
+    _beat["outlook-message-rules-sync"] = {
+        "task": "app.workers.tasks.sync_message_rules_for_all_users_task",
+        "schedule": crontab(
+            hour=getattr(settings, "outlook_message_rules_sync_hour_utc", 5),
+            minute=getattr(settings, "outlook_message_rules_sync_minute_utc", 30),
+        ),
+        "options": {"queue": "celery"},
+    }
+def _every_n_minutes_schedule(n: int):
+    """
+    Prefer crontab when N divides 60 (reliable Celery Beat alignment).
+    Otherwise fall back to timedelta (e.g. 7 minutes).
+    """
+    n = max(1, int(n))
+    if n < 60 and 60 % n == 0:
+        return crontab(minute=f"*/{n}")
+    return schedule(timedelta(minutes=n))
+
+
+if getattr(settings, "mailbox_auto_sync_logged_in_enabled", True):
+    _mins = max(1, int(getattr(settings, "mailbox_auto_sync_logged_in_interval_minutes", 5) or 5))
+    _beat["mailbox-auto-sync-logged-in"] = {
+        "task": "app.workers.tasks.sync_logged_in_users_mailboxes_task",
+        "schedule": _every_n_minutes_schedule(_mins),
+        "options": {"queue": "celery"},
+    }
+    logger.info(
+        "Beat: mailbox auto-sync for logged-in users every %s minute(s) (schedule type: %s)",
+        _mins,
+        type(_beat["mailbox-auto-sync-logged-in"]["schedule"]).__name__,
+    )
 celery_app.conf.beat_schedule = _beat
 # On Windows, default prefork pool can raise "ValueError: not enough values to unpack" in Celery trace
 if sys.platform == "win32":

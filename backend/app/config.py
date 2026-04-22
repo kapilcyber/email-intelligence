@@ -88,6 +88,20 @@ class Settings(BaseSettings):
     outlook_deleted_sync_enabled: bool = True
     outlook_deleted_sync_days: int = 14  # per-mailbox window for each scheduled/manual sync
 
+    # Inbox messageRules (Outlook mailbox rules): requires Graph application permission MailboxSettings.Read
+    outlook_message_rules_sync_enabled: bool = True  # Celery Beat + admin “sync all” gate
+    outlook_message_rules_sync_on_backfill: bool = True  # After full-folder backfill, enqueue per-mailbox rule sync
+    outlook_message_rules_sync_hour_utc: int = 5  # Daily Celery Beat slot (minute below)
+    outlook_message_rules_sync_minute_utc: int = 30
+
+    # Celery Beat: full-mailbox Graph sync for users with an open dashboard session (see user_login_events)
+    mailbox_auto_sync_logged_in_enabled: bool = True
+    mailbox_auto_sync_logged_in_interval_minutes: int = 5
+    # 0 = all mail since 2000-01-01 per folder (same as manual backfill “all”); use 1–7 for lighter periodic sync
+    mailbox_auto_sync_logged_in_days: int = 0
+    # After Microsoft OAuth sign-in (POST /api/me with X-Login-Source: oauth), enqueue one full-mailbox backfill
+    mailbox_sync_on_oauth_login_enabled: bool = True
+
     # Backfill → ingest: enqueue N messages per Celery task (fewer Redis round-trips; better under many users)
     sync_ingest_chunk_size: int = 40
 

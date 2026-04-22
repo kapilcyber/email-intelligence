@@ -12,11 +12,12 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import OperationalError
 from pydantic import BaseModel, Field
 from app.db.session import get_db
-from app.db.models import Email, Attachment, User
+from app.db.models import Email, Attachment, User, MailboxMessageRule
 from app.workers.tasks import (
     backfill_mailbox_all_folders_task,
     backfill_classify_emails_task,
     enqueue_classify_email_task,
+    sync_mailbox_message_rules_task,
 )
 from app.config import get_settings
 from app.ai.classifier import generate_classification_batch_summary_text
@@ -169,6 +170,33 @@ class BackfillBody(BaseModel):
     all: bool = False  # When True, sync all emails (ignores days)
     from_date: str | None = None  # YYYY-MM-DD: sync only from this date (inclusive)
     to_date: str | None = None  # YYYY-MM-DD: sync only up to this date (inclusive)
+
+
+class MessageRulesSyncBody(BaseModel):
+    """Optional mailbox to sync rules for; defaults to the authenticated user."""
+
+    user_id: str | None = None
+
+
+class MessageRuleOut(BaseModel):
+    id: str
+    graph_rule_id: str = Field(alias="graphRuleId")
+    display_name: str | None = Field(None, alias="displayName")
+    rule_sequence: int | None = Field(None, alias="sequence")
+    is_enabled: bool | None = Field(None, alias="isEnabled")
+    has_error: bool | None = Field(None, alias="hasError")
+    is_read_only: bool | None = Field(None, alias="isReadOnly")
+    synced_at: datetime = Field(alias="syncedAt")
+    rule_payload: dict | None = Field(None, alias="rulePayload")
+
+    model_config = {"from_attributes": True, "populate_by_name": True}
+
+
+class MessageRulesListResponse(BaseModel):
+    rules: list[MessageRuleOut]
+    mailbox_owner_email: str = Field(alias="mailboxOwnerEmail")
+
+    model_config = {"populate_by_name": True}
 
 
 class EmailOut(BaseModel):
@@ -889,6 +917,69 @@ def trigger_backfill(
     except Exception as e:
         from fastapi.responses import JSONResponse
         return JSONResponse(status_code=400, content={"error": str(e)})
+
+
+@router.get("/emails/message-rules", response_model=MessageRulesListResponse, response_model_by_alias=True)
+def list_mailbox_message_rules(
+    mailbox_owner_email: str | None = Query(
+        None,
+        alias="mailboxOwnerEmail",
+        description="Optional mailbox (admins only); defaults to the signed-in user.",
+    ),
+    current_user_email: str = Depends(get_current_user_email),
+    db: Session = Depends(get_db),
+):
+    """Return last-synced Outlook inbox messageRules for a mailbox (from PostgreSQL)."""
+    cur = (current_user_email or "").strip().lower()
+    if not cur:
+        raise HTTPException(status_code=400, detail="Missing user")
+    target = ((mailbox_owner_email or "").strip().lower() or cur)
+    if target != cur and not _is_admin_actor(cur, db):
+        raise HTTPException(status_code=403, detail="You can only view rules for your own mailbox.")
+    rows = (
+        db.query(MailboxMessageRule)
+        .filter(MailboxMessageRule.mailbox_owner_email == target)
+        .order_by(MailboxMessageRule.rule_sequence.nulls_last(), MailboxMessageRule.display_name.nulls_last())
+        .all()
+    )
+    return MessageRulesListResponse(
+        rules=[MessageRuleOut.model_validate(r) for r in rows],
+        mailbox_owner_email=target,
+    )
+
+
+@router.post("/emails/message-rules/sync")
+def enqueue_mailbox_message_rules_sync(
+    body: MessageRulesSyncBody | None = Body(None),
+    current_user_email: str = Depends(get_current_user_email),
+):
+    """
+    Enqueue Celery job to pull Graph inbox messageRules into `mailbox_message_rules`.
+    Requires app-only MailboxSettings.Read. Same mailbox ownership rules as mail backfill.
+    """
+    b = body or MessageRulesSyncBody()
+    user_id = b.user_id or current_user_email
+    if not user_id or not user_id.strip():
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse(
+            status_code=400,
+            content={"error": "user_id is required in body or send X-User-Email header."},
+        )
+    if b.user_id is not None and b.user_id.strip().lower() != current_user_email.strip().lower():
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse(status_code=403, content={"error": "You can only sync rules for your own mailbox."})
+    uid = user_id.strip()
+    if "@" in uid:
+        uid = uid.lower()
+    task = sync_mailbox_message_rules_task.delay(uid)
+    return {
+        "ok": True,
+        "taskId": task.id,
+        "userId": uid,
+        "message": "Mailbox message rules sync enqueued. Run a Celery worker; then GET /api/emails/message-rules.",
+    }
 
 
 class ClassificationBatchSummaryBody(BaseModel):

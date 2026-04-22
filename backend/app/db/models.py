@@ -252,6 +252,27 @@ class ProjectAssignment(Base):
     __table_args__ = (Index("ix_project_assignments_unique", "project_id", "user_id", unique=True),)
 
 
+class MailboxMessageRule(Base):
+    """Mirror of Microsoft Graph inbox messageRules (Outlook server-side mailbox rules)."""
+
+    __tablename__ = "mailbox_message_rules"
+
+    id = Column(String(36), primary_key=True, default=uuid_gen)
+    mailbox_owner_email = Column(String(512), nullable=False, index=True)
+    graph_rule_id = Column(String(256), nullable=False)
+    display_name = Column(String(512), nullable=True)
+    rule_sequence = Column(Integer, nullable=True)
+    is_enabled = Column(Boolean, nullable=True)
+    has_error = Column(Boolean, nullable=True)
+    is_read_only = Column(Boolean, nullable=True)
+    rule_payload = Column(JSONB, nullable=True)
+    synced_at = Column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        Index("ux_mailbox_message_rules_mailbox_graph_id", "mailbox_owner_email", "graph_rule_id", unique=True),
+    )
+
+
 class MomMeetingRecord(Base):
     """Per-mailbox minutes-of-meeting (MOM) prompt state for calendar meetings."""
 

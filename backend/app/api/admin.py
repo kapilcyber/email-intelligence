@@ -1460,6 +1460,23 @@ def admin_sync_outlook_deleted(
     }
 
 
+@router.post("/sync-mailbox-message-rules")
+def admin_sync_mailbox_message_rules(_admin: str = Depends(get_admin_user)):
+    """
+    Enqueue inbox messageRules sync for every registered `users.email`.
+    Requires Celery + Graph application permission MailboxSettings.Read (admin consent).
+    Runs even when OUTLOOK_MESSAGE_RULES_SYNC_ENABLED is false (manual override for Beat).
+    """
+    from app.workers.tasks import sync_message_rules_for_all_users_task
+
+    task = sync_message_rules_for_all_users_task.delay(True)
+    return {
+        "ok": True,
+        "taskId": task.id,
+        "message": "Mailbox message rules sync enqueued for all registered user mailboxes. Run a Celery worker.",
+    }
+
+
 @router.get("/emails", response_model=EmailsResponse, response_model_by_alias=True)
 def admin_list_emails(
     db: Session = Depends(get_db),

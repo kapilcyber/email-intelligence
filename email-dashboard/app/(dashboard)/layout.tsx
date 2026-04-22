@@ -140,7 +140,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <Suspense
           fallback={
             <header
-              className="glass-surface-strong flex min-h-16 shrink-0 items-center border-b px-4 pt-[env(safe-area-inset-top,0px)]"
+              className="glass-app-chrome flex min-h-16 shrink-0 items-center px-4 pt-[env(safe-area-inset-top,0px)]"
               aria-hidden
             />
           }

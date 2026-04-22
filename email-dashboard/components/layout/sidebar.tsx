@@ -685,7 +685,7 @@ export function Sidebar({
   return (
     <aside
       className={cn(
-        "flex shrink-0 flex-col overflow-x-hidden border-r border-border bg-panel-elevated/95 backdrop-blur-xl supports-[backdrop-filter]:bg-panel-elevated/88 [contain:layout] " +
+        "glass-sidebar-shell flex shrink-0 flex-col overflow-x-hidden [contain:layout] " +
         SIDEBAR_LAYOUT_ANIM,
         isMobile
           ? cn(
@@ -698,7 +698,7 @@ export function Sidebar({
     >
       <div
         className={cn(
-          "flex h-16 shrink-0 items-center border-b border-border bg-panel-elevated/80 backdrop-blur-md transition-[padding,gap] " +
+          "glass-sidebar-header flex h-16 shrink-0 items-center transition-[padding,gap] " +
           SIDEBAR_LAYOUT_ANIM,
           navCollapsed
             ? "justify-center gap-2 overflow-visible px-2"
@@ -758,7 +758,7 @@ export function Sidebar({
       <nav
         ref={navScrollRef}
         className={cn(
-          "flex min-h-0 flex-1 overflow-auto py-2 transition-[padding] " + SIDEBAR_LAYOUT_ANIM,
+          "glass-sidebar-nav flex min-h-0 flex-1 overflow-auto py-2 transition-[padding] " + SIDEBAR_LAYOUT_ANIM,
           navCollapsed ? "px-2" : "px-3"
         )}
       >
@@ -769,13 +769,14 @@ export function Sidebar({
             <>
               <p
                 className={cn(
-                  "overflow-hidden px-3 py-2 text-sm font-semibold uppercase tracking-wider text-muted-foreground transition-opacity " +
+                  "block w-full overflow-hidden text-left text-sm font-bold uppercase tracking-wider text-muted-foreground transition-opacity " +
+                  "rounded-md border border-border/50 bg-muted/40 px-2 py-2 " +
                   SIDEBAR_LABEL_FADE,
-                  navCollapsed ? "pointer-events-none mt-0 mb-0 h-0 py-0 opacity-0" : "mt-4 mb-2 h-auto opacity-100"
+                  navCollapsed ? "pointer-events-none mt-0 mb-0 h-0 border-0 bg-transparent py-0 opacity-0" : "mt-12 mb-2 h-auto opacity-100"
                 )}
                 aria-hidden={navCollapsed}
               >
-                {showManagerAdminNav ? "Management" : "Admin"}
+                {showManagerAdminNav ? "Management panel" : "Admin panel"}
               </p>
               <AdminTeamsNavSection
                 collapsed={navCollapsed}

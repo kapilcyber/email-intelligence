@@ -4,13 +4,10 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
-import { useTheme } from "next-themes";
 import { useSession } from "next-auth/react";
 import { signOut } from "next-auth/react";
 import {
   Calendar,
-  Moon,
-  Sun,
   LogOut,
   Bell,
   ArrowLeft,
@@ -201,7 +198,6 @@ export function Topbar({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { theme, setTheme } = useTheme();
   const { data: session, status } = useSession();
   const api = useMemo(
     () => getApi(session?.user?.email ?? null, session?.user?.name ?? null),
@@ -426,7 +422,7 @@ export function Topbar({
     breadcrumbItems.length > 0 ? breadcrumbItems[breadcrumbItems.length - 1].label : "Dashboard";
 
   return (
-    <header className="glass-surface-strong flex min-h-16 items-center justify-between gap-2 border-b px-2 pt-[env(safe-area-inset-top,0px)] sm:px-4 md:gap-4 md:px-5">
+    <header className="glass-app-chrome flex min-h-16 items-center justify-between gap-2 px-2 pt-[env(safe-area-inset-top,0px)] sm:px-4 md:gap-4 md:px-5">
       {/* Back + Breadcrumbs */}
       <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:gap-2.5">
         {onOpenMobileNav ? (
@@ -761,16 +757,6 @@ export function Topbar({
           feature={shortcutFeature}
           onClose={() => setShortcutFeature(null)}
         />
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-          className="h-10 w-10 rounded-lg"
-          aria-label="Toggle theme"
-        >
-          <Sun className="h-5 w-5 dark:hidden" />
-          <Moon className="hidden h-5 w-5 dark:block" />
-        </Button>
         <Button
           variant="ghost"
           size="icon"

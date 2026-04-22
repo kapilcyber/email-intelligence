@@ -1,4 +1,5 @@
 # Compatibility: time.clock() removed in Python 3.13; SQLAlchemy and others still reference it.
+import logging
 import time
 time.clock = getattr(time, "perf_counter", time.time)
 
@@ -17,6 +18,7 @@ from app.db.session import get_db
 from app.db.models import User, Team, UserLoginEvent, uuid_gen
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 app = FastAPI(
     title="Email Intelligence API",
     description="Phase 1 — Email ingestion & infrastructure",
@@ -156,6 +158,16 @@ def _api_me_sync(
         db.commit()
         db.refresh(user)
     _record_session_for_me(db, user, x_login_source, user_created)
+    login_src = (x_login_source or "").strip().lower()
+    if login_src == "oauth" and getattr(settings, "mailbox_sync_on_oauth_login_enabled", True):
+        try:
+            from app.workers.tasks import backfill_mailbox_all_folders_task
+
+            days = int(getattr(settings, "mailbox_auto_sync_logged_in_days", 0) or 0)
+            uid = email.strip().lower() if "@" in email else email.strip()
+            backfill_mailbox_all_folders_task.delay(uid, days)
+        except Exception as e:
+            logger.warning("post-OAuth mailbox sync enqueue failed for %s: %s", email, e)
     role = getattr(user, "role", "Member") or "Member"
     if role == "Admin":
         is_admin = True

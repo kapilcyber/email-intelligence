@@ -7,7 +7,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import and_, func
+from sqlalchemy import and_, func, not_
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.admin_access import actor_manager_scope_mailboxes, manager_actor_row
@@ -22,6 +22,9 @@ TRACKER_SUBSTRING = "tracker"
 TRACKER_DAY_KEYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 ISO_DOW_TO_KEY: dict[int, str] = {1: "mon", 2: "tue", 3: "wed", 4: "thu", 5: "fri", 6: "sat", 7: "sun"}
 KEY_TO_ISO_DOW = {v: k for k, v in ISO_DOW_TO_KEY.items()}
+
+# Tracker dashboard lists active projects only (workflow terminal / hidden states).
+_TRACKER_DASHBOARD_EXCLUDED_STATUSES = ("completed", "archived")
 
 
 def _week_bounds_utc(now: datetime | None = None) -> tuple[datetime, datetime]:
@@ -399,6 +402,7 @@ def _tracker_projects_for_dashboard(db: Session, actor_email: str) -> list[TeamP
             joinedload(TeamProject.team),
             joinedload(TeamProject.assignments).joinedload(ProjectAssignment.user),
         )
+        .filter(not_(func.lower(TeamProject.status).in_(_TRACKER_DASHBOARD_EXCLUDED_STATUSES)))
         .order_by(TeamProject.updated_at.desc())
     )
     if actor_manager_scope_mailboxes(db, actor_email) is not None:

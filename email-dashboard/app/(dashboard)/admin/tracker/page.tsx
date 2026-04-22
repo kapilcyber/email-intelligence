@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { getApi } from "@/lib/api/client";
-import type { ProjectTrackerRow, TrackerDayKey } from "@/lib/types";
+import type { ProjectTrackerRow, TrackerDayKey, TrackerEmailListItem } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -29,17 +29,6 @@ const SHORT_LABEL: Record<TrackerDayKey, string> = {
   sun: "Sun",
 };
 
-function formatWeekRange(startISO: string, endISO: string): string {
-  try {
-    const a = new Date(startISO);
-    const b = new Date(endISO);
-    const opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric", year: "numeric" };
-    return `${a.toLocaleDateString(undefined, opts)} – ${b.toLocaleDateString(undefined, opts)} (UTC week)`;
-  } catch {
-    return startISO;
-  }
-}
-
 function draftDaysForMember(p: ProjectTrackerRow, userId: string): TrackerDayKey[] {
   const m = (p.members ?? []).find((x) => x.userId === userId);
   if (!m) return [];
@@ -48,120 +37,249 @@ function draftDaysForMember(p: ProjectTrackerRow, userId: string): TrackerDayKey
   return DAY_ORDER.filter((d) => source.includes(d));
 }
 
-function ProjectMemberScheduleEditor({
+function orderedDaysFromSet(days: TrackerDayKey[]): TrackerDayKey[] {
+  return DAY_ORDER.filter((d) => days.includes(d));
+}
+
+type ApiClient = ReturnType<typeof getApi>;
+
+function formatTrackerReceived(iso: string) {
+  try {
+    return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  } catch {
+    return iso;
+  }
+}
+
+function TrackerSentHistoryMini({
+  projectId,
+  api,
+  refreshToken,
+}: {
+  projectId: string;
+  api: ApiClient;
+  refreshToken: number;
+}) {
+  const [items, setItems] = useState<TrackerEmailListItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setLoadError(false);
+    api
+      .getAdminTrackerProjectEmails(projectId, { days: 30, limit: 10 })
+      .then((r) => {
+        if (!cancelled) setItems(r.emails ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setItems([]);
+          setLoadError(true);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, projectId, refreshToken]);
+
+  return (
+    <div className="mt-4 border-t border-neutral-200/80 pt-4 dark:border-neutral-700">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+          Recent tracker sends
+        </p>
+        <Link
+          href={`/admin/tracker/${encodeURIComponent(projectId)}`}
+          className="text-xs font-medium text-neutral-600 underline-offset-2 hover:underline dark:text-neutral-300"
+        >
+          View all
+        </Link>
+      </div>
+      {loading ? (
+        <div className="space-y-2">
+          <Skeleton className="h-10 w-full rounded-md" />
+          <Skeleton className="h-10 w-full rounded-md" />
+        </div>
+      ) : loadError ? (
+        <p className="text-xs text-neutral-500 dark:text-neutral-400">Could not load tracker history.</p>
+      ) : items.length === 0 ? (
+        <p className="text-xs text-neutral-500 dark:text-neutral-400">No tracker emails in this window yet.</p>
+      ) : (
+        <ul className="max-h-48 space-y-1.5 overflow-y-auto pr-1">
+          {items.map((item) => (
+            <li key={item.emailId}>
+              <Link
+                href={`/emails/${item.emailId}`}
+                className="block rounded-md border border-neutral-200/80 bg-neutral-50/60 px-2.5 py-2 text-left transition-colors hover:bg-neutral-100/80 dark:border-neutral-700 dark:bg-neutral-800/40 dark:hover:bg-neutral-800/70"
+              >
+                <p className="line-clamp-1 text-xs font-medium text-neutral-900 dark:text-neutral-100">
+                  {item.subject?.trim() || "(No subject)"}
+                </p>
+                <p className="mt-0.5 text-[11px] text-neutral-500 dark:text-neutral-400">
+                  {formatTrackerReceived(item.receivedAt)} · {item.senderEmail}
+                </p>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Project-level tracker weekdays + optional per-assignee override.
+ * Persists via PATCH /api/admin/tracker/{id}; assignees see expectations under Dashboard → Follow-up → Tracker.
+ */
+function ProjectTrackerAssignCard({
   p,
   busy,
-  onSaveMemberSchedule,
-  onClearMemberOverride,
+  patchSchedule,
 }: {
   p: ProjectTrackerRow;
   busy: boolean;
-  onSaveMemberSchedule: (userId: string, days: TrackerDayKey[]) => void;
-  onClearMemberOverride: (userId: string) => void;
+  patchSchedule: (
+    projectId: string,
+    scheduleDays: TrackerDayKey[],
+    memberScheduleDays?: Record<string, string[] | null>
+  ) => Promise<ProjectTrackerRow>;
 }) {
   const members = p.members ?? [];
-  const [userId, setUserId] = useState("");
-  const [draftDays, setDraftDays] = useState<TrackerDayKey[]>([]);
+  const [projectDays, setProjectDays] = useState<TrackerDayKey[]>(() =>
+    DAY_ORDER.filter((d) => (p.scheduleDays ?? []).includes(d))
+  );
+  const [userId, setUserId] = useState<string>("");
+  const [memberDays, setMemberDays] = useState<TrackerDayKey[]>([]);
+
+  useEffect(() => {
+    setProjectDays(DAY_ORDER.filter((d) => (p.scheduleDays ?? []).includes(d)));
+  }, [p.projectId, p.scheduleDays]);
 
   useEffect(() => {
     if (!userId) {
-      setDraftDays([]);
+      setMemberDays([]);
       return;
     }
-    setDraftDays(draftDaysForMember(p, userId));
+    setMemberDays(draftDaysForMember(p, userId));
   }, [userId, p]);
 
-  const selected = members.find((m) => m.userId === userId);
-  const hasOverride = Boolean(selected && selected.scheduleDaysOverride != null);
-
-  const toggleDraft = (d: TrackerDayKey) => {
-    setDraftDays((prev) => {
+  const toggleProjectDay = (d: TrackerDayKey) => {
+    setProjectDays((prev) => {
       const next = prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d];
-      return DAY_ORDER.filter((k) => next.includes(k));
+      return orderedDaysFromSet(next);
     });
   };
 
-  const save = () => {
-    if (!userId) return;
-    const ordered = DAY_ORDER.filter((d) => draftDays.includes(d));
-    onSaveMemberSchedule(userId, ordered);
+  const toggleMemberDay = (d: TrackerDayKey) => {
+    setMemberDays((prev) => {
+      const next = prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d];
+      return orderedDaysFromSet(next);
+    });
   };
 
-  const clearOverride = () => {
-    if (!userId) return;
-    onClearMemberOverride(userId);
+  const save = async () => {
+    const sched = orderedDaysFromSet(projectDays);
+    let memberPatch: Record<string, string[] | null> | undefined;
+    if (userId) {
+      const memberOrdered = orderedDaysFromSet(memberDays);
+      const sameAsProject = JSON.stringify(memberOrdered) === JSON.stringify(sched);
+      memberPatch = { [userId]: sameAsProject ? null : memberOrdered };
+    }
+    await patchSchedule(p.projectId, sched, memberPatch);
   };
-
-  if (members.length === 0) return null;
 
   return (
-    <div className="min-w-0 rounded-xl border border-neutral-200/80 bg-neutral-50/50 p-3 dark:border-neutral-700 dark:bg-neutral-900/30">
-      <p className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-        Member expected days
-      </p>
-      <div className="flex flex-col gap-3">
-        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
-          <div className="min-w-0 flex-1 sm:min-w-[10rem]">
-            <label className="mb-1 block text-[10px] font-medium text-neutral-500 dark:text-neutral-400">Member</label>
-            <Select value={userId || undefined} onValueChange={setUserId} disabled={busy}>
-              <SelectTrigger className="h-10 w-full rounded-lg border-neutral-300 dark:border-neutral-600">
-                <SelectValue placeholder="Select member" />
-              </SelectTrigger>
-              <SelectContent>
-                {members.map((m) => (
-                  <SelectItem key={m.userId} value={m.userId}>
-                    <span className="truncate">{m.displayName || m.email}</span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+    <div className="min-w-0 rounded-xl border border-neutral-200/80 bg-neutral-50/50 p-4 dark:border-neutral-700 dark:bg-neutral-900/30">
+        <div className="flex min-w-0 flex-col gap-6">
+          <div className="min-w-0 space-y-2">
+            <label className="block text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+              Tracker days (project)
+            </label>
+            <div className="grid grid-cols-4 gap-1.5 sm:flex sm:flex-wrap">
+              {DAY_ORDER.map((d) => {
+                const on = projectDays.includes(d);
+                return (
+                  <Button
+                    key={d}
+                    type="button"
+                    size="sm"
+                    variant={on ? "default" : "outline"}
+                    className={cn(
+                      "h-9 min-h-9 w-full min-w-0 px-1 text-xs sm:min-w-[3rem] sm:w-auto sm:px-2",
+                      on && "bg-neutral-900 hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900"
+                    )}
+                    disabled={busy}
+                    onClick={() => toggleProjectDay(d)}
+                  >
+                    {SHORT_LABEL[d]}
+                  </Button>
+                );
+              })}
+            </div>
           </div>
-          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-            <Button
-              type="button"
-              size="sm"
-              className="h-10 w-full sm:h-9 sm:w-auto"
-              disabled={busy || !userId}
-              onClick={() => save()}
-            >
-              Save
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-10 w-full sm:h-9 sm:w-auto"
-              disabled={busy || !userId || !hasOverride}
-              onClick={() => clearOverride()}
-            >
-              Use project days
-            </Button>
-          </div>
-        </div>
-        <div className="min-w-0">
-          <div className="grid grid-cols-4 gap-1.5 sm:flex sm:flex-wrap">
-            {DAY_ORDER.map((d) => {
-              const on = draftDays.includes(d);
-              return (
-                <Button
-                  key={d}
-                  type="button"
-                  size="sm"
-                  variant={on ? "default" : "outline"}
-                  className={cn(
-                    "h-9 min-h-9 w-full min-w-0 px-1 text-xs sm:min-w-[3rem] sm:w-auto sm:px-2",
-                    on && "bg-neutral-900 hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900"
-                  )}
-                  disabled={busy || !userId}
-                  onClick={() => toggleDraft(d)}
-                >
-                  {SHORT_LABEL[d]}
-                </Button>
-              );
-            })}
+
+          <div className="min-w-0 space-y-2">
+            <label className="block text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+              Assignee
+            </label>
+            {members.length === 0 ? (
+              <p className="text-sm text-neutral-500 dark:text-neutral-400">No assignees on this project.</p>
+            ) : (
+              <Select value={userId || undefined} onValueChange={setUserId} disabled={busy}>
+                <SelectTrigger className="h-10 w-full rounded-lg border-neutral-300 dark:border-neutral-600">
+                  <SelectValue placeholder="Select member" />
+                </SelectTrigger>
+                <SelectContent>
+                  {members.map((m) => (
+                    <SelectItem key={m.userId} value={m.userId}>
+                      <span className="truncate">{m.displayName || m.email}</span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
         </div>
-      </div>
+
+        {userId ? (
+          <div className="mt-4 space-y-2 border-t border-neutral-200/80 pt-4 dark:border-neutral-700">
+            <label className="block text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+              Expected days for this member
+            </label>
+            <div className="grid grid-cols-4 gap-1.5 sm:flex sm:flex-wrap">
+              {DAY_ORDER.map((d) => {
+                const on = memberDays.includes(d);
+                return (
+                  <Button
+                    key={d}
+                    type="button"
+                    size="sm"
+                    variant={on ? "default" : "outline"}
+                    className={cn(
+                      "h-9 min-h-9 w-full min-w-0 px-1 text-xs sm:min-w-[3rem] sm:w-auto sm:px-2",
+                      on && "bg-neutral-900 hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900"
+                    )}
+                    disabled={busy}
+                    onClick={() => toggleMemberDay(d)}
+                  >
+                    {SHORT_LABEL[d]}
+                  </Button>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+
+        <div className="mt-4">
+          <Button type="button" size="sm" className="h-10 w-full sm:h-9 sm:w-auto" disabled={busy} onClick={() => void save()}>
+            Save tracker
+          </Button>
+        </div>
     </div>
   );
 }
@@ -176,6 +294,7 @@ export default function AdminTrackerPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [historyRefresh, setHistoryRefresh] = useState(0);
 
   const load = useCallback(() => {
     if (status !== "authenticated") return;
@@ -183,14 +302,15 @@ export default function AdminTrackerPage() {
     setError(null);
     api
       .getAdminTracker()
-      .then((r) =>
+      .then((r) => {
         setRows(
           (r.projects ?? []).map((row) => ({
             ...row,
             members: row.members ?? [],
           }))
-        )
-      )
+        );
+        setHistoryRefresh((n) => n + 1);
+      })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : "Failed to load tracker");
       })
@@ -201,61 +321,40 @@ export default function AdminTrackerPage() {
     load();
   }, [load]);
 
-  const weekHint = rows[0] ? formatWeekRange(rows[0].weekStartISO, rows[0].weekEndISO) : null;
+  const patchSchedule = useCallback(
+    async (projectId: string, scheduleDays: TrackerDayKey[], memberScheduleDays?: Record<string, string[] | null>) => {
+      return api.patchAdminTrackerSchedule(projectId, scheduleDays, undefined, memberScheduleDays);
+    },
+    [api]
+  );
 
-  const toggleExpectedDay = (projectId: string, day: TrackerDayKey, current: string[]) => {
-    const next = current.includes(day) ? current.filter((d) => d !== day) : [...current, day];
-    setSavingId(projectId);
-    api
-      .patchAdminTrackerSchedule(projectId, next)
-      .then((updated) => {
-        const u = { ...updated, members: updated.members ?? [] };
-        setRows((prev) => prev.map((p) => (p.projectId === projectId ? u : p)));
-      })
-      .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : "Failed to save schedule");
-      })
-      .finally(() => setSavingId(null));
-  };
+  const handleRowUpdated = useCallback((row: ProjectTrackerRow) => {
+    setRows((prev) => prev.map((x) => (x.projectId === row.projectId ? { ...row, members: row.members ?? [] } : x)));
+  }, []);
 
-  const saveMemberSchedule = (projectId: string, scheduleDays: string[], uid: string, days: TrackerDayKey[]) => {
-    setSavingId(projectId);
-    api
-      .patchAdminTrackerSchedule(projectId, scheduleDays, undefined, { [uid]: days })
-      .then((updated) => {
-        const u = { ...updated, members: updated.members ?? [] };
-        setRows((prev) => prev.map((row) => (row.projectId === projectId ? u : row)));
-      })
-      .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : "Failed to save member schedule");
-      })
-      .finally(() => setSavingId(null));
-  };
-
-  const clearMemberScheduleOverride = (projectId: string, scheduleDays: string[], uid: string) => {
-    setSavingId(projectId);
-    api
-      .patchAdminTrackerSchedule(projectId, scheduleDays, undefined, { [uid]: null })
-      .then((updated) => {
-        const u = { ...updated, members: updated.members ?? [] };
-        setRows((prev) => prev.map((row) => (row.projectId === projectId ? u : row)));
-      })
-      .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : "Failed to clear member schedule");
-      })
-      .finally(() => setSavingId(null));
-  };
+  const runPatch = useCallback(
+    async (projectId: string, scheduleDays: TrackerDayKey[], memberScheduleDays?: Record<string, string[] | null>) => {
+      setSavingId(projectId);
+      try {
+        const updated = await patchSchedule(projectId, scheduleDays, memberScheduleDays);
+        handleRowUpdated(updated);
+        setHistoryRefresh((n) => n + 1);
+        return updated;
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : "Failed to save tracker");
+        throw err;
+      } finally {
+        setSavingId(null);
+      }
+    },
+    [patchSchedule, handleRowUpdated]
+  );
 
   return (
     <div className="min-w-0 max-w-full space-y-4 sm:space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:gap-4">
         <div className="min-w-0 flex-1">
           <h1 className="text-xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50 sm:text-2xl">Tracker</h1>
-          {weekHint && (
-            <p className="mt-1 break-words text-xs leading-relaxed text-neutral-500 dark:text-neutral-400 sm:mt-2">
-              Showing week: {weekHint}
-            </p>
-          )}
         </div>
         <Button
           type="button"
@@ -287,7 +386,8 @@ export default function AdminTrackerPage() {
           <CardHeader className="p-4 sm:p-6">
             <CardTitle className="text-base sm:text-lg">No projects</CardTitle>
             <p className="mt-2 text-sm leading-relaxed text-neutral-500 dark:text-neutral-400">
-              Create a project under Admin - Projects to configure tracker days.
+              Create a project under Admin - Projects and add assignees. Tracker expectations appear for those users
+              under Dashboard → Follow-up → Tracker.
             </p>
           </CardHeader>
         </Card>
@@ -296,90 +396,23 @@ export default function AdminTrackerPage() {
           {rows.map((p) => (
             <Card key={p.projectId} className="min-w-0 max-w-full overflow-hidden rounded-2xl border-border">
               <CardHeader className="space-y-0 p-4 pb-2 sm:p-6 sm:pb-2">
-                <Link
-                  href={`/admin/tracker/${encodeURIComponent(p.projectId)}`}
-                  className="group block w-full min-w-0 text-left transition-colors hover:text-neutral-600 dark:hover:text-neutral-200"
-                >
-                  <CardTitle className="break-words text-base leading-snug group-hover:underline sm:text-lg">
+                <CardTitle className="break-words text-base leading-snug sm:text-lg">
+                  <Link
+                    href={`/admin/tracker/${encodeURIComponent(p.projectId)}`}
+                    className="text-left transition-colors hover:text-neutral-600 hover:underline dark:hover:text-neutral-200"
+                  >
                     {p.projectName}
-                  </CardTitle>
-                  <p className="mt-1.5 break-words text-sm text-neutral-500 dark:text-neutral-400">
-                    {p.teamName ?? "No team"}
-                    <span className="mt-0.5 block text-xs font-normal text-neutral-400 dark:text-neutral-500 sm:ml-2 sm:mt-0 sm:inline">
-                      · Open history
-                    </span>
-                  </p>
-                </Link>
+                  </Link>
+                </CardTitle>
+                <p className="mt-1.5 break-words text-sm text-neutral-500 dark:text-neutral-400">{p.teamName ?? "No team"}</p>
               </CardHeader>
-              <CardContent className="space-y-4 p-4 pt-0 sm:p-6 sm:pt-0">
-                <div className="min-w-0">
-                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-                    Tracker days
-                  </p>
-                  <div className="grid grid-cols-4 gap-1.5 sm:flex sm:flex-wrap">
-                    {DAY_ORDER.map((d) => {
-                      const on = p.scheduleDays.includes(d);
-                      const busy = savingId === p.projectId;
-                      return (
-                        <Button
-                          key={d}
-                          type="button"
-                          size="sm"
-                          variant={on ? "default" : "outline"}
-                          className={cn(
-                            "h-9 min-h-9 w-full min-w-0 px-1 text-xs sm:min-w-[3rem] sm:w-auto sm:px-2",
-                            on && "bg-neutral-900 hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900"
-                          )}
-                          disabled={busy}
-                          onClick={() => toggleExpectedDay(p.projectId, d, p.scheduleDays)}
-                        >
-                          {SHORT_LABEL[d]}
-                        </Button>
-                      );
-                    })}
-                  </div>
-                </div>
-                <ProjectMemberScheduleEditor
+              <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
+                <ProjectTrackerAssignCard
                   p={{ ...p, members: p.members ?? [] }}
                   busy={savingId === p.projectId}
-                  onSaveMemberSchedule={(uid, days) => saveMemberSchedule(p.projectId, p.scheduleDays, uid, days)}
-                  onClearMemberOverride={(uid) => clearMemberScheduleOverride(p.projectId, p.scheduleDays, uid)}
+                  patchSchedule={runPatch}
                 />
-                <div className="min-w-0">
-                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-                    This week — sent?
-                  </p>
-                  <div className="max-w-full overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch] sm:overflow-visible sm:pb-0">
-                    <div className="grid min-w-[18rem] grid-cols-7 gap-0.5 text-center text-[10px] sm:min-w-0 sm:gap-1 sm:text-xs">
-                      {p.days.map((day) => (
-                        <div
-                          key={day.key}
-                          className="flex min-w-0 flex-col items-center gap-0.5 rounded-md border border-neutral-200 bg-neutral-50/80 px-0.5 py-1.5 sm:gap-1 sm:py-2 dark:border-neutral-700 dark:bg-neutral-900/40"
-                        >
-                          <span className="font-medium text-neutral-600 dark:text-neutral-300">
-                            {SHORT_LABEL[day.key]}
-                          </span>
-                          <span
-                            className={cn(
-                              "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-semibold sm:h-6 sm:w-6 sm:text-[10px]",
-                              day.sent
-                                ? "bg-emerald-500 text-white"
-                                : "bg-neutral-200 text-neutral-500 dark:bg-neutral-700 dark:text-neutral-400"
-                            )}
-                            title={day.label}
-                          >
-                            {day.sent ? "✓" : "—"}
-                          </span>
-                          {day.expected && !day.sent && (
-                            <span className="text-[8px] leading-tight text-amber-700 dark:text-amber-400 sm:text-[9px]">
-                              due
-                            </span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
+                <TrackerSentHistoryMini projectId={p.projectId} api={api} refreshToken={historyRefresh} />
               </CardContent>
             </Card>
           ))}

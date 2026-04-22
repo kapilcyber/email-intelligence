@@ -270,6 +270,33 @@ def ensure_retag_approval_requests_table() -> None:
             conn.execute(text(step.strip()))
 
 
+_MAILBOX_MESSAGE_RULES_DDL_STEPS = [
+    """
+CREATE TABLE IF NOT EXISTS mailbox_message_rules (
+    id VARCHAR(36) PRIMARY KEY,
+    mailbox_owner_email VARCHAR(512) NOT NULL,
+    graph_rule_id VARCHAR(256) NOT NULL,
+    display_name VARCHAR(512) NULL,
+    rule_sequence INTEGER NULL,
+    is_enabled BOOLEAN NULL,
+    has_error BOOLEAN NULL,
+    is_read_only BOOLEAN NULL,
+    rule_payload JSONB NULL,
+    synced_at TIMESTAMP WITH TIME ZONE NOT NULL
+)
+""".strip(),
+    "CREATE INDEX IF NOT EXISTS ix_mailbox_message_rules_mailbox_owner_email ON mailbox_message_rules (mailbox_owner_email)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_mailbox_message_rules_mailbox_graph_id ON mailbox_message_rules (mailbox_owner_email, graph_rule_id)",
+]
+
+
+def ensure_mailbox_message_rules_table() -> None:
+    """Idempotent Graph inbox messageRules mirror (see alembic 014)."""
+    with engine.begin() as conn:
+        for step in _MAILBOX_MESSAGE_RULES_DDL_STEPS:
+            conn.execute(text(step.strip()))
+
+
 def init_db():
     """Verify database connectivity; ensure optional tables that some envs skip via Alembic."""
     with engine.connect() as conn:
@@ -282,3 +309,4 @@ def init_db():
     ensure_user_activity_columns()
     ensure_user_login_events_table()
     ensure_retag_approval_requests_table()
+    ensure_mailbox_message_rules_table()

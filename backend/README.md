@@ -82,6 +82,17 @@ celery -A app.workers.celery_app worker --loglevel=info
 On Windows the app uses the `solo` pool by default to avoid worker crashes; no extra flags needed.  
 **If you add or change Celery tasks,** restart the worker so it picks up the new tasks (e.g. `backfill_classify_emails_task` for "Classify all").
 
+**Celery Beat (required for periodic jobs)**  
+The worker executes tasks from the queue only. **Another process must run Beat** to enqueue schedules (for example **full-mailbox Graph sync every 5 minutes** for users with an open dashboard session, daily summary, Outlook deleted-items sync, and message-rules sync).
+
+```bash
+celery -A app.workers.celery_app beat --loglevel=info
+```
+
+From the `backend` folder on Windows you can use `beat.bat` (same as the command above). You should have **three** things running for full behaviour: API (uvicorn), **Celery worker**, and **Celery Beat**.
+
+Tune mailbox auto-sync with `.env`: `MAILBOX_AUTO_SYNC_LOGGED_IN_ENABLED`, `MAILBOX_AUTO_SYNC_LOGGED_IN_INTERVAL_MINUTES` (default 5), `MAILBOX_AUTO_SYNC_LOGGED_IN_DAYS` (default 0 = full folder window per Graph backfill). `GET /api/system/health` includes a `mailboxAutoSyncLoggedIn` object so you can confirm settings from the API.
+
 **Optional (Phase 2+): start Graph subscription** — Requires `WEBHOOK_BASE_URL` in .env and a public URL. Call `POST /api/webhook/subscribe` with `{"user_id": "<mailbox-user-id>"}` to ingest new mail via webhooks.
 
 ## Why does the backend show no emails?

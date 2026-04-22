@@ -49,17 +49,17 @@ export interface CalendarEventsResponse {
 export interface NotificationItem {
   id: string;
   kind:
-    | "new_mail"
-    | "meeting_upcoming"
-    | "meeting_scheduled"
-    | "ai_pending"
-    | "important_date"
-    | "unreplied_mail"
-    | "unread_mail"
-    | "escalation_open"
-    | "lead_open"
-    | "mom_pending"
-    | string;
+  | "new_mail"
+  | "meeting_upcoming"
+  | "meeting_scheduled"
+  | "ai_pending"
+  | "important_date"
+  | "unreplied_mail"
+  | "unread_mail"
+  | "escalation_open"
+  | "lead_open"
+  | "mom_pending"
+  | string;
   title: string;
   message: string;
   level: "info" | "warning" | "error" | string;

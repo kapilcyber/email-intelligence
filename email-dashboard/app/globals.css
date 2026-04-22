@@ -63,6 +63,7 @@
 }
 
 @layer utilities {
+
   /** Horizontal insets for notched devices; pair with vertical padding in layout. */
   .px-safe {
     padding-left: max(0.75rem, env(safe-area-inset-left, 0px));
@@ -70,21 +71,27 @@
   }
 
   .bg-app-gradient {
-    background-image: linear-gradient(
-      -45deg,
-      hsl(var(--app-gradient-from)) 0%,
-      hsl(var(--app-gradient-via)) 50%,
-      hsl(var(--app-gradient-to)) 100%
-    );
+    background-image: linear-gradient(-45deg,
+        hsl(var(--app-gradient-from)) 0%,
+        hsl(var(--app-gradient-via)) 50%,
+        hsl(var(--app-gradient-to)) 100%);
     background-attachment: fixed;
     background-size: 400% 400%;
     animation: gradient-flow 18s ease infinite;
   }
 
   @keyframes gradient-flow {
-    0% { background-position: 0% 50%; }
-    50% { background-position: 100% 50%; }
-    100% { background-position: 0% 50%; }
+    0% {
+      background-position: 0% 50%;
+    }
+
+    50% {
+      background-position: 100% 50%;
+    }
+
+    100% {
+      background-position: 0% 50%;
+    }
   }
 
   .glass-surface {
@@ -118,6 +125,67 @@
       0 8px 16px -4px hsl(var(--foreground) / 0.08);
   }
 
+  /** Dashboard top bar: frosted strip over animated app gradient */
+  .glass-app-chrome {
+    border-bottom: 1px solid hsl(var(--border) / 0.58);
+    background: hsl(var(--panel-elevated) / 0.48);
+    backdrop-filter: blur(28px) saturate(1.18);
+    -webkit-backdrop-filter: blur(28px) saturate(1.18);
+    box-shadow:
+      inset 0 1px 0 hsl(0 0% 100% / 0.38),
+      0 6px 28px -8px hsl(var(--foreground) / 0.1);
+  }
+
+  @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+    .glass-app-chrome {
+      background: hsl(var(--panel-elevated) / 0.92);
+    }
+  }
+
+  /** Sidebar column over gradient */
+  .glass-sidebar-shell {
+    border-right: 1px solid hsl(var(--border) / 0.52);
+    background: hsl(var(--panel) / 0.44);
+    backdrop-filter: blur(32px) saturate(1.12);
+    -webkit-backdrop-filter: blur(32px) saturate(1.12);
+    box-shadow:
+      inset -1px 0 0 hsl(0 0% 100% / 0.32),
+      6px 0 32px -12px hsl(var(--foreground) / 0.07);
+  }
+
+  @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+    .glass-sidebar-shell {
+      background: hsl(var(--panel) / 0.94);
+    }
+  }
+
+  .glass-sidebar-header {
+    border-bottom: 1px solid hsl(var(--border) / 0.52);
+    background: hsl(var(--panel) / 0.38);
+    backdrop-filter: blur(22px) saturate(1.1);
+    -webkit-backdrop-filter: blur(22px) saturate(1.1);
+    box-shadow: inset 0 -1px 0 hsl(0 0% 100% / 0.12);
+  }
+
+  @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+    .glass-sidebar-header {
+      background: hsl(var(--panel) / 0.9);
+    }
+  }
+
+  .glass-sidebar-nav {
+    background: hsl(var(--panel-elevated) / 0.32);
+    backdrop-filter: blur(18px) saturate(1.06);
+    -webkit-backdrop-filter: blur(18px) saturate(1.06);
+    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.18);
+  }
+
+  @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+    .glass-sidebar-nav {
+      background: hsl(var(--panel-elevated) / 0.88);
+    }
+  }
+
   .dark .glass-surface {
     border-color: hsl(var(--border) / 0.5);
     background: hsl(var(--panel) / 0.65);
@@ -144,6 +212,33 @@
       inset 0 1px 0 hsl(0 0% 100% / 0.09),
       0 20px 44px -12px hsl(0 0% 0% / 0.6),
       0 8px 16px -4px hsl(0 0% 0% / 0.4);
+  }
+
+  .dark .glass-app-chrome {
+    border-bottom-color: hsl(var(--border) / 0.55);
+    background: hsl(var(--panel-elevated) / 0.42);
+    box-shadow:
+      inset 0 1px 0 hsl(0 0% 100% / 0.06),
+      0 8px 28px -8px hsl(0 0% 0% / 0.45);
+  }
+
+  .dark .glass-sidebar-shell {
+    border-right-color: hsl(var(--border) / 0.5);
+    background: hsl(var(--panel) / 0.38);
+    box-shadow:
+      inset -1px 0 0 hsl(0 0% 100% / 0.05),
+      8px 0 32px -12px hsl(0 0% 0% / 0.5);
+  }
+
+  .dark .glass-sidebar-header {
+    border-bottom-color: hsl(var(--border) / 0.5);
+    background: hsl(var(--panel) / 0.34);
+    box-shadow: inset 0 -1px 0 hsl(0 0% 100% / 0.04);
+  }
+
+  .dark .glass-sidebar-nav {
+    background: hsl(var(--panel-elevated) / 0.28);
+    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.05);
   }
 
   /* Dark-mode compatibility shim for legacy light-only utility usage across pages. */
