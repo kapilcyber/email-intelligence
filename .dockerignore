@@ -1,0 +1,14 @@
+**/.git
+**/.next
+**/node_modules
+**/.turbo
+**/.DS_Store
+**/.venv
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/*.log
+backend/.env
+email-dashboard/.env.local
+backend/celerybeat-schedule.*

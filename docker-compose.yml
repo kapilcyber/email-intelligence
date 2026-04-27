@@ -1,0 +1,85 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: email_intelligence
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  backend:
+    build:
+      context: ./backend
+    env_file:
+      - ./backend/.env
+    depends_on:
+      - postgres
+      - redis
+    ports:
+      - "8000:8000"
+
+  migrate:
+    build:
+      context: ./backend
+    env_file:
+      - ./backend/.env
+    depends_on:
+      - postgres
+    entrypoint: ["alembic"]
+    command: ["upgrade", "head"]
+    restart: "no"
+
+  worker:
+    build:
+      context: ./backend
+    env_file:
+      - ./backend/.env
+    depends_on:
+      - backend
+      - postgres
+      - redis
+    command: ["celery", "-A", "app.workers.celery_app", "worker", "--loglevel=info"]
+
+  beat:
+    build:
+      context: ./backend
+    env_file:
+      - ./backend/.env
+    depends_on:
+      - backend
+      - postgres
+      - redis
+    volumes:
+      - celerybeat:/var/lib/celery
+    command:
+      [
+        "celery",
+        "-A",
+        "app.workers.celery_app",
+        "beat",
+        "--loglevel=info",
+        "--schedule=/var/lib/celery/celerybeat-schedule",
+      ]
+
+  dashboard:
+    build:
+      context: ./email-dashboard
+    env_file:
+      - ./email-dashboard/.env.local
+    depends_on:
+      - backend
+    ports:
+      - "3001:3001"
+
+volumes:
+  pgdata:
+  celerybeat:
+
