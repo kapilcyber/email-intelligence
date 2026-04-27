@@ -6,6 +6,20 @@ import AzureADProvider from "next-auth/providers/azure-ad";
 const AZURE_LOGIN_SCOPES =
   "openid profile email offline_access https://graph.microsoft.com/Mail.Send";
 
+/**
+ * openid-client (used by NextAuth for Azure OIDC) defaults to 3500ms, which breaks on slow VPNs
+ * and flaky networks. Override with AZURE_OAUTH_HTTP_TIMEOUT_MS (5000–120000).
+ */
+function azureOAuthHttpTimeoutMs(): number {
+  const raw = process.env.AZURE_OAUTH_HTTP_TIMEOUT_MS;
+  if (raw === undefined || raw.trim() === "") return 60_000;
+  const n = Number.parseInt(raw.trim(), 10);
+  if (!Number.isFinite(n) || n < 5_000) return 60_000;
+  return Math.min(n, 120_000);
+}
+
+const AZURE_OAUTH_HTTP_TIMEOUT_MS = azureOAuthHttpTimeoutMs();
+
 async function refreshAzureAccessToken(token: JWT): Promise<JWT> {
   const tenantId = process.env.AZURE_TENANT_ID ?? "";
   const clientId = process.env.AZURE_CLIENT_ID ?? "";
@@ -15,17 +29,24 @@ async function refreshAzureAccessToken(token: JWT): Promise<JWT> {
     return { ...token, error: "RefreshAccessTokenError" };
   }
   const url = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      client_id: clientId,
-      client_secret: clientSecret,
-      grant_type: "refresh_token",
-      refresh_token: refreshToken,
-      scope: AZURE_LOGIN_SCOPES,
-    }),
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+        scope: AZURE_LOGIN_SCOPES,
+      }),
+      signal: AbortSignal.timeout(AZURE_OAUTH_HTTP_TIMEOUT_MS),
+    });
+  } catch (e) {
+    console.warn("[auth] token refresh fetch failed", e);
+    return { ...token, error: "RefreshAccessTokenError" };
+  }
   const data = (await res.json()) as {
     access_token?: string;
     refresh_token?: string;
@@ -57,6 +78,9 @@ export const authOptions: NextAuthOptions = {
       clientId: process.env.AZURE_CLIENT_ID ?? "",
       clientSecret: process.env.AZURE_CLIENT_SECRET ?? "",
       tenantId: process.env.AZURE_TENANT_ID,
+      httpOptions: {
+        timeout: AZURE_OAUTH_HTTP_TIMEOUT_MS,
+      },
       authorization: {
         params: {
           scope: AZURE_LOGIN_SCOPES,
