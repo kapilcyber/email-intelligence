@@ -14,7 +14,7 @@ For focused setup details, see also:
 1. **Ingests** mail from **Microsoft Graph** (real-time webhooks and/or historical backfill).
 2. **Persists** messages, attachments metadata, and senders in **PostgreSQL**.
 3. **Processes** asynchronously with **Redis** and **Celery** (ingest → classify pipeline).
-4. **Classifies** with **LLMs**: **Ollama** (primary) and optional **OpenAI** fallback — summary, category, priority, suggested replies, lead signals.
+4. **Classifies** with **LLMs**: **Ollama** — summary, category, priority, suggested replies, lead signals.
 5. **Applies** enterprise rules: **escalation** detection, **sender trust** / spam overrides, optional **sales lead** and **daily summary** webhooks, **team routing** from category.
 6. **Exposes** a **FastAPI** backend and a **Next.js** dashboard; API calls from the dashboard send **`X-User-Email`** (and related headers) from the signed-in user.
 
@@ -40,7 +40,6 @@ flowchart LR
   end
   subgraph llm [AI]
     Ollama[Ollama]
-    OpenAI[OpenAI optional]
   end
   subgraph ui [Next.js dashboard]
     Dash[App + X-User-Email]
@@ -51,7 +50,6 @@ flowchart LR
   Ingest --> DB
   Ingest --> Classify
   Classify --> Ollama
-  Classify --> OpenAI
   Classify --> DB
   REST --> DB
   Dash --> REST
@@ -71,7 +69,7 @@ Typical variables:
 | **Database** | `DATABASE_URL` or `POSTGRES_*` |
 | **Redis** | `REDIS_URL` — Celery broker/backend and small metrics (e.g. last webhook time, AI latency samples) |
 | **Public URL** | `WEBHOOK_BASE_URL` — required for Graph to reach `.../api/webhook/notify` |
-| **AI** | `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, optional `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_FALLBACK_ENABLED` |
+| **AI** | `OLLAMA_BASE_URL`, `OLLAMA_MODEL` |
 | **Escalation** | `ESCALATION_*`, `SENIOR_AUTHORITY_EMAILS`, `SENIOR_AUTHORITY_DOMAINS`, optional `ESCALATION_KEYWORDS` |
 | **Notifications** | `SALES_LEAD_WEBHOOK_URL`, `SALES_NOTIFICATION_EMAILS`, `NOTIFY_SALES_ON_LEAD`, `DAILY_SUMMARY_*` |
 | **Trust** | `SENDER_TRUST_ENABLED`, `SENDER_TRUST_MIN_SCORE` |
@@ -99,7 +97,7 @@ Copy `backend/.env.example` to `backend/.env` and edit. Run **`alembic upgrade h
 
 ### 4. Celery: `classify_email_task` (AI + Phase 3 logic)
 
-- Calls **`classify_email_content`** in `backend/app/ai/classifier.py`: structured JSON (summary, category, priority, suggested replies, lead-related fields, etc.). **Ollama** first (OpenAI-compatible client), then **OpenAI** if configured and fallback is enabled.
+- Calls **`classify_email_content`** in `backend/app/ai/classifier.py`: structured JSON (summary, category, priority, suggested replies, lead-related fields, etc.) via **Ollama**.
 - Persists AI columns; sets `ai_status` / `processing_status` to success or **failed** with retries.
 - **Escalation** (`app/ai/escalation.py`): rules using subject/body, CC lists, thread length, AI priority, configurable thresholds → `is_escalation`, metadata, **EscalationThread** updates.
 - **Leads**: `lead_label` (Hot/Warm/Cold), `lead_metadata` (e.g. buying signals).

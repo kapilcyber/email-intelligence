@@ -1,5 +1,5 @@
 """
-Phase 2: Email classification via Ollama (primary) and OpenAI (fallback).
+Phase 2: Email classification via Ollama.
 Produces summary, category, priority score/label, reply suggestions.
 With structured JSON enforcement, timeout, retry, and observability.
 """
@@ -14,28 +14,13 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-_openai_client: Any = None
 _ollama_client: Any = None
 
-OPENAI_TIMEOUT = 90.0
+LLM_TIMEOUT_DEFAULT = 90.0
 MAX_RETRIES = 3
 RETRY_BASE_DELAY = 2.0
 # Enough tokens for full JSON; avoids truncation mid-string (e.g. in suggested_replies)
 MAX_TOKENS_RESPONSE = 1280
-
-
-def _get_openai_client():
-    global _openai_client
-    if _openai_client is None:
-        from openai import OpenAI
-        settings = get_settings()
-        if not (settings.openai_api_key and settings.openai_api_key.strip()):
-            raise ValueError("OPENAI_API_KEY is not set")
-        _openai_client = OpenAI(
-            api_key=settings.openai_api_key.strip(),
-            timeout=OPENAI_TIMEOUT,
-        )
-    return _openai_client
 
 
 def _normalize_ollama_base_url(raw: str) -> str:
@@ -56,7 +41,7 @@ def _get_ollama_client():
         if not (settings.ollama_base_url and settings.ollama_base_url.strip()):
             raise ValueError("OLLAMA_BASE_URL is not set")
         base_url = _normalize_ollama_base_url(settings.ollama_base_url)
-        ollama_timeout = float(settings.ollama_request_timeout_seconds or OPENAI_TIMEOUT)
+        ollama_timeout = float(settings.ollama_request_timeout_seconds or LLM_TIMEOUT_DEFAULT)
         _ollama_client = OpenAI(
             base_url=base_url,
             api_key="ollama",
@@ -69,7 +54,7 @@ def _call_llm(
     client: Any,
     model: str,
     prompt: str,
-    timeout: float = OPENAI_TIMEOUT,
+    timeout: float = LLM_TIMEOUT_DEFAULT,
     max_tokens: int | None = None,
 ) -> str:
     """Call chat completions; returns content string or raises."""
@@ -423,7 +408,7 @@ def classify_email_content(
     correlation_id: str | None = None,
 ) -> dict[str, Any]:
     """
-    Call Ollama (primary) or OpenAI (fallback) for summary, category, priority_score, suggested_replies.
+    Call Ollama for summary, category, priority_score, suggested_replies.
     Returns dict with keys: summary, category, priority_score, priority_label, suggested_replies, confidence_score (optional).
     On missing key or API error returns safe defaults and does not raise (caller should check summary is None for failure).
     """
@@ -431,116 +416,55 @@ def classify_email_content(
     settings = get_settings()
     prompt = _build_prompt(subject, body_preview, body_content, sender_email)
     use_ollama = bool(settings.ollama_base_url and settings.ollama_base_url.strip())
-    use_openai = bool(settings.openai_api_key and settings.openai_api_key.strip())
-    allow_openai_after_ollama = bool(settings.openai_fallback_enabled)
 
-    if not use_ollama and not use_openai:
+    if not use_ollama:
         logger.info("AI_RESPONSE: skipped_no_provider correlation_id=%s", correlation_id)
         return _failure_dict()
 
-    ollama_failed = False
     # Try Ollama first (primary) if configured
-    if use_ollama:
-        ollama_timeout = float(settings.ollama_request_timeout_seconds or OPENAI_TIMEOUT)
-        ollama_retries = max(1, int(settings.ollama_max_retries))
-        ollama_retry_delay = max(0.0, float(settings.ollama_retry_delay_seconds))
-        last_ollama_error: Exception | None = None
-        for attempt in range(ollama_retries):
-            try:
-                client = _get_ollama_client()
-                start = time.perf_counter()
-                content = _call_llm(client, settings.ollama_model, prompt, timeout=ollama_timeout)
-                latency_ms = (time.perf_counter() - start) * 1000
-                if not content:
-                    raise ValueError("Ollama returned empty content")
-                result = _content_to_result(
-                    content,
-                    correlation_id,
-                    subject=subject,
-                    sender_email=sender_email,
-                )
-                logger.info(
-                    "AI_RESPONSE: provider=ollama correlation_id=%s latency_ms=%.0f attempt=%d content_length=%d",
-                    correlation_id,
-                    latency_ms,
-                    attempt + 1,
-                    len(content),
-                )
-                return result
-            except Exception as e:
-                last_ollama_error = e
-                logger.warning(
-                    "AI_RESPONSE: ollama_error correlation_id=%s attempt=%d error=%s",
-                    correlation_id,
-                    attempt + 1,
-                    str(e),
-                )
-                if attempt < ollama_retries - 1:
-                    delay = ollama_retry_delay * (2**attempt)
-                    logger.info("AI_RESPONSE: ollama_retry correlation_id=%s delay=%.2fs", correlation_id, delay)
-                    time.sleep(delay)
-        ollama_failed = True
-        logger.info(
-            "AI_RESPONSE: ollama_failed correlation_id=%s error=%s",
-            correlation_id,
-            str(last_ollama_error),
-        )
-        if use_openai and not allow_openai_after_ollama:
-            logger.warning(
-                "AI_RESPONSE: openai_fallback_disabled correlation_id=%s (set OPENAI_FALLBACK_ENABLED=true and OPENAI_API_KEY for fallback)",
+    ollama_timeout = float(settings.ollama_request_timeout_seconds or LLM_TIMEOUT_DEFAULT)
+    ollama_retries = max(1, int(settings.ollama_max_retries))
+    ollama_retry_delay = max(0.0, float(settings.ollama_retry_delay_seconds))
+    last_ollama_error: Exception | None = None
+    for attempt in range(ollama_retries):
+        try:
+            client = _get_ollama_client()
+            start = time.perf_counter()
+            content = _call_llm(client, settings.ollama_model, prompt, timeout=ollama_timeout)
+            latency_ms = (time.perf_counter() - start) * 1000
+            if not content:
+                raise ValueError("Ollama returned empty content")
+            result = _content_to_result(
+                content,
                 correlation_id,
+                subject=subject,
+                sender_email=sender_email,
             )
-        elif use_openai:
             logger.info(
-                "AI_RESPONSE: ollama_failed_trying_openai correlation_id=%s error=%s",
+                "AI_RESPONSE: provider=ollama correlation_id=%s latency_ms=%.0f attempt=%d content_length=%d",
                 correlation_id,
-                str(last_ollama_error),
+                latency_ms,
+                attempt + 1,
+                len(content),
             )
-
-    # OpenAI: primary when Ollama is not configured, or fallback after Ollama failed
-    need_openai = use_openai and (not use_ollama or (ollama_failed and allow_openai_after_ollama))
-    if need_openai:
-        last_openai_error: Exception | None = None
-        for attempt in range(MAX_RETRIES):
-            try:
-                client = _get_openai_client()
-                start = time.perf_counter()
-                content = _call_llm(client, settings.openai_model, prompt)
-                latency_ms = (time.perf_counter() - start) * 1000
-                if not content:
-                    raise ValueError("OpenAI returned empty content")
-                result = _content_to_result(
-                    content,
-                    correlation_id,
-                    subject=subject,
-                    sender_email=sender_email,
-                )
-                logger.info(
-                    "AI_RESPONSE: provider=openai fallback=%s correlation_id=%s latency_ms=%.0f attempt=%d content_length=%d",
-                    ollama_failed,
-                    correlation_id,
-                    latency_ms,
-                    attempt + 1,
-                    len(content),
-                )
-                return result
-            except Exception as e:
-                last_openai_error = e
-                logger.warning(
-                    "AI_RESPONSE: openai_error correlation_id=%s attempt=%d error=%s",
-                    correlation_id,
-                    attempt + 1,
-                    str(e),
-                )
-                if attempt < MAX_RETRIES - 1:
-                    delay = RETRY_BASE_DELAY * (2**attempt)
-                    logger.info("AI_RESPONSE: openai_retry correlation_id=%s delay=%.1fs", correlation_id, delay)
-                    time.sleep(delay)
-        logger.warning(
-            "AI_RESPONSE: openai_failed_after_retries correlation_id=%s error=%s",
-            correlation_id,
-            str(last_openai_error),
-        )
+            return result
+        except Exception as e:
+            last_ollama_error = e
+            logger.warning(
+                "AI_RESPONSE: ollama_error correlation_id=%s attempt=%d error=%s",
+                correlation_id,
+                attempt + 1,
+                str(e),
+            )
+            if attempt < ollama_retries - 1:
+                delay = ollama_retry_delay * (2**attempt)
+                logger.info("AI_RESPONSE: ollama_retry correlation_id=%s delay=%.2fs", correlation_id, delay)
+                time.sleep(delay)
+    logger.info(
+        "AI_RESPONSE: ollama_failed correlation_id=%s error=%s",
+        correlation_id,
+        str(last_ollama_error),
+    )
 
     return _failure_dict()
 
@@ -551,7 +475,7 @@ BATCH_CLASSIFICATION_SUMMARY_MAX_TOKENS = 1024
 def generate_classification_batch_summary_text(bundle_text: str, correlation_id: str = "batch") -> str:
     """
     One plain-text executive recap across several already-classified emails.
-    Ollama first, then OpenAI when configured (same fallback policy as classify_email_content).
+    Ollama only.
     """
     settings = get_settings()
     safe_bundle = _escape_for_format(bundle_text)
@@ -566,78 +490,42 @@ Write ONE cohesive brief in plain text (2–4 short paragraphs). Highlight cross
 --- End ---"""
 
     use_ollama = bool(settings.ollama_base_url and settings.ollama_base_url.strip())
-    use_openai = bool(settings.openai_api_key and settings.openai_api_key.strip())
-    allow_openai_after_ollama = bool(settings.openai_fallback_enabled)
-    if not use_ollama and not use_openai:
+    if not use_ollama:
         logger.info("BATCH_SUMMARY: skipped_no_provider correlation_id=%s", correlation_id)
         return ""
 
-    ollama_failed = False
-    if use_ollama:
-        ollama_timeout = float(settings.ollama_request_timeout_seconds or OPENAI_TIMEOUT)
-        ollama_retries = max(1, int(settings.ollama_max_retries))
-        ollama_retry_delay = max(0.0, float(settings.ollama_retry_delay_seconds))
-        last_err: Exception | None = None
-        for attempt in range(ollama_retries):
-            try:
-                client = _get_ollama_client()
-                out = _call_llm(
-                    client,
-                    settings.ollama_model,
-                    prompt,
-                    timeout=ollama_timeout,
-                    max_tokens=BATCH_CLASSIFICATION_SUMMARY_MAX_TOKENS,
-                )
-                if out:
-                    logger.info(
-                        "BATCH_SUMMARY: provider=ollama correlation_id=%s attempt=%d len=%d",
-                        correlation_id,
-                        attempt + 1,
-                        len(out),
-                    )
-                    return out
-                raise ValueError("empty response")
-            except Exception as e:
-                last_err = e
-                logger.warning(
-                    "BATCH_SUMMARY: ollama_error correlation_id=%s attempt=%d err=%s",
+    ollama_timeout = float(settings.ollama_request_timeout_seconds or LLM_TIMEOUT_DEFAULT)
+    ollama_retries = max(1, int(settings.ollama_max_retries))
+    ollama_retry_delay = max(0.0, float(settings.ollama_retry_delay_seconds))
+    last_err: Exception | None = None
+    for attempt in range(ollama_retries):
+        try:
+            client = _get_ollama_client()
+            out = _call_llm(
+                client,
+                settings.ollama_model,
+                prompt,
+                timeout=ollama_timeout,
+                max_tokens=BATCH_CLASSIFICATION_SUMMARY_MAX_TOKENS,
+            )
+            if out:
+                logger.info(
+                    "BATCH_SUMMARY: provider=ollama correlation_id=%s attempt=%d len=%d",
                     correlation_id,
                     attempt + 1,
-                    e,
+                    len(out),
                 )
-                if attempt < ollama_retries - 1:
-                    time.sleep(ollama_retry_delay * (2**attempt))
-        ollama_failed = True
-        logger.info("BATCH_SUMMARY: ollama_failed correlation_id=%s err=%s", correlation_id, last_err)
-
-    need_openai = use_openai and (not use_ollama or (ollama_failed and allow_openai_after_ollama))
-    if need_openai:
-        for attempt in range(MAX_RETRIES):
-            try:
-                client = _get_openai_client()
-                out = _call_llm(
-                    client,
-                    settings.openai_model,
-                    prompt,
-                    timeout=OPENAI_TIMEOUT,
-                    max_tokens=BATCH_CLASSIFICATION_SUMMARY_MAX_TOKENS,
-                )
-                if out:
-                    logger.info(
-                        "BATCH_SUMMARY: provider=openai fallback=%s correlation_id=%s attempt=%d len=%d",
-                        ollama_failed,
-                        correlation_id,
-                        attempt + 1,
-                        len(out),
-                    )
-                    return out
-            except Exception as e:
-                logger.warning(
-                    "BATCH_SUMMARY: openai_error correlation_id=%s attempt=%d err=%s",
-                    correlation_id,
-                    attempt + 1,
-                    e,
-                )
-                if attempt < MAX_RETRIES - 1:
-                    time.sleep(RETRY_BASE_DELAY * (2**attempt))
+                return out
+            raise ValueError("empty response")
+        except Exception as e:
+            last_err = e
+            logger.warning(
+                "BATCH_SUMMARY: ollama_error correlation_id=%s attempt=%d err=%s",
+                correlation_id,
+                attempt + 1,
+                e,
+            )
+            if attempt < ollama_retries - 1:
+                time.sleep(ollama_retry_delay * (2**attempt))
+    logger.info("BATCH_SUMMARY: ollama_failed correlation_id=%s err=%s", correlation_id, last_err)
     return ""

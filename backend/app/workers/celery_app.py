@@ -8,7 +8,7 @@ from datetime import timedelta
 
 from celery import Celery
 from celery.schedules import crontab, schedule
-from celery.signals import worker_init
+from celery.signals import worker_init, worker_process_init
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -103,11 +103,28 @@ if sys.platform == "win32":
     celery_app.conf.worker_pool = "solo"
 
 
+@worker_process_init.connect
+def reset_db_pool_after_fork(**kwargs):
+    """
+    Prefork workers inherit the parent process file descriptors; PostgreSQL connections must not be shared.
+    Dispose the pool in each child before any task runs (prevents psycopg2 errors on commit, e.g. PGRES_TUPLES_OK).
+    """
+    try:
+        from app.db.session import engine
+
+        engine.dispose(close=True)
+    except Exception:
+        logger.exception("Failed to dispose SQLAlchemy pool after worker fork")
+
+
 @worker_init.connect
 def ensure_tables_on_worker_start(sender, **kwargs):
-    """Ensure DB tables exist when worker starts (avoids 'relation emails does not exist')."""
+    """Windows solo pool only: no fork; safe to run init here. Linux prefork skips—parent must not open DB pre-fork."""
+    if sys.platform != "win32":
+        return
     try:
         from app.db import init_db
+
         init_db()
         logger.info("Database tables ready.")
     except Exception as e:

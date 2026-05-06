@@ -527,6 +527,21 @@ def dashboard_metrics(
     except (OperationalError, Exception):
         emails_today = 0
     queue_stats = get_queue_stats_for_user(current_user_email)
+    mailbox_ai_pending = 0
+    try:
+        mb_l = current_user_email.strip().lower()
+        mailbox_ai_pending = (
+            db.query(Email)
+            .filter(
+                Email.mailbox_owner_email.isnot(None),
+                func.lower(Email.mailbox_owner_email) == mb_l,
+                Email.deleted_at.is_(None),
+                Email.ai_status == "pending",
+            )
+            .count()
+        )
+    except (OperationalError, Exception):
+        mailbox_ai_pending = 0
 
     total_emails = 0
     total_classified = 0
@@ -575,6 +590,8 @@ def dashboard_metrics(
     return {
         "emailsIngestedToday": emails_today,
         "queueSize": queue_stats.get("pending", 0),
+        "mailboxTasksActive": queue_stats.get("active", 0),
+        "mailboxAiPending": mailbox_ai_pending,
         "activeWorkers": queue_stats.get("active_workers", 0),
         "totalEmails": total_emails,
         "totalClassified": total_classified,

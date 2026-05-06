@@ -15,7 +15,12 @@ export interface HealthResponse {
 
 export interface DashboardMetrics {
   emailsIngestedToday: number;
+  /** Redis-backed count of tracked Celery tasks (ingest chunks, classify, backfill, …), not “AI only”. */
   queueSize: number;
+  /** Tasks currently running/reserved for your mailbox (inspect). */
+  mailboxTasksActive?: number;
+  /** DB count: emails in your mailbox awaiting AI (ai_status === pending). Authoritative for classification backlog. */
+  mailboxAiPending?: number;
   activeWorkers: number;
   /** Phase 2 — AI stats */
   totalEmails?: number;
@@ -278,6 +283,10 @@ export interface QueueStatusResponse {
   /** Celery workers visible to the broker (shared across users). */
   activeWorkers?: number;
   taskDistribution?: { name: string; count: number }[];
+  /** DB: emails needing AI in your mailbox. */
+  mailboxAiPending?: number;
+  mailboxAiCompleted?: number;
+  mailboxAiFailed?: number;
 }
 
 export interface SystemHealthResponse {

@@ -1037,7 +1037,7 @@ def classification_batch_summary(
     db: Session = Depends(get_db),
 ):
     """
-    Build one Ollama/OpenAI plain-text recap for all messages classified (completed) at or after `since`.
+    Build one Ollama plain-text recap for all messages classified (completed) at or after `since`.
     """
     import uuid as uuid_mod
 
@@ -1053,12 +1053,11 @@ def classification_batch_summary(
 
     settings = get_settings()
     use_ollama = bool(settings.ollama_base_url and settings.ollama_base_url.strip())
-    use_openai = bool(settings.openai_api_key and settings.openai_api_key.strip())
-    if not use_ollama and not use_openai:
+    if not use_ollama:
         from fastapi.responses import JSONResponse
         return JSONResponse(
             status_code=400,
-            content={"error": "No AI provider configured for summaries."},
+            content={"error": "No AI provider configured for summaries. Set OLLAMA_BASE_URL."},
         )
 
     rows = (
@@ -1142,13 +1141,12 @@ def trigger_classify_backfill(
     """
     settings = get_settings()
     use_ollama = bool(settings.ollama_base_url and settings.ollama_base_url.strip())
-    use_openai = bool(settings.openai_api_key and settings.openai_api_key.strip())
-    if not use_ollama and not use_openai:
+    if not use_ollama:
         from fastapi.responses import JSONResponse
         return JSONResponse(
             status_code=400,
             content={
-                "error": "No AI provider configured. Set OLLAMA_BASE_URL and/or OPENAI_API_KEY in backend .env to run AI classification.",
+                "error": "No AI provider configured. Set OLLAMA_BASE_URL in backend .env to run AI classification.",
             },
         )
     raw_limit = (body or {}).get("limit", 500)

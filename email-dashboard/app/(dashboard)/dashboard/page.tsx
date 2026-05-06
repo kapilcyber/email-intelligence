@@ -271,9 +271,10 @@ function DashboardAiChartsEmpty({
           "Classification started. This may take a few minutes. Metrics will refresh automatically while charts populate."
         );
         if (onMetricsRefresh) {
+          onMetricsRefresh();
           pollRef.current = setInterval(() => {
             onMetricsRefresh();
-          }, 8000);
+          }, 1500);
           setTimeout(() => {
             if (pollRef.current) {
               clearInterval(pollRef.current);
@@ -840,6 +841,7 @@ function DashboardPageContent() {
   const syncStopRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const classifyPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const classifyMetricsPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const classifyPollMetaRef = useRef<{ since: string; last: number; stable: number } | null>(null);
   const syncActionsRef = useRef<HTMLDivElement>(null);
   const activityMapRef = useRef<HTMLDivElement>(null);
@@ -972,6 +974,10 @@ function DashboardPageContent() {
   const refresh = useCallback(() => {
     loadMetrics(api, setMetrics, setMetricsError, setLoadingMetrics, { silent: true });
     loadEmails(api, setEmails, setEmailsError, setLoadingEmails);
+  }, [api]);
+
+  const refreshMetricsSilent = useCallback(() => {
+    loadMetrics(api, setMetrics, setMetricsError, setLoadingMetrics, { silent: true });
   }, [api]);
 
   useEffect(() => {
@@ -1115,6 +1121,7 @@ function DashboardPageContent() {
       if (syncStopRef.current) clearTimeout(syncStopRef.current);
       if (mePollRef.current) clearInterval(mePollRef.current);
       if (classifyPollRef.current) clearInterval(classifyPollRef.current);
+      if (classifyMetricsPollRef.current) clearInterval(classifyMetricsPollRef.current);
     };
   }, []);
 
@@ -1161,12 +1168,20 @@ function DashboardPageContent() {
       clearInterval(classifyPollRef.current);
       classifyPollRef.current = null;
     }
+    if (classifyMetricsPollRef.current) {
+      clearInterval(classifyMetricsPollRef.current);
+      classifyMetricsPollRef.current = null;
+    }
     classifyPollMetaRef.current = { since, last: -1, stable: 0 };
     return api
       .triggerClassifyBackfill()
       .then(() => {
         enqueueOutlookDeletedSyncForAdmins();
         refresh();
+        refreshMetricsSilent();
+        classifyMetricsPollRef.current = setInterval(() => {
+          refreshMetricsSilent();
+        }, 1200);
         classifyPollRef.current = setInterval(() => {
           const meta = classifyPollMetaRef.current;
           if (!meta) return;
@@ -1188,8 +1203,13 @@ function DashboardPageContent() {
                   clearInterval(classifyPollRef.current);
                   classifyPollRef.current = null;
                 }
+                if (classifyMetricsPollRef.current) {
+                  clearInterval(classifyMetricsPollRef.current);
+                  classifyMetricsPollRef.current = null;
+                }
                 classifyPollMetaRef.current = null;
-                const sum = await api.postClassificationBatchSummary({ since: meta.since });
+                const batchSince = meta.since;
+                const sum = await api.postClassificationBatchSummary({ since: batchSince });
                 if (sum.summary && (sum.count ?? 0) > 0) {
                   window.dispatchEvent(
                     new CustomEvent(CLASSIFY_BATCH_SUMMARY_EVENT, {
@@ -1208,6 +1228,10 @@ function DashboardPageContent() {
             clearInterval(classifyPollRef.current);
             classifyPollRef.current = null;
           }
+          if (classifyMetricsPollRef.current) {
+            clearInterval(classifyMetricsPollRef.current);
+            classifyMetricsPollRef.current = null;
+          }
           classifyPollMetaRef.current = null;
         }, 120_000);
       })
@@ -1225,7 +1249,17 @@ function DashboardPageContent() {
   const urgentPriorityCount = (pc?.Critical ?? 0) + (pc?.High ?? 0);
   const kpiCards = [
     { title: "Emails Today", value: loadingMetrics ? "—" : (metrics?.emailsIngestedToday ?? 0), subtitle: "Received today" },
-    { title: "Queue Size", value: loadingMetrics ? "—" : (metrics?.queueSize ?? 0), subtitle: "Your tasks pending" },
+    {
+      title: "Queue Size",
+      value:
+        loadingMetrics || metrics == null
+          ? "—"
+          : ((metrics.mailboxAiPending ?? metrics.queueSize) ?? 0),
+      subtitle:
+        loadingMetrics || metrics == null
+          ? "Mails awaiting AI classification (live while classifying)"
+          : `AI backlog · Celery tracked: ${metrics.queueSize ?? 0} · running: ${metrics.mailboxTasksActive ?? 0}`,
+    },
     {
       title: "Critical & High",
       value: loadingMetrics ? "—" : urgentPriorityCount,
@@ -1243,7 +1277,7 @@ function DashboardPageContent() {
       {
         title: "Sync & metrics",
         description:
-          "Sync all mail pulls from Microsoft but only queues messages that are not already in the database. Classify all runs AI on pending messages. Beside them: emails today, queue, Critical & High, and classification progress. On wide screens this is one row; on smaller screens a 2-column grid.",
+          "Sync all mail pulls from Microsoft but only queues messages that are not already in the database. Classify all runs AI on pending messages. Queue Size shows mails still awaiting classification and updates Live while classification runs; Celery totals are shown in the subtitle.",
         target: syncActionsRef,
       },
       {
@@ -1396,7 +1430,7 @@ function DashboardPageContent() {
             </motion.div>
           );
         })}
-        {kpiCards.map(({ title, value, subtitle }, i) => (
+        {kpiCards.map(({ title, value }, i) => (
           <motion.div
             key={title}
             initial={{ opacity: 0, y: 20 }}
@@ -1409,9 +1443,6 @@ function DashboardPageContent() {
             </p>
             <p className="mt-0.5 min-w-0 break-words text-base font-semibold tabular-nums leading-tight text-white dark:text-neutral-100 sm:text-lg md:text-xl xl:text-2xl">
               {value}
-            </p>
-            <p className="mt-0.5 text-[9px] leading-tight text-white/75 dark:text-neutral-400 sm:text-[10px] md:text-xs">
-              {subtitle}
             </p>
           </motion.div>
         ))}
@@ -1436,7 +1467,7 @@ function DashboardPageContent() {
               metrics={metrics}
               loading={loadingMetrics}
               onClassifyAll={onClassifyAll}
-              onMetricsRefresh={refresh}
+              onMetricsRefresh={refreshMetricsSilent}
               classifyLoading={classifyLoading}
               isAdmin={!!me?.isAdmin}
             />

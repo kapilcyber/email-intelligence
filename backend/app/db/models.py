@@ -29,7 +29,7 @@ class Email(Base):
 
     id = Column(String(36), primary_key=True, default=uuid_gen)
     message_id = Column(String(1024), nullable=False, index=True)
-    graph_id = Column(String(512), unique=True, nullable=True, index=True)
+    graph_id = Column(String(512), unique=False, nullable=True, index=True)
     conversation_id = Column(String(512), nullable=True, index=True)
 
     subject = Column(String(1024), nullable=True)
@@ -61,7 +61,7 @@ class Email(Base):
     # Processing state: received -> ingested -> classified | failed
     processing_status = Column(String(32), default="ingested", index=True)  # received | ingested | classified | failed
 
-    # Phase 2 — AI classification (OpenAI)
+    # Phase 2 — AI classification
     ai_summary = Column(Text, nullable=True)
     ai_category = Column(String(64), nullable=True, index=True)
     ai_priority_score = Column(Float, nullable=True)

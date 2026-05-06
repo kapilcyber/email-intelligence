@@ -75,6 +75,18 @@ _EMAIL_MESSAGE_PER_MAILBOX_DDL_STEPS = [
     "CREATE INDEX IF NOT EXISTS ix_emails_message_id ON emails (message_id)",
 ]
 
+# Global unique on graph_id blocks the same Graph item for one mailbox on retries / id drift
+# (internetMessageId vs id). Per-mailbox partial unique still prevents duplicate rows.
+_EMAIL_GRAPH_ID_PER_MAILBOX_DDL_STEPS = [
+    "ALTER TABLE emails DROP CONSTRAINT IF EXISTS emails_graph_id_key",
+    "DROP INDEX IF EXISTS ix_emails_graph_id",
+    "CREATE INDEX IF NOT EXISTS ix_emails_graph_id ON emails (graph_id)",
+    (
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_emails_mailbox_graph_id ON emails (mailbox_owner_email, graph_id) "
+        "WHERE graph_id IS NOT NULL AND mailbox_owner_email IS NOT NULL"
+    ),
+]
+
 
 def ensure_email_bcc_column() -> None:
     """Idempotent Bcc storage for thread exports and detail views."""
@@ -87,6 +99,13 @@ def ensure_email_message_per_mailbox_index() -> None:
     """Allow same Outlook message-id across different mailbox owners."""
     with engine.begin() as conn:
         for step in _EMAIL_MESSAGE_PER_MAILBOX_DDL_STEPS:
+            conn.execute(text(step.strip()))
+
+
+def ensure_emails_graph_id_per_mailbox_index() -> None:
+    """Replace global unique(graph_id) with per-mailbox uniqueness (partial unique index)."""
+    with engine.begin() as conn:
+        for step in _EMAIL_GRAPH_ID_PER_MAILBOX_DDL_STEPS:
             conn.execute(text(step.strip()))
 
 
@@ -304,6 +323,7 @@ def init_db():
     ensure_team_project_tables()
     ensure_email_bcc_column()
     ensure_email_message_per_mailbox_index()
+    ensure_emails_graph_id_per_mailbox_index()
     ensure_email_retag_columns()
     ensure_mom_meeting_records_table()
     ensure_user_activity_columns()

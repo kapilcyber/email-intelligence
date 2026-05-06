@@ -3,9 +3,9 @@ import time
 import uuid
 from datetime import datetime, timezone
 from app.workers.celery_app import celery_app
-from sqlalchemy import create_engine, or_
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import or_
 from app.config import get_settings
+from app.db.session import SessionLocal
 from app.db.models import (
     Base,
     Email,
@@ -42,8 +42,6 @@ from app.graph.message_rules import GraphMessageRulesError, list_inbox_message_r
 logger = logging.getLogger(__name__)
 
 settings = get_settings()
-engine = create_engine(settings.database_url)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 _tables_ensured = False
 
@@ -130,10 +128,15 @@ def _persist_message_from_graph(
     raw_uid = (user_id or "").strip()
     mailbox_norm = raw_uid.lower() if "@" in raw_uid else raw_uid
     is_del_folder = _is_outlook_deleted_folder(folder_display_name)
-    existing = db.query(Email).filter(
-        Email.message_id == message_id,
-        Email.mailbox_owner_email == mailbox_norm,
-    ).first()
+    gid = (data.get("id") or "").strip() or None
+    match_conds = [Email.message_id == message_id]
+    if gid:
+        match_conds.append(Email.graph_id == gid)
+    existing = (
+        db.query(Email)
+        .filter(Email.mailbox_owner_email == mailbox_norm, or_(*match_conds))
+        .first()
+    )
     if existing:
         if is_del_folder:
             folder = data.get("parentFolderId") or existing.folder_id

@@ -37,17 +37,13 @@ class Settings(BaseSettings):
     # Optional: only needed for Graph webhook subscriptions
     webhook_base_url: str | None = None
 
-    # Phase 2 — Ollama (primary) + OpenAI (fallback when Ollama errors or returns bad output)
+    # Phase 2 — Ollama (only)
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3"
-    # Shorter than OpenAI: fail fast locally so fallback runs sooner (seconds per attempt).
+    # Fail fast locally (seconds per attempt).
     ollama_request_timeout_seconds: float = 22.0
     ollama_max_retries: int = 2
     ollama_retry_delay_seconds: float = 0.25
-    openai_api_key: str = ""
-    openai_model: str = "gpt-4o-mini"
-    # When True (default), use OpenAI after Ollama exhausts retries. Set False to use only Ollama even if OPENAI_API_KEY is set.
-    openai_fallback_enabled: bool = True
 
     # Phase 4 — Admin: comma-separated emails allowed to access admin APIs (empty = allow all authenticated)
     admin_emails: str = ""
