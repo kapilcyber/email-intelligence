@@ -39,6 +39,9 @@ class Settings(BaseSettings):
 
     # Phase 2 — Ollama (only)
     ollama_base_url: str = "http://localhost:11434"
+    # Optional load-balancing: comma-separated list of Ollama base URLs.
+    # When set, the AI client randomly selects one per request (e.g. http://vm1:11434/v1,http://vm2:11434/v1).
+    ollama_base_urls: str = ""
     ollama_model: str = "llama3"
     # Fail fast locally (seconds per attempt).
     ollama_request_timeout_seconds: float = 22.0
