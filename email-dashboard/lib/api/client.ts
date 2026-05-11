@@ -198,7 +198,7 @@ function createApi(userEmail: string | null, userDisplayName?: string | null) {
       deletedOnly?: boolean;
       /** Cross-domain: sender or any recipient not on company internal domain (backend setting). */
       externalParticipants?: boolean;
-      /** sent | received — from synced folder (Sent vs non-Sent). */
+      /** sent | received - from synced folder (Sent vs non-Sent). */
       mailDirection?: "sent" | "received";
     }) => {
       const searchParams = new URLSearchParams();
@@ -283,8 +283,10 @@ function createApi(userEmail: string | null, userDisplayName?: string | null) {
       ),
     retryAi: (emailId: string) =>
       withUser<{ ok: boolean; message?: string; emailId?: string }>(`/api/emails/${emailId}/retry-ai`, { method: "POST" }),
+    generateSummary: (emailId: string) =>
+      withUser<{ ok: boolean; message?: string; emailId?: string }>(`/api/emails/${emailId}/generate-summary`, { method: "POST" }),
     getSystemHealth: () => withUser<SystemHealthResponse>("/api/system/health"),
-    // Phase 3 — Escalations & Leads
+    // Phase 3 - Escalations & Leads
     getEscalations: (params?: {
       page?: number;
       pageSize?: number;
@@ -434,7 +436,7 @@ function createApi(userEmail: string | null, userDisplayName?: string | null) {
         { method: "POST" }
       );
     },
-    // Phase 4 — Admin (requires admin role)
+    // Phase 4 - Admin (requires admin role)
     getMe: () => withUser<MeResponse>("/api/me"),
     recordLogout: () => withUser<{ ok: boolean }>("/api/me/logout", { method: "POST" }),
     dismissRolePromotion: () =>

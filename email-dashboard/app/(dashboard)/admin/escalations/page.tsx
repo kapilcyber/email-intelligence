@@ -233,7 +233,7 @@ export default function AdminEscalationsPage() {
         i.subject ?? "",
         i.priorityLabel ?? "",
         i.mailboxOwner ?? i.sender ?? "",
-        i.mailType ?? "—",
+        i.mailType ?? "-",
         i.priorityLabel ?? "",
         formatDate(i.receivedAt),
       ]),
@@ -364,7 +364,7 @@ export default function AdminEscalationsPage() {
 
       {selectedUserEmail && (
         <>
-      {/* KPI cards — match dashboard gradient KPI style */}
+      {/* KPI cards - match dashboard gradient KPI style */}
       <section className="grid min-w-0 gap-3 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3">
         <div className="relative min-w-0 rounded-2xl border border-white/80 bg-gradient-to-br from-[#1e3a8a] via-[#2563eb] to-[#0ea5e9] p-4 text-white shadow-lg shadow-blue-200/70 transition-transform duration-300 hover:-translate-y-0.5 dark:border-neutral-700 dark:bg-neutral-900/60 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-900 dark:shadow-none sm:p-5">
           <p className="text-sm font-medium text-white/80 dark:text-neutral-400">Total escalations</p>
@@ -678,10 +678,10 @@ export default function AdminEscalationsPage() {
                       </div>
                       <div className="flex flex-wrap gap-1.5 text-xs text-neutral-600 dark:text-neutral-400">
                         <span className="rounded-md bg-neutral-100 px-1.5 py-0.5 dark:bg-neutral-800">
-                          {item.priorityLabel ?? "—"}
+                          {item.priorityLabel ?? "-"}
                         </span>
                         <span className="rounded-md bg-neutral-100 px-1.5 py-0.5 dark:bg-neutral-800">
-                          {item.mailType ?? "—"}
+                          {item.mailType ?? "-"}
                         </span>
                         <span
                           className={`rounded-md px-1.5 py-0.5 ${
@@ -695,7 +695,7 @@ export default function AdminEscalationsPage() {
                       </div>
                       <p className="break-words text-xs text-neutral-500 dark:text-neutral-400">
                         <span className="font-medium text-neutral-600 dark:text-neutral-300">From:</span>{" "}
-                        {item.mailboxOwner ? item.mailboxOwner.split("@")[0] : item.sender ?? "—"}
+                        {item.mailboxOwner ? item.mailboxOwner.split("@")[0] : item.sender ?? "-"}
                       </p>
                       <p className="text-xs tabular-nums text-neutral-500 dark:text-neutral-400">
                         {formatDate(item.receivedAt)}
@@ -743,13 +743,13 @@ export default function AdminEscalationsPage() {
                                 {item.subject || "(No subject)"}
                               </span>
                             </td>
-                            <td className="px-4 py-3">{item.priorityLabel ?? "—"}</td>
+                            <td className="px-4 py-3">{item.priorityLabel ?? "-"}</td>
                             <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400">
-                              {item.mailboxOwner ? item.mailboxOwner.split("@")[0] : item.sender ?? "—"}
+                              {item.mailboxOwner ? item.mailboxOwner.split("@")[0] : item.sender ?? "-"}
                             </td>
                             <td className="px-4 py-3">
                               <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs dark:bg-neutral-700">
-                                {item.mailType ?? "—"}
+                                {item.mailType ?? "-"}
                               </span>
                             </td>
                             <td className="px-4 py-3">
@@ -785,7 +785,7 @@ export default function AdminEscalationsPage() {
                     <p className="py-0.5 text-center text-sm text-neutral-500 dark:text-neutral-400 sm:order-2 sm:flex-1 sm:py-0">
                       {total > 0 ? (
                         <>
-                          Showing {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} of {total}
+                          Showing {(page - 1) * pageSize + 1}-{Math.min(page * pageSize, total)} of {total}
                           {totalPages > 1 ? ` · Page ${page} of ${totalPages}` : ""}
                         </>
                       ) : (

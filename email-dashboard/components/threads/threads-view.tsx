@@ -28,7 +28,7 @@ function formatDate(iso: string) {
 }
 
 function formatRecipients(recipients: { email?: string; name?: string }[] | undefined) {
-  if (!recipients?.length) return "—";
+  if (!recipients?.length) return "-";
   return recipients
     .map((r) => (r.name && r.name !== r.email ? `${r.name} <${r.email}>` : r.email))
     .filter(Boolean)
@@ -37,7 +37,7 @@ function formatRecipients(recipients: { email?: string; name?: string }[] | unde
 
 /** Format milliseconds since previous message as "Replied in 5m", "2h", "1d", etc. */
 function formatResponseTime(ms: number): string {
-  if (ms < 0) return "—";
+  if (ms < 0) return "-";
   const sec = Math.floor(ms / 1000);
   const min = Math.floor(sec / 60);
   const hr = Math.floor(min / 60);
@@ -380,7 +380,7 @@ export function ThreadsView({ basePath }: ThreadsViewProps) {
                       {c.subject || "(No subject)"}
                     </p>
                     <p className="mt-0.5 line-clamp-2 text-xs text-neutral-500 dark:text-neutral-400 sm:line-clamp-none sm:truncate">
-                      {c.participantsPreview || "—"}
+                      {c.participantsPreview || "-"}
                     </p>
                     <p className="mt-1 text-xs text-neutral-400 dark:text-neutral-500">
                       {c.messageCount} message{c.messageCount !== 1 ? "s" : ""} · {formatDate(c.lastReceivedAt)}
@@ -404,7 +404,7 @@ export function ThreadsView({ basePath }: ThreadsViewProps) {
               Previous
             </Button>
             <span className="py-0.5 text-center text-xs text-neutral-500 sm:order-none sm:flex-1 sm:py-0">
-              {((page - 1) * PAGE_SIZE) + 1}–{Math.min(page * PAGE_SIZE, total)} of {total}
+              {((page - 1) * PAGE_SIZE) + 1}-{Math.min(page * PAGE_SIZE, total)} of {total}
             </span>
             <Button
               type="button"

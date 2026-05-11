@@ -57,7 +57,7 @@ function DepartmentSubnavInner({
 }
 
 /**
- * Horizontal department links for /departments/* — especially useful on mobile
+ * Horizontal department links for /departments/* - especially useful on mobile
  * where the sidebar drawer is one tap away.
  */
 export function DepartmentSubnav() {

@@ -23,7 +23,7 @@ def list_user_mail_folders_flat(user_id: str) -> list[dict[str, Any]]:
     if not uid:
         return []
     headers = get_auth_headers()
-    params = {"$select": "id,displayName,childFolderCount,wellKnownName", "$top": 100}
+    params = {"$select": "id,displayName,childFolderCount", "$top": 100}
     out: list[dict[str, Any]] = []
     seen: set[str] = set()
     stack: list[str | None] = [None]

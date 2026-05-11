@@ -3,9 +3,9 @@ import time
 import uuid
 from datetime import datetime, timezone
 from app.workers.celery_app import celery_app
-from sqlalchemy import create_engine, or_
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import or_
 from app.config import get_settings
+from app.db.session import SessionLocal
 from app.db.models import (
     Base,
     Email,
@@ -19,7 +19,7 @@ from app.db.models import (
     MailboxMessageRule,
 )
 from app.graph.auth import get_auth_headers
-from app.ai.classifier import classify_email_content
+from app.ai.classifier import classify_email_fields, generate_email_summary
 from app.ai.escalation import compute_escalation
 from app.ai.trust import evaluate_suspicious, update_sender_trust, should_override_to_spam
 import redis
@@ -42,8 +42,6 @@ from app.graph.message_rules import GraphMessageRulesError, list_inbox_message_r
 logger = logging.getLogger(__name__)
 
 settings = get_settings()
-engine = create_engine(settings.database_url)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 _tables_ensured = False
 
@@ -130,10 +128,15 @@ def _persist_message_from_graph(
     raw_uid = (user_id or "").strip()
     mailbox_norm = raw_uid.lower() if "@" in raw_uid else raw_uid
     is_del_folder = _is_outlook_deleted_folder(folder_display_name)
-    existing = db.query(Email).filter(
-        Email.message_id == message_id,
-        Email.mailbox_owner_email == mailbox_norm,
-    ).first()
+    gid = (data.get("id") or "").strip() or None
+    match_conds = [Email.message_id == message_id]
+    if gid:
+        match_conds.append(Email.graph_id == gid)
+    existing = (
+        db.query(Email)
+        .filter(Email.mailbox_owner_email == mailbox_norm, or_(*match_conds))
+        .first()
+    )
     if existing:
         if is_del_folder:
             folder = data.get("parentFolderId") or existing.folder_id
@@ -301,7 +304,7 @@ def ingest_email_task(
 ):
     """
     Celery task: fetch message from Graph, normalize, upsert into PostgreSQL.
-    resource is e.g. Users('xxx')/Messages('yyy') — we need user id and message id.
+    resource is e.g. Users('xxx')/Messages('yyy') - we need user id and message id.
     """
     if not user_id:
         user_id = _resource_to_user_id(resource)
@@ -578,7 +581,8 @@ def _record_ai_latency(latency_seconds: float) -> None:
 @celery_app.task(bind=True, name="app.workers.tasks.classify_email_task", max_retries=3)
 def classify_email_task(self, email_id: str, mailbox_owner_email: str | None = None):
     """
-    Phase 2: Run AI classification on an email (summary, category, priority, reply suggestions).
+    Phase 2: Run AI classification on an email (category, priority, lead signals).
+    Summary generation is on-demand (separate task) to reduce latency/cost.
     Called after ingest_email_task for new emails; can also be triggered manually for re-classification.
     Sets processing_status, ai_status, ai_error_message; logs correlation_id and latency.
     """
@@ -598,7 +602,7 @@ def classify_email_task(self, email_id: str, mailbox_owner_email: str | None = N
             db.commit()
 
         start = time.perf_counter()
-        result = classify_email_content(
+        result = classify_email_fields(
             subject=email.subject,
             body_preview=email.body_preview,
             body_content=email.body_content,
@@ -608,7 +612,7 @@ def classify_email_task(self, email_id: str, mailbox_owner_email: str | None = N
         latency = time.perf_counter() - start
         _record_ai_latency(latency)
 
-        summary = result.get("summary")
+        summary = None
         logger.info(
             "DB_SAVE_STATUS: correlation_id=%s email_id=%s has_summary=%s latency_sec=%.2f",
             correlation_id,
@@ -616,21 +620,21 @@ def classify_email_task(self, email_id: str, mailbox_owner_email: str | None = N
             summary is not None,
             latency,
         )
-        if summary is None and (result.get("category") is None and result.get("priority_label") in (None, "Medium")):
+        if result.get("category") is None and result.get("priority_label") in (None, "Medium"):
             logger.warning(
                 "DB_SAVE_STATUS: ai_returned_empty correlation_id=%s email_id=%s",
                 correlation_id,
                 email_id,
             )
 
-        email.ai_summary = summary
         raw_category = (result.get("category") or "").strip()
         email.ai_category = raw_category if raw_category else "General"
         email.ai_priority_score = result.get("priority_score")
         email.ai_priority_label = result.get("priority_label")
-        email.ai_suggested_replies = result.get("suggested_replies") or []
+        # Summary + suggested replies are generated on demand.
+        email.ai_suggested_replies = []
         email.ai_processed_at = datetime.now(timezone.utc)
-        email.ai_confidence_score = result.get("confidence_score")
+        email.ai_confidence_score = None
         # User retagged: do not re-apply escalation/lead/team-from-category
         skip_after_retag = getattr(email, "retagged_at", None) is not None
         # Phase 3: escalation (enterprise: keywords, RE chain, CC seniors, thread length, negative tone + AI priority)
@@ -730,6 +734,91 @@ def classify_email_task(self, email_id: str, mailbox_owner_email: str | None = N
                     email.ai_error_message = err_msg[:2000] if err_msg else None
                 if getattr(Email, "processing_status", None) is not None:
                     email.processing_status = "failed"
+                db.commit()
+        except Exception:
+            db.rollback()
+        countdown = 2 ** self.request.retries
+        raise self.retry(exc=e, countdown=min(countdown, 120))
+    finally:
+        db.close()
+
+
+def enqueue_generate_summary_task(email_id: str, mailbox_owner_email: str | None = None) -> None:
+    mb = normalize_mailbox_key(mailbox_owner_email)
+    if not mb:
+        db = SessionLocal()
+        try:
+            row = db.query(Email.mailbox_owner_email).filter(Email.id == email_id).first()
+            mb = normalize_mailbox_key(row[0] if row else None)
+        finally:
+            db.close()
+    user_queue_incr(mb)
+    generate_email_summary_task.delay(email_id, mailbox_owner_email=mb)
+
+
+@celery_app.task(bind=True, name="app.workers.tasks.generate_email_summary_task", max_retries=3)
+def generate_email_summary_task(self, email_id: str, mailbox_owner_email: str | None = None):
+    """On-demand summary generation for one email (summary + suggested replies only)."""
+    _ensure_tables()
+    correlation_id = str(uuid.uuid4())[:8]
+    db = SessionLocal()
+    try:
+        email = db.query(Email).filter(Email.id == email_id).first()
+        if not email:
+            logger.warning("generate_email_summary_task: email not found email_id=%s correlation_id=%s", email_id, correlation_id)
+            return
+        # Mark summary as pending (if column exists)
+        if getattr(Email, "ai_summary_status", None) is not None:
+            email.ai_summary_status = "pending"
+            email.ai_summary_error_message = None
+            db.commit()
+        start = time.perf_counter()
+        result = generate_email_summary(
+            subject=email.subject,
+            body_preview=email.body_preview,
+            body_content=email.body_content,
+            sender_email=email.sender_email or "",
+            correlation_id=correlation_id,
+        )
+        latency = time.perf_counter() - start
+        _record_ai_latency(latency)
+        summary = result.get("summary")
+        has_summary = summary is not None and str(summary).strip() != ""
+        logger.info(
+            "DB_SAVE_STATUS: summary correlation_id=%s email_id=%s has_summary=%s latency_sec=%.2f",
+            correlation_id,
+            email_id,
+            has_summary,
+            latency,
+        )
+        if has_summary:
+            email.ai_summary = summary
+            email.ai_suggested_replies = result.get("suggested_replies") or []
+            if getattr(Email, "ai_summary_status", None) is not None:
+                email.ai_summary_status = "completed"
+                email.ai_summary_error_message = None
+                email.ai_summary_processed_at = datetime.now(timezone.utc)
+        else:
+            if getattr(Email, "ai_summary_status", None) is not None:
+                email.ai_summary_status = "failed"
+                email.ai_summary_error_message = "Empty summary returned"
+                email.ai_summary_processed_at = datetime.now(timezone.utc)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        err_msg = str(e)
+        logger.exception(
+            "DB_SAVE_STATUS: summary_failed correlation_id=%s email_id=%s error=%s",
+            correlation_id,
+            email_id,
+            err_msg,
+        )
+        try:
+            email = db.query(Email).filter(Email.id == email_id).first()
+            if email and getattr(Email, "ai_summary_status", None) is not None:
+                email.ai_summary_status = "failed"
+                email.ai_summary_error_message = err_msg[:2000] if err_msg else None
+                email.ai_summary_processed_at = datetime.now(timezone.utc)
                 db.commit()
         except Exception:
             db.rollback()
@@ -1006,7 +1095,7 @@ def _mailbox_norm_for_backfill(user_id: str) -> str:
 
 def _load_existing_ids_for_graph_page(
     db, mailbox_norm: str, items: list
-) -> tuple[set[str], set[str]]:
+) -> tuple[set[str], set[str], dict[str, tuple[str, datetime | None]]]:
     """graph_ids and message_ids already stored for this mailbox (matches ingest dedupe).
 
     Rows soft-deleted only from Outlook Deleted Items sync (deleted_at set, deleted_by_email empty)
@@ -1027,15 +1116,23 @@ def _load_existing_ids_for_graph_page(
     message_keys = list(dict.fromkeys(message_keys))
     existing_g: set[str] = set()
     existing_m: set[str] = set()
+    existing_lookup: dict[str, tuple[str, datetime | None]] = {}
     conds = []
     if graph_ids:
         conds.append(Email.graph_id.in_(graph_ids))
     if message_keys:
         conds.append(Email.message_id.in_(message_keys))
     if not conds:
-        return existing_g, existing_m
-    for gid, mid, deleted_at, deleted_by in (
-        db.query(Email.graph_id, Email.message_id, Email.deleted_at, Email.deleted_by_email)
+        return existing_g, existing_m, existing_lookup
+    for eid, gid, mid, ai_processed_at, deleted_at, deleted_by in (
+        db.query(
+            Email.id,
+            Email.graph_id,
+            Email.message_id,
+            Email.ai_processed_at,
+            Email.deleted_at,
+            Email.deleted_by_email,
+        )
         .filter(Email.mailbox_owner_email == mailbox_norm, or_(*conds))
         .all()
     ):
@@ -1043,9 +1140,11 @@ def _load_existing_ids_for_graph_page(
             continue
         if gid:
             existing_g.add(gid)
+            existing_lookup[gid] = (eid, ai_processed_at)
         if mid:
             existing_m.add(mid)
-    return existing_g, existing_m
+            existing_lookup[mid] = (eid, ai_processed_at)
+    return existing_g, existing_m, existing_lookup
 
 
 def _backfill_item_already_stored(
@@ -1160,10 +1259,11 @@ def backfill_emails_task(
             value = data.get("value", [])
             existing_g: set[str] = set()
             existing_m: set[str] = set()
+            existing_lookup: dict[str, tuple[str, datetime | None]] = {}
             if skip_if_already_in_db and value:
                 db_page = SessionLocal()
                 try:
-                    existing_g, existing_m = _load_existing_ids_for_graph_page(db_page, mailbox_norm, value)
+                    existing_g, existing_m, existing_lookup = _load_existing_ids_for_graph_page(db_page, mailbox_norm, value)
                 finally:
                     db_page.close()
             batch: list[str] = []
@@ -1175,6 +1275,14 @@ def backfill_emails_task(
                     msg_id, item.get("internetMessageId"), existing_g, existing_m
                 ):
                     total_skipped_existing += 1
+                    # Ensure already-fetched emails get classified too: if row exists but never classified, enqueue it.
+                    imid = (item.get("internetMessageId") or "").strip()
+                    key = imid or msg_id
+                    hit = existing_lookup.get(key) or existing_lookup.get(msg_id)
+                    if hit:
+                        existing_email_id, ai_processed_at = hit
+                        if ai_processed_at is None:
+                            enqueue_classify_email_task(existing_email_id, mailbox_norm)
                     continue
                 batch.append(msg_id)
                 total_enqueued += 1

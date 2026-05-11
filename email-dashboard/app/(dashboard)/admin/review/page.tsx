@@ -152,7 +152,7 @@ export default function AdminReviewPage() {
                   <li key={r.email} className="space-y-3 p-3">
                     <div className="min-w-0">
                       <p className="break-words font-medium text-neutral-900 dark:text-neutral-100">
-                        {r.displayName?.trim() || "—"}
+                        {r.displayName?.trim() || "-"}
                       </p>
                     </div>
                     <p className="text-[10px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
@@ -342,7 +342,7 @@ export default function AdminReviewPage() {
                         <tr key={r.email}>
                           <td className="border-b border-neutral-100 bg-transparent px-3 py-2.5 dark:border-neutral-800">
                             <div className="font-medium text-neutral-900 dark:text-neutral-100">
-                              {r.displayName?.trim() || "—"}
+                              {r.displayName?.trim() || "-"}
                             </div>
                           </td>
                           <td className="border-b border-b-neutral-100 border-l border-l-neutral-200 bg-transparent px-2 py-2.5 text-center tabular-nums dark:border-b-neutral-800 dark:border-l-neutral-700">

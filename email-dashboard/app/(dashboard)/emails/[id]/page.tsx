@@ -35,7 +35,7 @@ function formatDate(iso: string) {
 }
 
 function formatRecipients(recipients: { email?: string; name?: string }[]) {
-  if (!recipients?.length) return "—";
+  if (!recipients?.length) return "-";
   return recipients
     .map((r) => (r.name && r.name !== r.email ? `${r.name} <${r.email}>` : r.email))
     .filter(Boolean)
@@ -131,6 +131,7 @@ export default function EmailDetailPage() {
   const displayFolder = folderLabel(email.folder);
 
   const hasSummary = email.summary != null && String(email.summary).trim() !== "";
+  const summaryStatus = email.aiSummaryStatus ?? (hasSummary ? "completed" : "not_requested");
   if (email.summary === undefined || email.summary === null) {
     if (typeof window !== "undefined") console.log("[Email detail] summary is undefined for email", email.id);
   }
@@ -167,7 +168,7 @@ export default function EmailDetailPage() {
     setPollNotice(null);
     setRetrying(true);
     const emailId = email.id;
-    /** Snapshot before re-queue — first GET after POST can still show stale "completed" from the prior run. */
+    /** Snapshot before re-queue - first GET after POST can still show stale "completed" from the prior run. */
     const beforeProcessedAt = email.aiProcessedAt ?? null;
     const beforeErrorMessage = email.aiErrorMessage ?? null;
     const hadSummaryAtRetry = email.summary != null && String(email.summary).trim() !== "";
@@ -227,6 +228,63 @@ export default function EmailDetailPage() {
                 clearAiPoll();
                 setRetrying(false);
                 setPollNotice("Could not load updated AI results. Check your connection and try again.");
+              }
+            });
+        };
+
+        tick();
+        pollIntervalRef.current = setInterval(tick, AI_POLL_INTERVAL_MS);
+      })
+      .catch(() => setRetrying(false));
+  };
+
+  const handleGenerateSummary = () => {
+    setPollNotice(null);
+    setRetrying(true);
+    const emailId = email.id;
+    const hadSummaryAtStart = email.summary != null && String(email.summary).trim() !== "";
+    const beforeSummaryStatus = (email.aiSummaryStatus ?? null) as string | null;
+
+    clearAiPoll();
+
+    const processPollResult = (data: EmailDetail): boolean => {
+      const summaryAppeared = !!(data.summary && String(data.summary).trim()) && !hadSummaryAtStart;
+      const st = (data.aiSummaryStatus ?? null) as string | null;
+      const stChanged = st !== beforeSummaryStatus && (st === "completed" || st === "failed");
+      setEmail(data);
+      const done = summaryAppeared || stChanged;
+      if (done) {
+        clearAiPoll();
+        setRetrying(false);
+      }
+      return done;
+    };
+
+    api
+      .generateSummary(emailId)
+      .then(() => {
+        const startedAt = Date.now();
+        let failures = 0;
+
+        const tick = () => {
+          if (Date.now() - startedAt > AI_POLL_TIMEOUT_MS) {
+            clearAiPoll();
+            setRetrying(false);
+            setPollNotice("Summary is taking longer than expected. Refresh the page and try again.");
+            return;
+          }
+          api
+            .getEmail(emailId)
+            .then((data) => {
+              failures = 0;
+              processPollResult(data);
+            })
+            .catch(() => {
+              failures += 1;
+              if (failures >= AI_POLL_MAX_FAILURES) {
+                clearAiPoll();
+                setRetrying(false);
+                setPollNotice("Could not load updated summary. Check your connection and try again.");
               }
             });
         };
@@ -313,7 +371,7 @@ export default function EmailDetailPage() {
           </div>
         </header>
 
-        {/* AI Insights — always show; summary has fallback when missing */}
+        {/* AI Insights - always show; summary has fallback when missing */}
         <div className="border-b border-neutral-100 bg-neutral-50/60 px-4 py-4 dark:border-neutral-800 dark:bg-neutral-800/30 sm:px-6">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
@@ -362,19 +420,23 @@ export default function EmailDetailPage() {
               ) : (
                 <div className="mt-1 flex flex-wrap items-center gap-2">
                   <p className="text-sm italic text-neutral-500 dark:text-neutral-400">
-                    Summary not available (AI pending or failed).
+                    {summaryStatus === "pending"
+                      ? "Summary is being generated…"
+                      : summaryStatus === "failed"
+                        ? "Summary generation failed."
+                        : "Summary not generated yet."}
                   </p>
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
                     className="h-7 gap-1.5 px-2 text-xs"
-                    onClick={handleRetryAi}
+                    onClick={handleGenerateSummary}
                     disabled={retrying}
-                    title="Retrieve summary"
+                    title="Generate summary"
                   >
                     <RefreshCw className={`h-3.5 w-3.5 ${retrying ? "animate-spin" : ""}`} />
-                    {retrying ? "Retrieving…" : "Retrieve"}
+                    {retrying ? "Generating…" : "Generate"}
                   </Button>
                 </div>
               )}
@@ -415,7 +477,7 @@ export default function EmailDetailPage() {
                       className="flex items-start gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-700 dark:border-neutral-700 dark:bg-neutral-900/50 dark:text-neutral-300"
                     >
                       <p className="min-w-0 flex-1 whitespace-pre-wrap">{reply}</p>
-                      {/* Reply-all Send: hidden for now — drop `hidden` from className to show again */}
+                      {/* Reply-all Send: hidden for now - drop `hidden` from className to show again */}
                       <Button
                         type="button"
                         size="sm"

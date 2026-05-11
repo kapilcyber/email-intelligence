@@ -40,7 +40,7 @@ function formatWeek(startISO: string, endISO: string) {
     const a = new Date(startISO);
     const b = new Date(endISO);
     const o: Intl.DateTimeFormatOptions = { month: "short", day: "numeric", year: "numeric" };
-    return `${a.toLocaleDateString(undefined, o)} – ${b.toLocaleDateString(undefined, o)} (UTC week)`;
+    return `${a.toLocaleDateString(undefined, o)} - ${b.toLocaleDateString(undefined, o)} (UTC week)`;
   } catch {
     return startISO;
   }
@@ -119,7 +119,7 @@ function ProjectTrackerCard({
                 <dd className="min-w-0 break-words">
                   {(p.effectiveScheduleDays ?? []).length > 0
                     ? (p.effectiveScheduleDays ?? []).map((d) => SHORT[d] ?? d).join(", ")
-                    : "—"}
+                    : "-"}
                 </dd>
               </div>
               {p.memberDeadlineBefore ? (
@@ -137,7 +137,7 @@ function ProjectTrackerCard({
         ) : null}
         <div className="min-w-0">
           <p className="mb-2 text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-            This week — you sent?
+            This week - you sent?
           </p>
           <div className="max-w-full overflow-x-auto pb-1 [-webkit-overflow-scrolling:touch] sm:overflow-visible sm:pb-0">
             <div className="grid min-w-[18rem] grid-cols-7 gap-0.5 text-center text-[10px] sm:min-w-0 sm:gap-1 sm:text-xs">
@@ -164,7 +164,7 @@ function ProjectTrackerCard({
                       )}
                       title={day.label}
                     >
-                      {day.sentByMe ? "✓" : "—"}
+                      {day.sentByMe ? "✓" : "-"}
                     </span>
                     {showDue && (
                       <span className="text-[8px] leading-tight text-amber-700 dark:text-amber-400 sm:text-[9px]">

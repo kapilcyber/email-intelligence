@@ -204,7 +204,7 @@ export function ProjectWorkflowAndTeamSection({
                   </div>
                   <span className="min-w-0 break-words text-xs leading-snug text-neutral-500 dark:text-neutral-400 sm:text-right">
                     <span className="font-medium text-neutral-600 dark:text-neutral-300">Reports to:</span>{" "}
-                    {reportsTo ? (reportsTo.displayName ?? reportsTo.email) : "—"}
+                    {reportsTo ? (reportsTo.displayName ?? reportsTo.email) : "-"}
                   </span>
                 </div>
                 {u.responsibilities && (

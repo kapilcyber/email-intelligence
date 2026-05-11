@@ -46,7 +46,7 @@ export function MomPromptDialog({ open, event, onMarkSent, onRemindTenMinutes, o
         </div>
         <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
           <Button type="button" className="flex-1" onClick={onMarkSent}>
-            Done — MOM sent
+            Done - MOM sent
           </Button>
           <Button type="button" variant="outline" className="flex-1" onClick={onRemindTenMinutes}>
             Later (10 minutes)
@@ -57,7 +57,7 @@ export function MomPromptDialog({ open, event, onMarkSent, onRemindTenMinutes, o
           onClick={onNotApplicable}
           className="mt-3 w-full text-center text-xs text-neutral-500 underline-offset-2 hover:text-neutral-700 hover:underline dark:text-neutral-400 dark:hover:text-neutral-300"
         >
-          Not applicable — do not ask again
+          Not applicable - do not ask again
         </button>
       </div>
     </div>

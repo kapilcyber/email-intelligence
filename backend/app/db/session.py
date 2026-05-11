@@ -75,6 +75,18 @@ _EMAIL_MESSAGE_PER_MAILBOX_DDL_STEPS = [
     "CREATE INDEX IF NOT EXISTS ix_emails_message_id ON emails (message_id)",
 ]
 
+# Global unique on graph_id blocks the same Graph item for one mailbox on retries / id drift
+# (internetMessageId vs id). Per-mailbox partial unique still prevents duplicate rows.
+_EMAIL_GRAPH_ID_PER_MAILBOX_DDL_STEPS = [
+    "ALTER TABLE emails DROP CONSTRAINT IF EXISTS emails_graph_id_key",
+    "DROP INDEX IF EXISTS ix_emails_graph_id",
+    "CREATE INDEX IF NOT EXISTS ix_emails_graph_id ON emails (graph_id)",
+    (
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_emails_mailbox_graph_id ON emails (mailbox_owner_email, graph_id) "
+        "WHERE graph_id IS NOT NULL AND mailbox_owner_email IS NOT NULL"
+    ),
+]
+
 
 def ensure_email_bcc_column() -> None:
     """Idempotent Bcc storage for thread exports and detail views."""
@@ -87,6 +99,13 @@ def ensure_email_message_per_mailbox_index() -> None:
     """Allow same Outlook message-id across different mailbox owners."""
     with engine.begin() as conn:
         for step in _EMAIL_MESSAGE_PER_MAILBOX_DDL_STEPS:
+            conn.execute(text(step.strip()))
+
+
+def ensure_emails_graph_id_per_mailbox_index() -> None:
+    """Replace global unique(graph_id) with per-mailbox uniqueness (partial unique index)."""
+    with engine.begin() as conn:
+        for step in _EMAIL_GRAPH_ID_PER_MAILBOX_DDL_STEPS:
             conn.execute(text(step.strip()))
 
 
@@ -120,6 +139,21 @@ _EMAIL_RETAG_DDL_STEPS = [
     "CREATE INDEX IF NOT EXISTS ix_emails_retagged_at ON emails (retagged_at)",
     "CREATE INDEX IF NOT EXISTS ix_emails_retagged_by_email ON emails (retagged_by_email)",
 ]
+
+
+_EMAIL_SUMMARY_STATUS_DDL_STEPS = [
+    "ALTER TABLE emails ADD COLUMN IF NOT EXISTS ai_summary_status VARCHAR(32) NOT NULL DEFAULT 'not_requested'",
+    "ALTER TABLE emails ADD COLUMN IF NOT EXISTS ai_summary_processed_at TIMESTAMP WITH TIME ZONE NULL",
+    "ALTER TABLE emails ADD COLUMN IF NOT EXISTS ai_summary_error_message TEXT NULL",
+    "CREATE INDEX IF NOT EXISTS ix_emails_ai_summary_status ON emails (ai_summary_status)",
+]
+
+
+def ensure_email_summary_status_columns() -> None:
+    """Idempotent columns to track on-demand summary generation separately from classification."""
+    with engine.begin() as conn:
+        for step in _EMAIL_SUMMARY_STATUS_DDL_STEPS:
+            conn.execute(text(step.strip()))
 
 
 def ensure_team_project_tables() -> None:
@@ -299,14 +333,28 @@ def ensure_mailbox_message_rules_table() -> None:
 
 def init_db():
     """Verify database connectivity; ensure optional tables that some envs skip via Alembic."""
-    with engine.connect() as conn:
+    # NOTE: Multiple containers/processes can start at once (backend + worker + worker_ai).
+    # Many ensure_* helpers perform DDL (ALTER TABLE / CREATE INDEX) which requires strong locks.
+    # Run all DDL behind a Postgres advisory lock to prevent concurrent DDL deadlocks on startup.
+    lock_key = 928374651  # arbitrary constant; must be the same across all processes
+    with engine.begin() as conn:
         conn.execute(text("SELECT 1"))
-    ensure_team_project_tables()
-    ensure_email_bcc_column()
-    ensure_email_message_per_mailbox_index()
-    ensure_email_retag_columns()
-    ensure_mom_meeting_records_table()
-    ensure_user_activity_columns()
-    ensure_user_login_events_table()
-    ensure_retag_approval_requests_table()
-    ensure_mailbox_message_rules_table()
+        conn.execute(text("SELECT pg_advisory_lock(:k)"), {"k": lock_key})
+        try:
+            ensure_team_project_tables()
+            ensure_email_bcc_column()
+            ensure_email_message_per_mailbox_index()
+            ensure_emails_graph_id_per_mailbox_index()
+            ensure_email_summary_status_columns()
+            ensure_email_retag_columns()
+            ensure_mom_meeting_records_table()
+            ensure_user_activity_columns()
+            ensure_user_login_events_table()
+            ensure_retag_approval_requests_table()
+            ensure_mailbox_message_rules_table()
+        finally:
+            # If the connection drops, Postgres releases advisory locks automatically.
+            try:
+                conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": lock_key})
+            except Exception:
+                pass

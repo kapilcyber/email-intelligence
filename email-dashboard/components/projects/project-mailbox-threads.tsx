@@ -108,7 +108,7 @@ export function ProjectMailboxThreads({ projectId, projectName }: { projectId: s
                 }`}
               >
                 <p className="truncate font-medium text-neutral-900 dark:text-neutral-100">{c.subject || "(No subject)"}</p>
-                <p className="mt-0.5 truncate text-xs text-neutral-500">{c.participantsPreview || "—"}</p>
+                <p className="mt-0.5 truncate text-xs text-neutral-500">{c.participantsPreview || "-"}</p>
                 <p className="mt-1 text-xs text-neutral-400">
                   {c.messageCount} message{c.messageCount !== 1 ? "s" : ""} · {formatDate(c.lastReceivedAt)}
                 </p>
@@ -120,7 +120,7 @@ export function ProjectMailboxThreads({ projectId, projectName }: { projectId: s
                 Prev
               </Button>
               <span className="text-xs text-neutral-500">
-                {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} / {total}
+                {(page - 1) * PAGE_SIZE + 1}-{Math.min(page * PAGE_SIZE, total)} / {total}
               </span>
               <Button
                 variant="ghost"

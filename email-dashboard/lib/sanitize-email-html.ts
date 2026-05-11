@@ -29,10 +29,10 @@ export function sanitizeEmailHtml(html: string): string {
   out = out.replace(/\sbgcolor\s*=\s*["'][^"']*["']/gi, "");
   out = out.replace(/\sbgColor\s*=\s*["'][^"']*["']/gi, "");
 
-  // Legacy <font color="..."> — drop color by normalizing to spans.
+  // Legacy <font color="..."> - drop color by normalizing to spans.
   out = out.replace(/<font\b[^>]*>/gi, "<span>").replace(/<\/font>/gi, "</span>");
 
-  // Newsletter tables often use width="600" / fixed px — forces horizontal overflow on phones.
+  // Newsletter tables often use width="600" / fixed px - forces horizontal overflow on phones.
   out = out.replace(/<table\b([^>]*)>/gi, (_, attrs: string) => {
     const next = attrs
       .replace(/\swidth\s*=\s*["'][^"']*["']/gi, "")
@@ -50,7 +50,7 @@ export const emailBodySurfaceClassName =
   "min-w-0 max-w-full overflow-x-auto rounded-lg border border-neutral-200/90 bg-neutral-50 p-3 text-neutral-900 shadow-sm dark:border-neutral-500 dark:bg-neutral-100 dark:text-neutral-900 sm:p-4";
 
 /**
- * Prose inside {@link emailBodySurfaceClassName} — no prose-invert (parent is always light).
+ * Prose inside {@link emailBodySurfaceClassName} - no prose-invert (parent is always light).
  * Tables and nowrap-heavy HTML are constrained for narrow viewports.
  */
 export const emailHtmlProseClassName =

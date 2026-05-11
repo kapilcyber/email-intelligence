@@ -45,7 +45,7 @@ export function meetingsNeedingMomPrompt(
 export function formatMomTimeRange(ev: CalendarEventOut): string {
   const start = parseGraphDateTime(ev.start?.dateTime);
   const end = parseGraphDateTime(ev.end?.dateTime);
-  if (!start && !end) return "—";
+  if (!start && !end) return "-";
   const datePart =
     start?.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" }) ??
     end?.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" }) ??
@@ -53,7 +53,7 @@ export function formatMomTimeRange(ev: CalendarEventOut): string {
   if (start && end) {
     const t0 = start.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
     const t1 = end.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-    return `${datePart} · ${t0} – ${t1}`;
+    return `${datePart} · ${t0} - ${t1}`;
   }
   if (start) return `${datePart} · ${start.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`;
   return `${datePart} · ${end!.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`;

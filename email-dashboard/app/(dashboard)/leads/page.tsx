@@ -177,7 +177,7 @@ export default function LeadsPage() {
                       <span className="text-neutral-400 dark:text-neutral-500"> · </span>
                       <span className="tabular-nums">{formatDate(item.receivedAt)}</span>
                       <span className="text-neutral-400 dark:text-neutral-500"> · </span>
-                      {item.priorityLabel ?? "—"}
+                      {item.priorityLabel ?? "-"}
                     </p>
                     <div className="mt-1.5 flex flex-wrap items-center gap-2">
                       {item.leadLabel && (

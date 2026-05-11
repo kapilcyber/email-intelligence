@@ -1,1 +1,1 @@
-# Email Intelligence — Phase 1 Backend
+# Email Intelligence - Phase 1 Backend

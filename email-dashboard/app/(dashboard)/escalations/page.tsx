@@ -134,7 +134,7 @@ export default function EscalationsPage() {
                       <span className="text-neutral-400 dark:text-neutral-500"> · </span>
                       <span className="tabular-nums">{formatDate(item.receivedAt)}</span>
                       <span className="text-neutral-400 dark:text-neutral-500"> · </span>
-                      {item.priorityLabel ?? "—"}
+                      {item.priorityLabel ?? "-"}
                     </p>
                     {item.summary && (
                       <p className="mt-1.5 line-clamp-3 text-sm text-neutral-600 dark:text-neutral-300 sm:line-clamp-2">

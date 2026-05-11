@@ -18,7 +18,7 @@ export function PriorityBadge({
   label: string | null | undefined;
   className?: string;
 }) {
-  if (!label) return <span className="text-neutral-400 dark:text-neutral-500">—</span>;
+  if (!label) return <span className="text-neutral-400 dark:text-neutral-500">-</span>;
   const key = label as PriorityLabel;
   const variant = variantMap[key] ?? "secondary";
   return (

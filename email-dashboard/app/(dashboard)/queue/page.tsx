@@ -78,10 +78,13 @@ export default function QueueMonitorPage() {
         <h1 className="text-xl font-bold tracking-tight text-neutral-900 dark:text-neutral-50 sm:text-2xl">
           Queue Monitor
         </h1>
-        <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400 sm:text-sm">Redis & Celery workers</p>
+        <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400 sm:text-sm">
+          “Pending” is a Redis counter for ingest + classify + backfill jobs. For classification only, use “AI pending
+          (DB)”.
+        </p>
       </div>
 
-      <div className="grid min-w-0 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-6">
+      <div className="grid min-w-0 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-7">
         <Card className="min-w-0 rounded-2xl border-border">
           <CardHeader className="p-4 sm:p-6">
             <CardTitle className="text-sm font-medium text-neutral-500 dark:text-neutral-400">
@@ -90,7 +93,22 @@ export default function QueueMonitorPage() {
           </CardHeader>
           <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
             <p className="text-2xl font-semibold tabular-nums text-neutral-900 dark:text-neutral-50">{data.pending}</p>
-            <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">Enqueued for your mailbox</p>
+            <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">Tracked tasks for your mailbox</p>
+          </CardContent>
+        </Card>
+        <Card className="min-w-0 rounded-2xl border-border">
+          <CardHeader className="p-4 sm:p-6">
+            <CardTitle className="text-sm font-medium text-neutral-500 dark:text-neutral-400">
+              AI pending (DB)
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
+            <p className="text-2xl font-semibold tabular-nums text-neutral-900 dark:text-neutral-50">
+              {data.mailboxAiPending ?? "-"}
+            </p>
+            <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+              Emails awaiting classification (authoritative)
+            </p>
           </CardContent>
         </Card>
         <Card className="min-w-0 rounded-2xl border-border">
@@ -112,7 +130,7 @@ export default function QueueMonitorPage() {
           </CardHeader>
           <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
             <p className="text-2xl font-semibold tabular-nums text-neutral-900 dark:text-neutral-50">
-              {data.activeWorkers ?? "—"}
+              {data.activeWorkers ?? "-"}
             </p>
             <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">Shared pool</p>
           </CardContent>

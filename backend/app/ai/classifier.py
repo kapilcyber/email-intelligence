@@ -1,11 +1,12 @@
 """
-Phase 2: Email classification via Ollama (primary) and OpenAI (fallback).
+Phase 2: Email classification via Ollama.
 Produces summary, category, priority score/label, reply suggestions.
 With structured JSON enforcement, timeout, retry, and observability.
 """
 import html
 import json
 import logging
+import random
 import re
 import time
 from typing import Any
@@ -14,28 +15,13 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-_openai_client: Any = None
-_ollama_client: Any = None
+_ollama_clients: dict[str, Any] = {}
 
-OPENAI_TIMEOUT = 90.0
+LLM_TIMEOUT_DEFAULT = 90.0
 MAX_RETRIES = 3
 RETRY_BASE_DELAY = 2.0
 # Enough tokens for full JSON; avoids truncation mid-string (e.g. in suggested_replies)
 MAX_TOKENS_RESPONSE = 1280
-
-
-def _get_openai_client():
-    global _openai_client
-    if _openai_client is None:
-        from openai import OpenAI
-        settings = get_settings()
-        if not (settings.openai_api_key and settings.openai_api_key.strip()):
-            raise ValueError("OPENAI_API_KEY is not set")
-        _openai_client = OpenAI(
-            api_key=settings.openai_api_key.strip(),
-            timeout=OPENAI_TIMEOUT,
-        )
-    return _openai_client
 
 
 def _normalize_ollama_base_url(raw: str) -> str:
@@ -48,28 +34,95 @@ def _normalize_ollama_base_url(raw: str) -> str:
     return f"{base}/v1"
 
 
-def _get_ollama_client():
-    global _ollama_client
-    if _ollama_client is None:
+def _parse_ollama_base_urls(settings) -> list[str]:
+    raw_list = (getattr(settings, "ollama_base_urls", "") or "").strip()
+    if raw_list:
+        parts = [p.strip() for p in raw_list.split(",") if p and p.strip()]
+        out = [_normalize_ollama_base_url(p) for p in parts if p.strip()]
+        return [u for u in out if u]
+    raw_single = (getattr(settings, "ollama_base_url", "") or "").strip()
+    if raw_single:
+        return [_normalize_ollama_base_url(raw_single)]
+    return []
+
+
+def _parse_ollama_urls_for_classify(settings) -> list[str]:
+    raw_list = (getattr(settings, "ollama_classify_base_urls", "") or "").strip()
+    if raw_list:
+        parts = [p.strip() for p in raw_list.split(",") if p and p.strip()]
+        out = [_normalize_ollama_base_url(p) for p in parts if p.strip()]
+        return [u for u in out if u]
+    raw_single = (getattr(settings, "ollama_classify_base_url", "") or "").strip()
+    if raw_single:
+        return [_normalize_ollama_base_url(raw_single)]
+    return _parse_ollama_base_urls(settings)
+
+
+def _parse_ollama_urls_for_summary(settings) -> list[str]:
+    raw_list = (getattr(settings, "ollama_summary_base_urls", "") or "").strip()
+    if raw_list:
+        parts = [p.strip() for p in raw_list.split(",") if p and p.strip()]
+        out = [_normalize_ollama_base_url(p) for p in parts if p.strip()]
+        return [u for u in out if u]
+    raw_single = (getattr(settings, "ollama_summary_base_url", "") or "").strip()
+    if raw_single:
+        return [_normalize_ollama_base_url(raw_single)]
+    return _parse_ollama_base_urls(settings)
+
+
+def _pick_from_urls(urls: list[str], *, role: str) -> str:
+    if not urls:
+        raise ValueError(
+            f"Ollama not configured for {role}. "
+            "Set OLLAMA_*_BASE_URL(S) or OLLAMA_BASE_URL / OLLAMA_BASE_URLS."
+        )
+    return random.choice(urls)
+
+
+def _pick_ollama_base_url_for_classify(settings) -> str:
+    return _pick_from_urls(_parse_ollama_urls_for_classify(settings), role="classification")
+
+
+def _pick_ollama_base_url_for_summary(settings) -> str:
+    return _pick_from_urls(_parse_ollama_urls_for_summary(settings), role="summarization")
+
+
+def ollama_classify_configured(settings=None) -> bool:
+    """True if classification can reach Ollama (role-specific or legacy URL(s))."""
+    s = settings if settings is not None else get_settings()
+    return bool(_parse_ollama_urls_for_classify(s))
+
+
+def ollama_summary_configured(settings=None) -> bool:
+    """True if summarization / batch recap can reach Ollama (role-specific or legacy URL(s))."""
+    s = settings if settings is not None else get_settings()
+    return bool(_parse_ollama_urls_for_summary(s))
+
+
+def _get_ollama_client(base_url: str):
+    global _ollama_clients
+    key = (base_url or "").strip()
+    if not key:
+        raise ValueError("Missing base_url")
+    client = _ollama_clients.get(key)
+    if client is None:
         from openai import OpenAI
         settings = get_settings()
-        if not (settings.ollama_base_url and settings.ollama_base_url.strip()):
-            raise ValueError("OLLAMA_BASE_URL is not set")
-        base_url = _normalize_ollama_base_url(settings.ollama_base_url)
-        ollama_timeout = float(settings.ollama_request_timeout_seconds or OPENAI_TIMEOUT)
-        _ollama_client = OpenAI(
-            base_url=base_url,
+        ollama_timeout = float(settings.ollama_request_timeout_seconds or LLM_TIMEOUT_DEFAULT)
+        client = OpenAI(
+            base_url=key,
             api_key="ollama",
             timeout=ollama_timeout,
         )
-    return _ollama_client
+        _ollama_clients[key] = client
+    return client
 
 
 def _call_llm(
     client: Any,
     model: str,
     prompt: str,
-    timeout: float = OPENAI_TIMEOUT,
+    timeout: float = LLM_TIMEOUT_DEFAULT,
     max_tokens: int | None = None,
 ) -> str:
     """Call chat completions; returns content string or raises."""
@@ -178,7 +231,82 @@ Example: """
     part1 = template.format(
         sender=_escape_for_format(sender),
         subject=_escape_for_format(subject_display),
-        content=_escape_for_format(content) if content else "(empty — use subject and From only)",
+        content=_escape_for_format(content) if content else "(empty - use subject and From only)",
+    )
+    return part1 + example_json
+
+
+def _build_classify_only_prompt(
+    subject: str | None,
+    body_preview: str | None,
+    body_content: str | None,
+    sender: str,
+) -> str:
+    """Smaller prompt: classify only (no summary, no suggested replies)."""
+    subject_display = subject or "(No subject)"
+    preview_raw = (body_preview or "")[:500]
+    # Smaller excerpt speeds up CPU-only inference and reduces timeouts under load.
+    plain_body = _html_to_plain_excerpt(body_content, max_html_chars=20000, max_plain_chars=1200)
+    plain_preview = _html_to_plain_excerpt(preview_raw, max_html_chars=2000, max_plain_chars=400)
+    content = plain_body or plain_preview
+    sender = sender or "unknown"
+    example_json = '{"category": "General", "priority_score": 55, "lead_label": null, "buying_signals": []}'
+    template = """Classify this email and respond with a single JSON object only. No markdown, no code block, no explanation. Output only valid JSON.
+
+Email:
+From: {sender}
+Subject: {subject}
+
+Body (plain-text excerpt; HTML was removed for analysis):
+{content}
+
+Respond with exactly this structure (only these keys):
+- "category": exactly one of: Sales, HR, Accounts, Tech, General, Spam
+- "priority_score": number 0-100 (90+ urgent, 70-89 high, 50-69 medium, 20-49 low, 0-19 spam)
+- "lead_label": only for sales-related emails, one of: Hot, Warm, Cold. Use null if not a sales lead.
+- "buying_signals": array of zero or more of exactly: demo_request, budget_discussion, timeline_mention, product_comparison.
+
+Example: """
+    part1 = template.format(
+        sender=_escape_for_format(sender),
+        subject=_escape_for_format(subject_display),
+        content=_escape_for_format(content) if content else "(empty - use subject and From only)",
+    )
+    return part1 + example_json
+
+
+def _build_summary_only_prompt(
+    subject: str | None,
+    body_preview: str | None,
+    body_content: str | None,
+    sender: str,
+) -> str:
+    """Prompt to generate summary + suggested replies only (no category/priority)."""
+    subject_display = subject or "(No subject)"
+    preview_raw = (body_preview or "")[:500]
+    plain_body = _html_to_plain_excerpt(body_content, max_html_chars=20000, max_plain_chars=3000)
+    plain_preview = _html_to_plain_excerpt(preview_raw, max_html_chars=2000, max_plain_chars=500)
+    content = plain_body or plain_preview
+    sender = sender or "unknown"
+    example_json = '{"summary": "Meeting follow-up with action items.", "suggested_replies": ["Thanks, will review by EOD.", "Can we move to 3pm?"]}'
+    template = """Summarize this email and suggest replies. Respond with a single JSON object only. No markdown, no code block, no explanation. Output only valid JSON.
+
+Email:
+From: {sender}
+Subject: {subject}
+
+Body (plain-text excerpt; HTML was removed for analysis):
+{content}
+
+Respond with exactly this structure (only these keys):
+- "summary": one or two short sentences summarizing the email.
+- "suggested_replies": array of 1 to 3 very short reply phrases. Use simple words; avoid quotes or apostrophes inside the strings so the JSON stays valid.
+
+Example: """
+    part1 = template.format(
+        sender=_escape_for_format(sender),
+        subject=_escape_for_format(subject_display),
+        content=_escape_for_format(content) if content else "(empty - use subject and From only)",
     )
     return part1 + example_json
 
@@ -401,6 +529,61 @@ def _content_to_result(
     }
 
 
+def _content_to_classify_only_result(content: str, correlation_id: str | None = None) -> dict[str, Any]:
+    """Parse classify-only response to {category, priority_score, priority_label, lead_label, buying_signals}."""
+    if not content or not str(content).strip():
+        raise ValueError("Empty content")
+    data = _parse_json_from_response(content, correlation_id)
+    category = _normalize_category(data.get("category") or data.get("Category")) or "General"
+    score = data.get("priority_score") or data.get("priorityScore")
+    if score is not None:
+        try:
+            score = float(score)
+        except (TypeError, ValueError):
+            score = 50.0
+        score = max(0.0, min(100.0, score))
+    else:
+        score = 50.0
+    label = priority_score_to_label(score, category)
+    lead_label = _normalize_lead_label(data.get("lead_label") or data.get("leadLabel"))
+    buying_signals = _normalize_buying_signals(data.get("buying_signals") or data.get("buyingSignals"))
+    return {
+        "category": category,
+        "priority_score": score,
+        "priority_label": label,
+        "lead_label": lead_label,
+        "buying_signals": buying_signals,
+    }
+
+
+def _content_to_summary_only_result(
+    content: str,
+    correlation_id: str | None = None,
+    *,
+    subject: str | None = None,
+    sender_email: str | None = None,
+) -> dict[str, Any]:
+    """Parse summary-only response to {summary, suggested_replies} with subject fallback."""
+    if not content or not str(content).strip():
+        raise ValueError("Empty content")
+    data = _parse_json_from_response(content, correlation_id)
+    summary = _extract_summary_safe(data)
+    replies = data.get("suggested_replies") or data.get("suggestedReplies")
+    if not isinstance(replies, list):
+        replies = []
+    suggested_replies = [str(r).strip() for r in replies[:3] if r is not None and str(r).strip()]
+    if summary is None:
+        subj = (subject or "").strip()
+        if subj:
+            summary = f"Email regarding: {subj}."
+            logger.info(
+                "PARSED_SUMMARY: applied_subject_fallback correlation_id=%s sender=%s",
+                correlation_id or "none",
+                (sender_email or "")[:80],
+            )
+    return {"summary": summary, "suggested_replies": suggested_replies}
+
+
 def _failure_dict() -> dict[str, Any]:
     """Standard dict returned when classification fails."""
     return {
@@ -423,126 +606,171 @@ def classify_email_content(
     correlation_id: str | None = None,
 ) -> dict[str, Any]:
     """
-    Call Ollama (primary) or OpenAI (fallback) for summary, category, priority_score, suggested_replies.
+    Call Ollama for summary, category, priority_score, suggested_replies.
     Returns dict with keys: summary, category, priority_score, priority_label, suggested_replies, confidence_score (optional).
     On missing key or API error returns safe defaults and does not raise (caller should check summary is None for failure).
     """
     correlation_id = correlation_id or "none"
     settings = get_settings()
     prompt = _build_prompt(subject, body_preview, body_content, sender_email)
-    use_ollama = bool(settings.ollama_base_url and settings.ollama_base_url.strip())
-    use_openai = bool(settings.openai_api_key and settings.openai_api_key.strip())
-    allow_openai_after_ollama = bool(settings.openai_fallback_enabled)
+    use_ollama = bool(_parse_ollama_urls_for_classify(settings))
 
-    if not use_ollama and not use_openai:
+    if not use_ollama:
         logger.info("AI_RESPONSE: skipped_no_provider correlation_id=%s", correlation_id)
         return _failure_dict()
 
-    ollama_failed = False
     # Try Ollama first (primary) if configured
-    if use_ollama:
-        ollama_timeout = float(settings.ollama_request_timeout_seconds or OPENAI_TIMEOUT)
-        ollama_retries = max(1, int(settings.ollama_max_retries))
-        ollama_retry_delay = max(0.0, float(settings.ollama_retry_delay_seconds))
-        last_ollama_error: Exception | None = None
-        for attempt in range(ollama_retries):
-            try:
-                client = _get_ollama_client()
-                start = time.perf_counter()
-                content = _call_llm(client, settings.ollama_model, prompt, timeout=ollama_timeout)
-                latency_ms = (time.perf_counter() - start) * 1000
-                if not content:
-                    raise ValueError("Ollama returned empty content")
-                result = _content_to_result(
-                    content,
-                    correlation_id,
-                    subject=subject,
-                    sender_email=sender_email,
-                )
-                logger.info(
-                    "AI_RESPONSE: provider=ollama correlation_id=%s latency_ms=%.0f attempt=%d content_length=%d",
-                    correlation_id,
-                    latency_ms,
-                    attempt + 1,
-                    len(content),
-                )
-                return result
-            except Exception as e:
-                last_ollama_error = e
-                logger.warning(
-                    "AI_RESPONSE: ollama_error correlation_id=%s attempt=%d error=%s",
-                    correlation_id,
-                    attempt + 1,
-                    str(e),
-                )
-                if attempt < ollama_retries - 1:
-                    delay = ollama_retry_delay * (2**attempt)
-                    logger.info("AI_RESPONSE: ollama_retry correlation_id=%s delay=%.2fs", correlation_id, delay)
-                    time.sleep(delay)
-        ollama_failed = True
-        logger.info(
-            "AI_RESPONSE: ollama_failed correlation_id=%s error=%s",
-            correlation_id,
-            str(last_ollama_error),
-        )
-        if use_openai and not allow_openai_after_ollama:
-            logger.warning(
-                "AI_RESPONSE: openai_fallback_disabled correlation_id=%s (set OPENAI_FALLBACK_ENABLED=true and OPENAI_API_KEY for fallback)",
+    ollama_timeout = float(settings.ollama_request_timeout_seconds or LLM_TIMEOUT_DEFAULT)
+    ollama_retries = max(1, int(settings.ollama_max_retries))
+    ollama_retry_delay = max(0.0, float(settings.ollama_retry_delay_seconds))
+    last_ollama_error: Exception | None = None
+    for attempt in range(ollama_retries):
+        try:
+            base_url = _pick_ollama_base_url_for_classify(settings)
+            client = _get_ollama_client(base_url)
+            start = time.perf_counter()
+            content = _call_llm(client, settings.ollama_model, prompt, timeout=ollama_timeout)
+            latency_ms = (time.perf_counter() - start) * 1000
+            if not content:
+                raise ValueError("Ollama returned empty content")
+            result = _content_to_result(
+                content,
                 correlation_id,
+                subject=subject,
+                sender_email=sender_email,
             )
-        elif use_openai:
             logger.info(
-                "AI_RESPONSE: ollama_failed_trying_openai correlation_id=%s error=%s",
+                "AI_RESPONSE: provider=ollama correlation_id=%s latency_ms=%.0f attempt=%d content_length=%d",
                 correlation_id,
-                str(last_ollama_error),
+                latency_ms,
+                attempt + 1,
+                len(content),
             )
-
-    # OpenAI: primary when Ollama is not configured, or fallback after Ollama failed
-    need_openai = use_openai and (not use_ollama or (ollama_failed and allow_openai_after_ollama))
-    if need_openai:
-        last_openai_error: Exception | None = None
-        for attempt in range(MAX_RETRIES):
-            try:
-                client = _get_openai_client()
-                start = time.perf_counter()
-                content = _call_llm(client, settings.openai_model, prompt)
-                latency_ms = (time.perf_counter() - start) * 1000
-                if not content:
-                    raise ValueError("OpenAI returned empty content")
-                result = _content_to_result(
-                    content,
-                    correlation_id,
-                    subject=subject,
-                    sender_email=sender_email,
-                )
-                logger.info(
-                    "AI_RESPONSE: provider=openai fallback=%s correlation_id=%s latency_ms=%.0f attempt=%d content_length=%d",
-                    ollama_failed,
-                    correlation_id,
-                    latency_ms,
-                    attempt + 1,
-                    len(content),
-                )
-                return result
-            except Exception as e:
-                last_openai_error = e
-                logger.warning(
-                    "AI_RESPONSE: openai_error correlation_id=%s attempt=%d error=%s",
-                    correlation_id,
-                    attempt + 1,
-                    str(e),
-                )
-                if attempt < MAX_RETRIES - 1:
-                    delay = RETRY_BASE_DELAY * (2**attempt)
-                    logger.info("AI_RESPONSE: openai_retry correlation_id=%s delay=%.1fs", correlation_id, delay)
-                    time.sleep(delay)
-        logger.warning(
-            "AI_RESPONSE: openai_failed_after_retries correlation_id=%s error=%s",
-            correlation_id,
-            str(last_openai_error),
-        )
+            return result
+        except Exception as e:
+            last_ollama_error = e
+            logger.warning(
+                "AI_RESPONSE: ollama_error correlation_id=%s attempt=%d error=%s",
+                correlation_id,
+                attempt + 1,
+                str(e),
+            )
+            if attempt < ollama_retries - 1:
+                delay = ollama_retry_delay * (2**attempt)
+                logger.info("AI_RESPONSE: ollama_retry correlation_id=%s delay=%.2fs", correlation_id, delay)
+                time.sleep(delay)
+    logger.info(
+        "AI_RESPONSE: ollama_failed correlation_id=%s error=%s",
+        correlation_id,
+        str(last_ollama_error),
+    )
 
     return _failure_dict()
+
+
+def classify_email_fields(
+    subject: str | None,
+    body_preview: str | None,
+    body_content: str | None,
+    sender_email: str,
+    correlation_id: str | None = None,
+) -> dict[str, Any]:
+    """Classify only: category/priority (+ optional lead fields)."""
+    correlation_id = correlation_id or "none"
+    settings = get_settings()
+    prompt = _build_classify_only_prompt(subject, body_preview, body_content, sender_email)
+    if not _parse_ollama_urls_for_classify(settings):
+        logger.info("AI_RESPONSE: skipped_no_provider correlation_id=%s", correlation_id)
+        return {"category": None, "priority_score": 50.0, "priority_label": "Medium", "lead_label": None, "buying_signals": []}
+    ollama_timeout = float(settings.ollama_request_timeout_seconds or LLM_TIMEOUT_DEFAULT)
+    ollama_retries = max(1, int(settings.ollama_max_retries))
+    ollama_retry_delay = max(0.0, float(settings.ollama_retry_delay_seconds))
+    last_err: Exception | None = None
+    for attempt in range(ollama_retries):
+        try:
+            base_url = _pick_ollama_base_url_for_classify(settings)
+            client = _get_ollama_client(base_url)
+            start = time.perf_counter()
+            content = _call_llm(client, settings.ollama_model, prompt, timeout=ollama_timeout, max_tokens=420)
+            latency_ms = (time.perf_counter() - start) * 1000
+            out = _content_to_classify_only_result(content, correlation_id)
+            logger.info(
+                "AI_CLASSIFY: provider=ollama correlation_id=%s latency_ms=%.0f attempt=%d content_length=%d",
+                correlation_id,
+                latency_ms,
+                attempt + 1,
+                len(content or ""),
+            )
+            return out
+        except Exception as e:
+            last_err = e
+            logger.warning(
+                "AI_CLASSIFY: ollama_error correlation_id=%s attempt=%d error=%s",
+                correlation_id,
+                attempt + 1,
+                str(e),
+            )
+            if attempt < ollama_retries - 1:
+                delay = ollama_retry_delay * (2**attempt)
+                logger.info("AI_CLASSIFY: ollama_retry correlation_id=%s delay=%.2fs", correlation_id, delay)
+                time.sleep(delay)
+    logger.info("AI_CLASSIFY: ollama_failed correlation_id=%s error=%s", correlation_id, str(last_err))
+    return {"category": None, "priority_score": 50.0, "priority_label": "Medium", "lead_label": None, "buying_signals": []}
+
+
+def generate_email_summary(
+    subject: str | None,
+    body_preview: str | None,
+    body_content: str | None,
+    sender_email: str,
+    correlation_id: str | None = None,
+) -> dict[str, Any]:
+    """On-demand summary generation: summary + suggested replies."""
+    correlation_id = correlation_id or "none"
+    settings = get_settings()
+    prompt = _build_summary_only_prompt(subject, body_preview, body_content, sender_email)
+    if not _parse_ollama_urls_for_summary(settings):
+        logger.info("AI_SUMMARY: skipped_no_provider correlation_id=%s", correlation_id)
+        return {"summary": None, "suggested_replies": []}
+    ollama_timeout = float(settings.ollama_request_timeout_seconds or LLM_TIMEOUT_DEFAULT)
+    ollama_retries = max(1, int(settings.ollama_max_retries))
+    ollama_retry_delay = max(0.0, float(settings.ollama_retry_delay_seconds))
+    last_err: Exception | None = None
+    for attempt in range(ollama_retries):
+        try:
+            base_url = _pick_ollama_base_url_for_summary(settings)
+            client = _get_ollama_client(base_url)
+            start = time.perf_counter()
+            content = _call_llm(client, settings.ollama_model, prompt, timeout=ollama_timeout, max_tokens=640)
+            latency_ms = (time.perf_counter() - start) * 1000
+            out = _content_to_summary_only_result(
+                content,
+                correlation_id,
+                subject=subject,
+                sender_email=sender_email,
+            )
+            logger.info(
+                "AI_SUMMARY: provider=ollama correlation_id=%s latency_ms=%.0f attempt=%d content_length=%d",
+                correlation_id,
+                latency_ms,
+                attempt + 1,
+                len(content or ""),
+            )
+            return out
+        except Exception as e:
+            last_err = e
+            logger.warning(
+                "AI_SUMMARY: ollama_error correlation_id=%s attempt=%d error=%s",
+                correlation_id,
+                attempt + 1,
+                str(e),
+            )
+            if attempt < ollama_retries - 1:
+                delay = ollama_retry_delay * (2**attempt)
+                logger.info("AI_SUMMARY: ollama_retry correlation_id=%s delay=%.2fs", correlation_id, delay)
+                time.sleep(delay)
+    logger.info("AI_SUMMARY: ollama_failed correlation_id=%s error=%s", correlation_id, str(last_err))
+    return {"summary": None, "suggested_replies": []}
 
 
 BATCH_CLASSIFICATION_SUMMARY_MAX_TOKENS = 1024
@@ -551,7 +779,7 @@ BATCH_CLASSIFICATION_SUMMARY_MAX_TOKENS = 1024
 def generate_classification_batch_summary_text(bundle_text: str, correlation_id: str = "batch") -> str:
     """
     One plain-text executive recap across several already-classified emails.
-    Ollama first, then OpenAI when configured (same fallback policy as classify_email_content).
+    Ollama only.
     """
     settings = get_settings()
     safe_bundle = _escape_for_format(bundle_text)
@@ -559,85 +787,50 @@ def generate_classification_batch_summary_text(bundle_text: str, correlation_id:
 
 Below is a numbered list of those messages (subject, sender, category, priority, and each message's individual AI summary).
 
-Write ONE cohesive brief in plain text (2–4 short paragraphs). Highlight cross-cutting themes, departments, urgency, and anything that needs executive attention. Do not re-list every message as a separate bullet list.
+Write ONE cohesive brief in plain text (2-4 short paragraphs). Highlight cross-cutting themes, departments, urgency, and anything that needs executive attention. Do not re-list every message as a separate bullet list.
 
 --- Classified messages ---
 {safe_bundle}
 --- End ---"""
 
-    use_ollama = bool(settings.ollama_base_url and settings.ollama_base_url.strip())
-    use_openai = bool(settings.openai_api_key and settings.openai_api_key.strip())
-    allow_openai_after_ollama = bool(settings.openai_fallback_enabled)
-    if not use_ollama and not use_openai:
+    use_ollama = bool(_parse_ollama_urls_for_summary(settings))
+    if not use_ollama:
         logger.info("BATCH_SUMMARY: skipped_no_provider correlation_id=%s", correlation_id)
         return ""
 
-    ollama_failed = False
-    if use_ollama:
-        ollama_timeout = float(settings.ollama_request_timeout_seconds or OPENAI_TIMEOUT)
-        ollama_retries = max(1, int(settings.ollama_max_retries))
-        ollama_retry_delay = max(0.0, float(settings.ollama_retry_delay_seconds))
-        last_err: Exception | None = None
-        for attempt in range(ollama_retries):
-            try:
-                client = _get_ollama_client()
-                out = _call_llm(
-                    client,
-                    settings.ollama_model,
-                    prompt,
-                    timeout=ollama_timeout,
-                    max_tokens=BATCH_CLASSIFICATION_SUMMARY_MAX_TOKENS,
-                )
-                if out:
-                    logger.info(
-                        "BATCH_SUMMARY: provider=ollama correlation_id=%s attempt=%d len=%d",
-                        correlation_id,
-                        attempt + 1,
-                        len(out),
-                    )
-                    return out
-                raise ValueError("empty response")
-            except Exception as e:
-                last_err = e
-                logger.warning(
-                    "BATCH_SUMMARY: ollama_error correlation_id=%s attempt=%d err=%s",
+    ollama_timeout = float(settings.ollama_request_timeout_seconds or LLM_TIMEOUT_DEFAULT)
+    ollama_retries = max(1, int(settings.ollama_max_retries))
+    ollama_retry_delay = max(0.0, float(settings.ollama_retry_delay_seconds))
+    last_err: Exception | None = None
+    for attempt in range(ollama_retries):
+        try:
+            base_url = _pick_ollama_base_url_for_summary(settings)
+            client = _get_ollama_client(base_url)
+            out = _call_llm(
+                client,
+                settings.ollama_model,
+                prompt,
+                timeout=ollama_timeout,
+                max_tokens=BATCH_CLASSIFICATION_SUMMARY_MAX_TOKENS,
+            )
+            if out:
+                logger.info(
+                    "BATCH_SUMMARY: provider=ollama correlation_id=%s attempt=%d len=%d",
                     correlation_id,
                     attempt + 1,
-                    e,
+                    len(out),
                 )
-                if attempt < ollama_retries - 1:
-                    time.sleep(ollama_retry_delay * (2**attempt))
-        ollama_failed = True
-        logger.info("BATCH_SUMMARY: ollama_failed correlation_id=%s err=%s", correlation_id, last_err)
-
-    need_openai = use_openai and (not use_ollama or (ollama_failed and allow_openai_after_ollama))
-    if need_openai:
-        for attempt in range(MAX_RETRIES):
-            try:
-                client = _get_openai_client()
-                out = _call_llm(
-                    client,
-                    settings.openai_model,
-                    prompt,
-                    timeout=OPENAI_TIMEOUT,
-                    max_tokens=BATCH_CLASSIFICATION_SUMMARY_MAX_TOKENS,
-                )
-                if out:
-                    logger.info(
-                        "BATCH_SUMMARY: provider=openai fallback=%s correlation_id=%s attempt=%d len=%d",
-                        ollama_failed,
-                        correlation_id,
-                        attempt + 1,
-                        len(out),
-                    )
-                    return out
-            except Exception as e:
-                logger.warning(
-                    "BATCH_SUMMARY: openai_error correlation_id=%s attempt=%d err=%s",
-                    correlation_id,
-                    attempt + 1,
-                    e,
-                )
-                if attempt < MAX_RETRIES - 1:
-                    time.sleep(RETRY_BASE_DELAY * (2**attempt))
+                return out
+            raise ValueError("empty response")
+        except Exception as e:
+            last_err = e
+            logger.warning(
+                "BATCH_SUMMARY: ollama_error correlation_id=%s attempt=%d err=%s",
+                correlation_id,
+                attempt + 1,
+                e,
+            )
+            if attempt < ollama_retries - 1:
+                time.sleep(ollama_retry_delay * (2**attempt))
+    logger.info("BATCH_SUMMARY: ollama_failed correlation_id=%s err=%s", correlation_id, last_err)
     return ""

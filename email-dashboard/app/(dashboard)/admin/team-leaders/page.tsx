@@ -18,9 +18,9 @@ function activityTimestampMs(iso: string | null | undefined): number {
 }
 
 function formatActivity(iso: string | null | undefined): string {
-  if (!iso?.trim()) return "—";
+  if (!iso?.trim()) return "-";
   const d = new Date(iso);
-  if (isNaN(d.getTime())) return "—";
+  if (isNaN(d.getTime())) return "-";
   return d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
@@ -44,12 +44,12 @@ export default function AdminTeamLeadersPage() {
       .sort((a, b) => activityTimestampMs(b.loginAt) - activityTimestampMs(a.loginAt))
       .map((ev) => ({
         key: ev.id ?? `${ev.email}-${ev.loginAt}`,
-        email: ev.email ?? "—",
-        displayName: ev.displayName ?? ev.email ?? "—",
+        email: ev.email ?? "-",
+        displayName: ev.displayName ?? ev.email ?? "-",
         loginAt: ev.loginAt ?? null,
         logoutAt: ev.logoutAt ?? null,
         isOnline: ev.isLoggedIn === true,
-        loginSource: ev.loginSource ?? "—",
+        loginSource: ev.loginSource ?? "-",
       }));
   }, [loginEvents]);
 
@@ -214,7 +214,7 @@ export default function AdminTeamLeadersPage() {
             <Users className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
             <span className="min-w-0 break-words">
               {canEdit
-                ? "All users — assign role or team (by recent activity)"
+                ? "All users - assign role or team (by recent activity)"
                 : "Members assigned to me"}
             </span>
           </CardTitle>
@@ -236,7 +236,7 @@ export default function AdminTeamLeadersPage() {
                       {u.displayName ?? u.email}
                     </p>
                     <p className="break-words text-xs text-neutral-500 dark:text-neutral-400">
-                      {u.email} · {u.teamName ?? "—"}
+                      {u.email} · {u.teamName ?? "-"}
                     </p>
                     <p className="mt-1 break-words text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
                       Last visit: <span className="tabular-nums">{formatActivity(u.lastLoginAt)}</span> · Joined:{" "}
@@ -346,7 +346,7 @@ export default function AdminTeamLeadersPage() {
                         <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-2">
                           <dt className="shrink-0 font-medium text-neutral-500 dark:text-neutral-400">Logout</dt>
                           <dd className="min-w-0 break-words tabular-nums">
-                            {row.logoutAt ? formatActivity(row.logoutAt) : "—"}
+                            {row.logoutAt ? formatActivity(row.logoutAt) : "-"}
                           </dd>
                         </div>
                       </dl>
@@ -407,7 +407,7 @@ export default function AdminTeamLeadersPage() {
                               {formatActivity(row.loginAt)}
                             </td>
                             <td className="px-4 py-3 text-xs text-neutral-800 dark:text-neutral-200">
-                              {row.logoutAt ? formatActivity(row.logoutAt) : "—"}
+                              {row.logoutAt ? formatActivity(row.logoutAt) : "-"}
                             </td>
                             <td className="px-4 py-3">
                               {row.isOnline ? (

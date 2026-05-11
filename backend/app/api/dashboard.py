@@ -135,7 +135,7 @@ def _graph_calendar_events(
     """
     Fetch calendar view via Microsoft Graph (application permissions).
     Requires Application permission: Calendars.Read or Calendars.ReadWrite (admin consent).
-    Often blocked by tenant 'ErrorAccessDenied' — prefer delegated flow via Authorization header.
+    Often blocked by tenant 'ErrorAccessDenied' - prefer delegated flow via Authorization header.
     """
     user_principal = (user_principal or "").strip()
     if not user_principal or "@" not in user_principal:
@@ -156,9 +156,9 @@ def _graph_calendar_events(
         graph_detail = _graph_http_error_message(r)
         return [], (
             f"Calendar access denied (403) for app-only access. Microsoft Graph: {graph_detail}. "
-            "Many tenants block this. Fix A — use sign-in token: add delegated Calendars.Read to your SPA app, "
+            "Many tenants block this. Fix A - use sign-in token: add delegated Calendars.Read to your SPA app, "
             "re-sign in, and the dashboard will call Graph as the signed-in user. "
-            "Fix B — Application permission Calendars.Read on the backend app + admin consent, "
+            "Fix B - Application permission Calendars.Read on the backend app + admin consent, "
             "and ensure Exchange application access policies allow this app."
         )
     if r.status_code == 404:
@@ -183,7 +183,7 @@ def _parse_bearer(authorization: str | None) -> str | None:
     return parts[1].strip()
 
 
-# --- Calendar from synced mail (meeting invites) — no Graph Calendars.Read ---
+# --- Calendar from synced mail (meeting invites) - no Graph Calendars.Read ---
 _RESUME_SUBJECT_MARKERS = (
     "resume",
     "curriculum vitae",
@@ -527,6 +527,21 @@ def dashboard_metrics(
     except (OperationalError, Exception):
         emails_today = 0
     queue_stats = get_queue_stats_for_user(current_user_email)
+    mailbox_ai_pending = 0
+    try:
+        mb_l = current_user_email.strip().lower()
+        mailbox_ai_pending = (
+            db.query(Email)
+            .filter(
+                Email.mailbox_owner_email.isnot(None),
+                func.lower(Email.mailbox_owner_email) == mb_l,
+                Email.deleted_at.is_(None),
+                Email.ai_status == "pending",
+            )
+            .count()
+        )
+    except (OperationalError, Exception):
+        mailbox_ai_pending = 0
 
     total_emails = 0
     total_classified = 0
@@ -575,6 +590,8 @@ def dashboard_metrics(
     return {
         "emailsIngestedToday": emails_today,
         "queueSize": queue_stats.get("pending", 0),
+        "mailboxTasksActive": queue_stats.get("active", 0),
+        "mailboxAiPending": mailbox_ai_pending,
         "activeWorkers": queue_stats.get("active_workers", 0),
         "totalEmails": total_emails,
         "totalClassified": total_classified,
@@ -650,7 +667,7 @@ def dashboard_calendar_events(
     **Default `source=mail`:** meeting-related messages already ingested for this mailbox (Graph **Mail** sync).
     Uses `meetingMessageType` and heuristics; excludes obvious resume/CV subjects. No Graph calendar API.
 
-    **`source=graph`:** optional legacy path — Graph `calendarView` (needs Calendars.Read app or delegated Bearer).
+    **`source=graph`:** optional legacy path - Graph `calendarView` (needs Calendars.Read app or delegated Bearer).
     """
     now_utc = datetime.now(timezone.utc)
     start_utc = now_utc - timedelta(days=1)
@@ -764,7 +781,7 @@ def dashboard_notifications(
             }
         )
 
-    # Unreplied inbox threads (>24h) — same heuristic as before
+    # Unreplied inbox threads (>24h) - same heuristic as before
     sent_cids = set()
     for r in recent_rows:
         folder = (getattr(r, "folder_name", None) or getattr(r, "folder_id", None) or "").lower()
@@ -838,7 +855,7 @@ def dashboard_notifications(
                 "kind": "ai_pending",
                 "group": "ai",
                 "title": f"{len(pending_rows)} email{'s' if len(pending_rows) != 1 else ''} not classified",
-                "message": "AI classification is pending or failed — check History.",
+                "message": "AI classification is pending or failed - check History.",
                 "level": "warning",
                 "at": max(r.received_at for r in pending_rows).isoformat(),
                 "count": len(pending_rows),
@@ -846,7 +863,7 @@ def dashboard_notifications(
             }
         )
 
-    # Recent arrivals (6h) — only if we did not already surface unread totals
+    # Recent arrivals (6h) - only if we did not already surface unread totals
     new_rows = [r for r in recent_rows if r.received_at and r.received_at >= now_utc - timedelta(hours=6)]
     if unread_n == 0 and new_rows:
         items.append(

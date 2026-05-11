@@ -19,7 +19,7 @@ function formatDate(iso: string) {
 
 /** Show readable folder name; backend may still return opaque Graph folder ID for older rows. */
 function folderLabel(folder: string) {
-  if (!folder) return "—";
+  if (!folder) return "-";
   if (folder.length > 40 && !folder.includes(" ")) return "Inbox";
   return folder;
 }
@@ -170,9 +170,9 @@ export function EmailsTable({
               onKeyDown={onKeyDown}
             >
               <p className="line-clamp-2 font-medium leading-snug text-foreground" title={email.summary ?? undefined}>
-                {email.subject ?? "—"}
+                {email.subject ?? "-"}
               </p>
-              <p className="mt-1 break-words text-sm text-muted-foreground">{email.sender ?? "—"}</p>
+              <p className="mt-1 break-words text-sm text-muted-foreground">{email.sender ?? "-"}</p>
               <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5">
                 <span
                   className="text-xs text-muted-foreground"
@@ -180,7 +180,7 @@ export function EmailsTable({
                     !email.category ? "Same as Inbox department; run sync & classify to assign" : undefined
                   }
                 >
-                  {email.category ?? "—"}
+                  {email.category ?? "-"}
                 </span>
                 <PriorityBadge label={email.priorityLabel} />
                 <span className="text-xs tabular-nums text-muted-foreground">{formatDate(email.receivedAt)}</span>
@@ -256,16 +256,16 @@ export function EmailsTable({
                       className="min-w-[100px] max-w-[280px] break-words px-2 py-2 font-medium text-foreground"
                       title={email.summary ?? undefined}
                     >
-                      {email.subject ?? "—"}
+                      {email.subject ?? "-"}
                     </td>
                     <td className="min-w-[100px] max-w-[200px] break-words px-2 py-2 text-muted-foreground">
-                      {email.sender ?? "—"}
+                      {email.sender ?? "-"}
                     </td>
                     <td
                       className="px-2 py-2 text-muted-foreground"
                       title={!email.category ? "Same as Inbox department; run sync & classify to assign" : undefined}
                     >
-                      {email.category ?? "—"}
+                      {email.category ?? "-"}
                     </td>
                     <td className="px-2 py-2">
                       <PriorityBadge label={email.priorityLabel} />
@@ -276,7 +276,7 @@ export function EmailsTable({
                     <td className="px-2 py-2 text-muted-foreground">{folderLabel(email.folder)}</td>
                     {showMailbox ? (
                       <td className="max-w-[10rem] truncate px-2 py-2 text-muted-foreground" title={email.mailboxOwnerEmail ?? ""}>
-                        {email.mailboxOwnerEmail ?? "—"}
+                        {email.mailboxOwnerEmail ?? "-"}
                       </td>
                     ) : null}
                     {shouldShowRetag ? (

@@ -21,7 +21,7 @@ settings = get_settings()
 logger = logging.getLogger(__name__)
 app = FastAPI(
     title="Email Intelligence API",
-    description="Phase 1 — Email ingestion & infrastructure",
+    description="Phase 1 - Email ingestion & infrastructure",
     version="1.0.0",
 )
 
@@ -214,7 +214,7 @@ def api_me_post(
     x_user_name: str | None = Header(None, alias="X-User-Name"),
     x_login_source: str | None = Header(None, alias="X-Login-Source"),
 ):
-    """Same as GET /api/me — use after OAuth so new users appear in admin lists even before the SPA loads."""
+    """Same as GET /api/me - use after OAuth so new users appear in admin lists even before the SPA loads."""
     return _api_me_sync(email, db, x_user_name, x_login_source)
 
 

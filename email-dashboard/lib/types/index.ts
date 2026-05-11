@@ -15,9 +15,14 @@ export interface HealthResponse {
 
 export interface DashboardMetrics {
   emailsIngestedToday: number;
+  /** Redis-backed count of tracked Celery tasks (ingest chunks, classify, backfill, …), not “AI only”. */
   queueSize: number;
+  /** Tasks currently running/reserved for your mailbox (inspect). */
+  mailboxTasksActive?: number;
+  /** DB count: emails in your mailbox awaiting AI (ai_status === pending). Authoritative for classification backlog. */
+  mailboxAiPending?: number;
   activeWorkers: number;
-  /** Phase 2 — AI stats */
+  /** Phase 2 - AI stats */
   totalEmails?: number;
   totalClassified?: number;
   aiFailureCount?: number;
@@ -146,6 +151,7 @@ export interface FollowUpTrackerHistoryResponse {
 export type EmailStatus = "stored" | "failed";
 
 export type AiStatus = "pending" | "completed" | "failed";
+export type AiSummaryStatus = "not_requested" | "pending" | "completed" | "failed";
 export type ProcessingStatus = "received" | "ingested" | "classified" | "failed";
 
 export interface EmailRecord {
@@ -156,13 +162,15 @@ export interface EmailRecord {
   receivedAt: string;
   folder: string;
   status: EmailStatus;
-  /** Phase 2 — AI */
+  /** Phase 2 - AI */
   summary?: string | null;
   category?: string | null;
   priorityLabel?: string | null;
   priorityScore?: number | null;
   aiStatus?: AiStatus | null;
+  aiSummaryStatus?: AiSummaryStatus | null;
   aiProcessedAt?: string | null;
+  aiSummaryProcessedAt?: string | null;
   processingStatus?: ProcessingStatus | null;
   /** Department/team (Tech, Sales, Accounts, etc.) */
   assignedTeam?: string | null;
@@ -223,7 +231,7 @@ export interface EmailDetail {
   bodyContentType: string | null;
   attachments: EmailAttachment[];
   status: EmailStatus;
-  /** Phase 2 — AI */
+  /** Phase 2 - AI */
   summary?: string | null;
   category?: string | null;
   priorityLabel?: string | null;
@@ -233,6 +241,9 @@ export interface EmailDetail {
   aiProcessedAt?: string | null;
   processingStatus?: ProcessingStatus | null;
   aiErrorMessage?: string | null;
+  aiSummaryStatus?: AiSummaryStatus | null;
+  aiSummaryProcessedAt?: string | null;
+  aiSummaryErrorMessage?: string | null;
   /** Microsoft Graph message id in the mailbox owner's mailbox; required for delegated reply-all. */
   graphId?: string | null;
   /** Mailbox this message belongs to (for owner-only actions). */
@@ -278,6 +289,10 @@ export interface QueueStatusResponse {
   /** Celery workers visible to the broker (shared across users). */
   activeWorkers?: number;
   taskDistribution?: { name: string; count: number }[];
+  /** DB: emails needing AI in your mailbox. */
+  mailboxAiPending?: number;
+  mailboxAiCompleted?: number;
+  mailboxAiFailed?: number;
 }
 
 export interface SystemHealthResponse {
@@ -297,7 +312,7 @@ export interface SettingsConfig {
   environment: "development" | "staging" | "production";
 }
 
-// Phase 3 — Escalations & Leads
+// Phase 3 - Escalations & Leads
 export interface EscalationLeadItem {
   id: string;
   messageId: string;
@@ -380,7 +395,7 @@ export interface MyRetagRequestsResponse {
   pageSize: number;
 }
 
-// Phase 4 — Admin (teams, users, workflow)
+// Phase 4 - Admin (teams, users, workflow)
 export interface TeamOut {
   id: string;
   name: string;
@@ -500,7 +515,7 @@ export interface TrackerMemberRow {
   userId: string;
   email: string;
   displayName: string | null;
-  /** Send on a weekday strictly before this day (UTC), e.g. thu => Mon–Wed only. */
+  /** Send on a weekday strictly before this day (UTC), e.g. thu => Mon-Wed only. */
   deadlineBefore: TrackerDayKey | null;
   /** null when no per-member deadline is configured. */
   metThisWeek: boolean | null;

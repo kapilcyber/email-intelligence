@@ -9,7 +9,7 @@ export default function WebhookPage() {
       <div className="min-w-0">
         <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">Webhook</h1>
         <p className="mt-1 text-xs leading-relaxed text-muted-foreground sm:text-sm">
-          Phase 1 — Webhook status is not used. Email sync uses backfill (Sync inbox) only.
+          Phase 1 - Webhook status is not used. Email sync uses backfill (Sync inbox) only.
         </p>
       </div>
       <Card className="min-w-0 rounded-2xl border-border">

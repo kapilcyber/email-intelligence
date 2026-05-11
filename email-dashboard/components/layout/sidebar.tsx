@@ -69,7 +69,7 @@ const navItemsAfterDepartments = [
 /** Shown to org Managers only (admins use admin nav blocks below). Excludes admin-only routes. */
 const managerAdminNavItems = [{ href: "/admin/my-projects", label: "Projects", icon: FolderKanban }];
 
-/** Tracker, Review, Escalations, Leads — rendered inside {@link AdminPipelineNavSection}. */
+/** Tracker, Review, Escalations, Leads - rendered inside {@link AdminPipelineNavSection}. */
 const adminPipelineDropdownItems: Array<{ href: string; label: string; icon: LucideIcon }> = [
   { href: "/admin/tracker", label: "Tracker", icon: CalendarRange },
   { href: "/admin/review", label: "Review", icon: ClipboardCheck },

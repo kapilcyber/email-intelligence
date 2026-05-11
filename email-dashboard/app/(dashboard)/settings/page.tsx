@@ -9,7 +9,7 @@ export default function SettingsPage() {
       <div className="min-w-0">
         <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">Settings</h1>
         <p className="mt-1 text-xs leading-relaxed text-muted-foreground sm:text-sm">
-          Phase 1 — Email ingestion. No settings to configure.
+          Phase 1 - Email ingestion. No settings to configure.
         </p>
       </div>
       <Card className="min-w-0 rounded-2xl border-border">

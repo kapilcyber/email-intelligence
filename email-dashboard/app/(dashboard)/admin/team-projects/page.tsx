@@ -386,7 +386,7 @@ export default function AdminTeamProjectsPage() {
               <textarea
                 value={customPhaseNames}
                 onChange={(e) => setCustomPhaseNames(e.target.value)}
-                placeholder="e.g. Discovery, Design, Build, Test, Launch — comma-separated. Leave empty to use Phase 1 … Phase 5 for the workflow."
+                placeholder="e.g. Discovery, Design, Build, Test, Launch - comma-separated. Leave empty to use Phase 1 … Phase 5 for the workflow."
                 rows={3}
                 className={cn(fieldClass, "min-h-[4.5rem] resize-y")}
               />
@@ -572,7 +572,7 @@ export default function AdminTeamProjectsPage() {
                                 .map((u) => {
                                   const bits = [u.displayName ?? u.email];
                                   if (u.role) bits.push(u.role);
-                                  return bits.join(" — ");
+                                  return bits.join(" - ");
                                 })
                                 .join(" · ")}
                           </p>

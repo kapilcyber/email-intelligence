@@ -226,7 +226,7 @@ export default function AdminLeadsPage() {
         i.subject ?? "",
         i.leadLabel ?? "",
         i.mailboxOwner ?? i.sender ?? "",
-        i.mailType ?? "—",
+        i.mailType ?? "-",
         i.priorityLabel ?? "",
         formatDate(i.receivedAt),
       ]),
@@ -666,10 +666,10 @@ export default function AdminLeadsPage() {
                           </span>
                         )}
                         <span className="rounded-md bg-neutral-100 px-1.5 py-0.5 dark:bg-neutral-800">
-                          {item.priorityLabel ?? "—"}
+                          {item.priorityLabel ?? "-"}
                         </span>
                         <span className="rounded-md bg-neutral-100 px-1.5 py-0.5 dark:bg-neutral-800">
-                          {item.mailType ?? "—"}
+                          {item.mailType ?? "-"}
                         </span>
                         <span
                           className={`rounded-md px-1.5 py-0.5 ${
@@ -683,7 +683,7 @@ export default function AdminLeadsPage() {
                       </div>
                       <p className="break-words text-xs text-neutral-500 dark:text-neutral-400">
                         <span className="font-medium text-neutral-600 dark:text-neutral-300">From:</span>{" "}
-                        {item.mailboxOwner ? item.mailboxOwner.split("@")[0] : item.sender ?? "—"}
+                        {item.mailboxOwner ? item.mailboxOwner.split("@")[0] : item.sender ?? "-"}
                       </p>
                       <p className="text-xs tabular-nums text-neutral-500 dark:text-neutral-400">
                         {formatDate(item.receivedAt)}
@@ -736,13 +736,13 @@ export default function AdminLeadsPage() {
                                 </span>
                               )}
                             </td>
-                            <td className="px-4 py-3">{item.priorityLabel ?? "—"}</td>
+                            <td className="px-4 py-3">{item.priorityLabel ?? "-"}</td>
                             <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400">
-                              {item.mailboxOwner ? item.mailboxOwner.split("@")[0] : item.sender ?? "—"}
+                              {item.mailboxOwner ? item.mailboxOwner.split("@")[0] : item.sender ?? "-"}
                             </td>
                             <td className="px-4 py-3">
                               <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs dark:bg-neutral-700">
-                                {item.mailType ?? "—"}
+                                {item.mailType ?? "-"}
                               </span>
                             </td>
                             <td className="px-4 py-3">
@@ -778,7 +778,7 @@ export default function AdminLeadsPage() {
                     <p className="py-0.5 text-center text-sm text-neutral-500 dark:text-neutral-400 sm:order-2 sm:flex-1 sm:py-0">
                       {total > 0 ? (
                         <>
-                          Showing {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} of {total}
+                          Showing {(page - 1) * pageSize + 1}-{Math.min(page * pageSize, total)} of {total}
                           {totalPages > 1 ? ` · Page ${page} of ${totalPages}` : ""}
                         </>
                       ) : (

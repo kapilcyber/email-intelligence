@@ -61,7 +61,7 @@ export default function TemporaryTeamPage() {
                       Department
                     </p>
                     <p className="mt-1 break-words text-sm font-medium text-neutral-800 dark:text-neutral-200">
-                      {p.teamName?.trim() ? p.teamName : "—"}
+                      {p.teamName?.trim() ? p.teamName : "-"}
                     </p>
                   </div>
                   <div className="min-w-0">

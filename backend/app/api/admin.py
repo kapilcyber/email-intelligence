@@ -1,5 +1,5 @@
 """
-Phase 4: Admin APIs — teams, users, workflow (who leads whom), team status.
+Phase 4: Admin APIs - teams, users, workflow (who leads whom), team status.
 """
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, Query, HTTPException, Body
@@ -69,7 +69,7 @@ def _external_participant_sql_filter(internal_domain: str):
     ).bindparams(domain=d)
 
 
-# Mailboxes to exclude from "Users — escalation count" / "Users — lead count" (e.g. default backfill mailbox already on admin dashboard)
+# Mailboxes to exclude from "Users - escalation count" / "Users - lead count" (e.g. default backfill mailbox already on admin dashboard)
 def _excluded_mailboxes_for_user_lists() -> set[str]:
     s = get_settings()
     excluded = set()

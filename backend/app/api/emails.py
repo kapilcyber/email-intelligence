@@ -17,10 +17,15 @@ from app.workers.tasks import (
     backfill_mailbox_all_folders_task,
     backfill_classify_emails_task,
     enqueue_classify_email_task,
+    enqueue_generate_summary_task,
     sync_mailbox_message_rules_task,
 )
 from app.config import get_settings
-from app.ai.classifier import generate_classification_batch_summary_text
+from app.ai.classifier import (
+    generate_classification_batch_summary_text,
+    ollama_classify_configured,
+    ollama_summary_configured,
+)
 from app.graph.auth import get_auth_headers
 from app.api.deps import get_current_user_email
 from app.http_client import httpx_client
@@ -96,7 +101,7 @@ def _format_sender_line(sender_email: str, display_name: str | None) -> str:
 
 def _response_time_human(ms: int) -> str:
     if ms < 0:
-        return "—"
+        return "-"
     sec = ms // 1000
     minute = sec // 60
     hr = minute // 60
@@ -207,15 +212,17 @@ class EmailOut(BaseModel):
     received_at: datetime = Field(alias="receivedAt")
     folder: str | None
     status: str
-    # Phase 2 — AI
+    # Phase 2 - AI
     summary: str | None = None
     category: str | None = None
     priority_label: str | None = Field(None, alias="priorityLabel")
     priority_score: float | None = Field(None, alias="priorityScore")
     ai_status: str | None = Field(None, alias="aiStatus")  # pending | completed | failed
+    ai_summary_status: str | None = Field(None, alias="aiSummaryStatus")  # not_requested | pending | completed | failed
     ai_processed_at: datetime | None = Field(None, alias="aiProcessedAt")
+    ai_summary_processed_at: datetime | None = Field(None, alias="aiSummaryProcessedAt")
     processing_status: str | None = Field(None, alias="processingStatus")  # received | ingested | classified | failed
-    # Phase 3 — department/team (Tech, Sales, Accounts, etc.)
+    # Phase 3 - department/team (Tech, Sales, Accounts, etc.)
     assigned_team: str | None = Field(None, alias="assignedTeam")
     mailbox_owner_email: str | None = Field(None, alias="mailboxOwnerEmail")
 
@@ -278,7 +285,7 @@ class EmailDetailOut(BaseModel):
     body_content_type: str | None = Field(None, alias="bodyContentType")
     attachments: list[AttachmentOut] = Field(default_factory=list)
     status: str
-    # Phase 2 — AI
+    # Phase 2 - AI
     summary: str | None = None
     category: str | None = None
     priority_label: str | None = Field(None, alias="priorityLabel")
@@ -288,6 +295,9 @@ class EmailDetailOut(BaseModel):
     ai_processed_at: datetime | None = Field(None, alias="aiProcessedAt")
     processing_status: str | None = Field(None, alias="processingStatus")
     ai_error_message: str | None = Field(None, alias="aiErrorMessage")
+    ai_summary_status: str | None = Field(None, alias="aiSummaryStatus")
+    ai_summary_processed_at: datetime | None = Field(None, alias="aiSummaryProcessedAt")
+    ai_summary_error_message: str | None = Field(None, alias="aiSummaryErrorMessage")
     graph_id: str | None = Field(None, alias="graphId")
     mailbox_owner_email: str | None = Field(None, alias="mailboxOwnerEmail")
     deleted_at: datetime | None = Field(None, alias="deletedAt")
@@ -368,6 +378,8 @@ def list_emails(
                 priorityScore=getattr(r, "ai_priority_score", None),
                 aiStatus=getattr(r, "ai_status", None),
                 aiProcessedAt=getattr(r, "ai_processed_at", None),
+                aiSummaryStatus=getattr(r, "ai_summary_status", None),
+                aiSummaryProcessedAt=getattr(r, "ai_summary_processed_at", None),
                 processingStatus=getattr(r, "processing_status", None),
                 assignedTeam=getattr(r, "assigned_team", None),
                 mailboxOwnerEmail=getattr(r, "mailbox_owner_email", None),
@@ -705,6 +717,9 @@ def get_conversation_emails(
                     aiProcessedAt=getattr(email, "ai_processed_at", None),
                     processingStatus=getattr(email, "processing_status", None),
                     aiErrorMessage=getattr(email, "ai_error_message", None),
+                    aiSummaryStatus=getattr(email, "ai_summary_status", None),
+                    aiSummaryProcessedAt=getattr(email, "ai_summary_processed_at", None),
+                    aiSummaryErrorMessage=getattr(email, "ai_summary_error_message", None),
                     graphId=getattr(email, "graph_id", None),
                     mailboxOwnerEmail=getattr(email, "mailbox_owner_email", None),
                     deletedAt=getattr(email, "deleted_at", None),
@@ -757,6 +772,9 @@ def get_email(
             aiProcessedAt=getattr(email, "ai_processed_at", None),
             processingStatus=getattr(email, "processing_status", None),
             aiErrorMessage=getattr(email, "ai_error_message", None),
+            aiSummaryStatus=getattr(email, "ai_summary_status", None),
+            aiSummaryProcessedAt=getattr(email, "ai_summary_processed_at", None),
+            aiSummaryErrorMessage=getattr(email, "ai_summary_error_message", None),
             graphId=getattr(email, "graph_id", None),
             mailboxOwnerEmail=getattr(email, "mailbox_owner_email", None),
             deletedAt=getattr(email, "deleted_at", None),
@@ -1037,7 +1055,7 @@ def classification_batch_summary(
     db: Session = Depends(get_db),
 ):
     """
-    Build one Ollama/OpenAI plain-text recap for all messages classified (completed) at or after `since`.
+    Build one Ollama plain-text recap for all messages classified (completed) at or after `since`.
     """
     import uuid as uuid_mod
 
@@ -1052,13 +1070,13 @@ def classification_batch_summary(
         raise HTTPException(status_code=400, detail="Invalid since datetime")
 
     settings = get_settings()
-    use_ollama = bool(settings.ollama_base_url and settings.ollama_base_url.strip())
-    use_openai = bool(settings.openai_api_key and settings.openai_api_key.strip())
-    if not use_ollama and not use_openai:
+    if not ollama_summary_configured(settings):
         from fastapi.responses import JSONResponse
         return JSONResponse(
             status_code=400,
-            content={"error": "No AI provider configured for summaries."},
+            content={
+                "error": "No AI provider configured for batch recap. Set OLLAMA_SUMMARY_BASE_URL or OLLAMA_BASE_URL.",
+            },
         )
 
     rows = (
@@ -1079,11 +1097,11 @@ def classification_batch_summary(
 
     lines: list[str] = []
     for i, e in enumerate(rows, 1):
-        subj = (e.subject or "—").replace("\n", " ")[:220]
-        summ = ((e.ai_summary or "—").replace("\n", " "))[:400]
-        cat = (e.ai_category or "—").strip()
-        pri = (e.ai_priority_label or "—").strip()
-        sender = (e.sender_email or "—").strip()
+        subj = (e.subject or "-").replace("\n", " ")[:220]
+        summ = ((e.ai_summary or "-").replace("\n", " "))[:400]
+        cat = (e.ai_category or "-").strip()
+        pri = (e.ai_priority_label or "-").strip()
+        sender = (e.sender_email or "-").strip()
         lines.append(
             f"{i}. Subject: {subj}\n   From: {sender}\n   Category: {cat} | Priority: {pri}\n   AI summary: {summ}"
         )
@@ -1131,6 +1149,30 @@ def retry_ai_classification(
     return {"ok": True, "message": "Classification re-queued for this email.", "emailId": email_id}
 
 
+@router.post("/emails/{email_id}/generate-summary")
+def generate_summary_for_email(
+    email_id: str = Path(..., description="Email UUID"),
+    current_user_email: str = Depends(get_current_user_email),
+    db: Session = Depends(get_db),
+):
+    """Enqueue on-demand AI summary generation for a single email."""
+    email = db.query(Email).filter(Email.id == email_id).first()
+    if not email:
+        raise HTTPException(status_code=404, detail="Email not found")
+    if not _can_read_email_mailbox(email, current_user_email, db):
+        raise HTTPException(status_code=404, detail="Email not found")
+    if email.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Email not found")
+    settings = get_settings()
+    if not ollama_summary_configured(settings):
+        raise HTTPException(
+            status_code=400,
+            detail="No AI provider configured for summaries. Set OLLAMA_SUMMARY_BASE_URL or OLLAMA_BASE_URL.",
+        )
+    enqueue_generate_summary_task(email_id, getattr(email, "mailbox_owner_email", None) or current_user_email)
+    return {"ok": True, "message": "Summary generation queued for this email.", "emailId": email_id}
+
+
 @router.post("/emails/classify-backfill")
 def trigger_classify_backfill(
     body: dict | None = Body(None),
@@ -1141,14 +1183,12 @@ def trigger_classify_backfill(
     Optional body: {"limit": 500} to cap how many to enqueue (default 500).
     """
     settings = get_settings()
-    use_ollama = bool(settings.ollama_base_url and settings.ollama_base_url.strip())
-    use_openai = bool(settings.openai_api_key and settings.openai_api_key.strip())
-    if not use_ollama and not use_openai:
+    if not ollama_classify_configured(settings):
         from fastapi.responses import JSONResponse
         return JSONResponse(
             status_code=400,
             content={
-                "error": "No AI provider configured. Set OLLAMA_BASE_URL and/or OPENAI_API_KEY in backend .env to run AI classification.",
+                "error": "No AI provider configured. Set OLLAMA_CLASSIFY_BASE_URL or OLLAMA_BASE_URL in backend .env.",
             },
         )
     raw_limit = (body or {}).get("limit", 500)

@@ -298,7 +298,7 @@ export default function AdminWorkflowPage() {
   };
 
   const getManagerName = (managerId: string | null) => {
-    if (!managerId) return "—";
+    if (!managerId) return "-";
     const m = nodes.find((n) => n.id === managerId);
     return m ? (m.displayName ?? m.email) : managerId;
   };

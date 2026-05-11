@@ -106,7 +106,7 @@ export default function AdminProjectWorkflowPage() {
                 <span className="font-medium">Project lead:</span>{" "}
                 {project.assignedUsers.find((x) => x.userId === project.projectLeadUserId)?.displayName ??
                   project.assignedUsers.find((x) => x.userId === project.projectLeadUserId)?.email ??
-                  "—"}
+                  "-"}
               </p>
             )}
             {(!isAdmin || !projectCompleted) && (

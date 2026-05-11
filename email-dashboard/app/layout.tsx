@@ -4,7 +4,7 @@ import { SessionProvider } from "@/components/providers/session-provider";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Email Intelligence — Operations",
+  title: "Email Intelligence - Operations",
   description: "Phase 1 Email Ingestion & Infrastructure Monitoring",
 };
 

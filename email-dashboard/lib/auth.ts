@@ -8,7 +8,7 @@ const AZURE_LOGIN_SCOPES =
 
 /**
  * openid-client (used by NextAuth for Azure OIDC) defaults to 3500ms, which breaks on slow VPNs
- * and flaky networks. Override with AZURE_OAUTH_HTTP_TIMEOUT_MS (5000–120000).
+ * and flaky networks. Override with AZURE_OAUTH_HTTP_TIMEOUT_MS (5000-120000).
  */
 function azureOAuthHttpTimeoutMs(): number {
   const raw = process.env.AZURE_OAUTH_HTTP_TIMEOUT_MS;

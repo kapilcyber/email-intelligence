@@ -1,7 +1,7 @@
 """Add soft-delete columns to emails if missing (PostgreSQL). Run: python scripts/add_email_soft_delete_columns.py
 
 Use when Alembic history does not match this repo (e.g. DB stamped to a missing revision) but the app
-expects emails.deleted_at — without these columns, /api/emails returns empty lists.
+expects emails.deleted_at - without these columns, /api/emails returns empty lists.
 """
 import sys
 from pathlib import Path

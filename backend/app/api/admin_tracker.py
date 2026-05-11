@@ -464,7 +464,7 @@ def list_project_tracker_emails(
                 emailId=e.id,
                 subject=e.subject,
                 receivedAt=ra_s,
-                senderEmail=(e.sender_email or "").strip() or "—",
+                senderEmail=(e.sender_email or "").strip() or "-",
                 mailboxOwnerEmail=(e.mailbox_owner_email or None),
             )
         )

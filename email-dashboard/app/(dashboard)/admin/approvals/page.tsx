@@ -10,7 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ShieldCheck } from "lucide-react";
 
 function formatDate(s?: string | null) {
-  if (!s) return "—";
+  if (!s) return "-";
   const d = new Date(s);
   return isNaN(d.getTime()) ? s : d.toLocaleString();
 }
@@ -89,7 +89,7 @@ export default function AdminApprovalsPage() {
                       </p>
                       <p className="mt-1.5 break-words text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
                         <span className="font-medium text-neutral-600 dark:text-neutral-300">Sender:</span>{" "}
-                        {item.sender || "—"}
+                        {item.sender || "-"}
                         <span className="text-neutral-400 dark:text-neutral-500"> · </span>
                         <span className="font-medium text-neutral-600 dark:text-neutral-300">Requested by:</span>{" "}
                         <span className="break-all">{item.requestedByEmail}</span>
