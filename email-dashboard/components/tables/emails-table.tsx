@@ -38,6 +38,8 @@ interface EmailsTableProps {
   onRetagDone?: () => void;
   /** Admin deleted-mail list: show mailbox owner column */
   showMailbox?: boolean;
+  /** Admin external-mail: hide Department (category), Priority, Folder columns. */
+  hideDepartmentPriorityFolder?: boolean;
 }
 
 export function EmailsTable({
@@ -50,10 +52,12 @@ export function EmailsTable({
   showRetag,
   onRetagDone,
   showMailbox,
+  hideDepartmentPriorityFolder = false,
 }: EmailsTableProps) {
   const router = useRouter();
   const shouldShowRetag = showRetag ?? true;
   const isClickable = !!getEmailLink && !readOnly;
+  const slim = hideDepartmentPriorityFolder;
 
   if (isLoading) {
     return (
@@ -64,9 +68,15 @@ export function EmailsTable({
               <Skeleton className="h-4 w-full" />
               <Skeleton className="mt-2 h-3 w-[80%] max-w-xs" />
               <div className="mt-3 flex flex-wrap gap-2">
-                <Skeleton className="h-5 w-14" />
-                <Skeleton className="h-5 w-20" />
-                <Skeleton className="h-5 w-24" />
+                {slim ? (
+                  <Skeleton className="h-5 w-24" />
+                ) : (
+                  <>
+                    <Skeleton className="h-5 w-14" />
+                    <Skeleton className="h-5 w-20" />
+                    <Skeleton className="h-5 w-24" />
+                  </>
+                )}
               </div>
             </div>
           ))}
@@ -77,10 +87,16 @@ export function EmailsTable({
               <tr className="border-b border-border bg-panel-elevated/70">
                 <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Subject</th>
                 <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Sender</th>
-                <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Department</th>
-                <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Priority</th>
+                {!slim ? (
+                  <>
+                    <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Department</th>
+                    <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Priority</th>
+                  </>
+                ) : null}
                 <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Received</th>
-                <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Folder</th>
+                {!slim ? (
+                  <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Folder</th>
+                ) : null}
                 {showMailbox ? (
                   <th className="min-w-[7rem] px-2 py-2 text-left text-xs font-medium text-muted-foreground">Mailbox</th>
                 ) : null}
@@ -100,18 +116,24 @@ export function EmailsTable({
                   <td className="px-2 py-2">
                     <Skeleton className="h-4 w-32" />
                   </td>
-                  <td className="px-2 py-2">
-                    <Skeleton className="h-4 w-20" />
-                  </td>
-                  <td className="px-2 py-2">
-                    <Skeleton className="h-5 w-14" />
-                  </td>
+                  {!slim ? (
+                    <>
+                      <td className="px-2 py-2">
+                        <Skeleton className="h-4 w-20" />
+                      </td>
+                      <td className="px-2 py-2">
+                        <Skeleton className="h-5 w-14" />
+                      </td>
+                    </>
+                  ) : null}
                   <td className="px-2 py-2">
                     <Skeleton className="h-5 w-16" />
                   </td>
-                  <td className="px-2 py-2">
-                    <Skeleton className="h-4 w-20" />
-                  </td>
+                  {!slim ? (
+                    <td className="px-2 py-2">
+                      <Skeleton className="h-4 w-20" />
+                    </td>
+                  ) : null}
                   {showMailbox ? (
                     <td className="px-2 py-2">
                       <Skeleton className="h-4 w-24" />
@@ -173,21 +195,27 @@ export function EmailsTable({
                 {email.subject ?? "-"}
               </p>
               <p className="mt-1 break-words text-sm text-muted-foreground">{email.sender ?? "-"}</p>
-              <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5">
-                <span
-                  className="text-xs text-muted-foreground"
-                  title={
-                    !email.category ? "Same as Inbox department; run sync & classify to assign" : undefined
-                  }
-                >
-                  {email.category ?? "-"}
-                </span>
-                <PriorityBadge label={email.priorityLabel} />
-                <span className="text-xs tabular-nums text-muted-foreground">{formatDate(email.receivedAt)}</span>
-              </div>
-              <p className="mt-1 truncate text-xs text-muted-foreground" title={folderLabel(email.folder)}>
-                {folderLabel(email.folder)}
-              </p>
+              {slim ? (
+                <p className="mt-2 text-xs tabular-nums text-muted-foreground">{formatDate(email.receivedAt)}</p>
+              ) : (
+                <>
+                  <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5">
+                    <span
+                      className="text-xs text-muted-foreground"
+                      title={
+                        !email.category ? "Same as Inbox department; run sync & classify to assign" : undefined
+                      }
+                    >
+                      {email.category ?? "-"}
+                    </span>
+                    <PriorityBadge label={email.priorityLabel} />
+                    <span className="text-xs tabular-nums text-muted-foreground">{formatDate(email.receivedAt)}</span>
+                  </div>
+                  <p className="mt-1 truncate text-xs text-muted-foreground" title={folderLabel(email.folder)}>
+                    {folderLabel(email.folder)}
+                  </p>
+                </>
+              )}
               {showMailbox && email.mailboxOwnerEmail ? (
                 <p className="mt-1 truncate text-xs text-muted-foreground" title={email.mailboxOwnerEmail}>
                   Mailbox: {email.mailboxOwnerEmail}
@@ -214,10 +242,16 @@ export function EmailsTable({
               <tr className="border-b border-border bg-panel-elevated/70">
                 <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Subject</th>
                 <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Sender</th>
-                <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Department</th>
-                <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Priority</th>
+                {!slim ? (
+                  <>
+                    <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Department</th>
+                    <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Priority</th>
+                  </>
+                ) : null}
                 <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Received</th>
-                <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Folder</th>
+                {!slim ? (
+                  <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">Folder</th>
+                ) : null}
                 {showMailbox ? (
                   <th className="min-w-[7rem] px-2 py-2 text-left text-xs font-medium text-muted-foreground">Mailbox</th>
                 ) : null}
@@ -261,19 +295,25 @@ export function EmailsTable({
                     <td className="min-w-[100px] max-w-[200px] break-words px-2 py-2 text-muted-foreground">
                       {email.sender ?? "-"}
                     </td>
-                    <td
-                      className="px-2 py-2 text-muted-foreground"
-                      title={!email.category ? "Same as Inbox department; run sync & classify to assign" : undefined}
-                    >
-                      {email.category ?? "-"}
-                    </td>
-                    <td className="px-2 py-2">
-                      <PriorityBadge label={email.priorityLabel} />
-                    </td>
+                    {!slim ? (
+                      <>
+                        <td
+                          className="px-2 py-2 text-muted-foreground"
+                          title={!email.category ? "Same as Inbox department; run sync & classify to assign" : undefined}
+                        >
+                          {email.category ?? "-"}
+                        </td>
+                        <td className="px-2 py-2">
+                          <PriorityBadge label={email.priorityLabel} />
+                        </td>
+                      </>
+                    ) : null}
                     <td className="whitespace-nowrap px-2 py-2 text-muted-foreground">
                       {formatDate(email.receivedAt)}
                     </td>
-                    <td className="px-2 py-2 text-muted-foreground">{folderLabel(email.folder)}</td>
+                    {!slim ? (
+                      <td className="px-2 py-2 text-muted-foreground">{folderLabel(email.folder)}</td>
+                    ) : null}
                     {showMailbox ? (
                       <td className="max-w-[10rem] truncate px-2 py-2 text-muted-foreground" title={email.mailboxOwnerEmail ?? ""}>
                         {email.mailboxOwnerEmail ?? "-"}

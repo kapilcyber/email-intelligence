@@ -48,7 +48,6 @@ import {
   CartesianGrid,
   Tooltip,
   Cell,
-  ComposedChart,
   LineChart,
   Line,
   Legend,
@@ -349,8 +348,8 @@ function DashboardAiCharts({
   const axisTickMuted = { fontSize: narrow ? 9 : 10, fill: chart.axisMuted };
   /** Margins must cover YAxis `width` or Recharts computes negative plot size → NaN (worse on desktop with wider axes). */
   const marginCategory = narrow
-    ? { top: 10, right: 44, bottom: 44, left: 36 }
-    : { top: 12, right: 56, bottom: 40, left: 52 };
+    ? { top: 10, right: 10, bottom: 44, left: 36 }
+    : { top: 12, right: 16, bottom: 40, left: 52 };
   const marginStandard = narrow
     ? { top: 8, right: 8, bottom: 32, left: 8 }
     : { top: 8, right: 16, bottom: 16, left: 52 };
@@ -488,7 +487,7 @@ function DashboardAiCharts({
           </div>
           <MeasuredChart height={chartBoxH}>
             {({ width, height }) => (
-              <ComposedChart width={width} height={height} data={categoryKpiData} margin={marginCategory}>
+              <BarChart width={width} height={height} data={categoryKpiData} margin={marginCategory}>
                 <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} vertical={false} />
                 <XAxis
                   dataKey="category"
@@ -498,24 +497,17 @@ function DashboardAiCharts({
                   textAnchor={narrow ? "end" : "middle"}
                   height={narrow ? 36 : 30}
                 />
-                <YAxis
-                  yAxisId="left"
-                  orientation="left"
-                  width={narrow ? 28 : 44}
-                  tick={axisTickMuted}
-                />
-                <YAxis
-                  yAxisId="right"
-                  orientation="right"
-                  width={narrow ? 30 : 48}
-                  tick={axisTickMuted}
-                  domain={[0, 100]}
-                  tickFormatter={(v) => `${v}%`}
-                />
+                <YAxis orientation="left" width={narrow ? 28 : 44} tick={axisTickMuted} />
                 <Tooltip
                   {...tt}
                   contentStyle={{ ...tt.contentStyle, borderRadius: 8 }}
-                  formatter={(value: number, name: string) => [name === "pct" ? `${value}%` : value, name === "pct" ? "% of total" : "Email count"]}
+                  formatter={(value: number, _name: string, item: { payload?: { pct?: number } }) => {
+                    const pct = item.payload?.pct;
+                    return [
+                      pct !== undefined ? `${value} (${pct}% of total)` : String(value),
+                      "Email count",
+                    ];
+                  }}
                   labelFormatter={(label) => `Category: ${label}`}
                 />
                 <Legend
@@ -529,7 +521,6 @@ function DashboardAiCharts({
                   }}
                 />
                 <Bar
-                  yAxisId="left"
                   dataKey="count"
                   name="Email count"
                   fill="#22d3ee"
@@ -537,18 +528,7 @@ function DashboardAiCharts({
                   isAnimationActive
                   animationDuration={900}
                 />
-                <Line
-                  yAxisId="right"
-                  type="monotone"
-                  dataKey="pct"
-                  name="% of total"
-                  stroke="#1e3a8a"
-                  strokeWidth={2}
-                  dot={{ fill: "#1e3a8a", r: 3 }}
-                  isAnimationActive
-                  animationDuration={1100}
-                />
-              </ComposedChart>
+              </BarChart>
             )}
           </MeasuredChart>
           <p className="mt-2 text-left text-[10px] text-neutral-500 dark:text-neutral-400">

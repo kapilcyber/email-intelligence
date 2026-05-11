@@ -194,21 +194,48 @@ _RESUME_SUBJECT_MARKERS = (
     "please find attached resume",
 )
 
+# Graph meetingMessageType — responses are calendar items in Mail but not "scheduled" meetings.
+_MEETING_MESSAGE_RESPONSE_TYPES = frozenset(
+    {
+        "meetingaccepted",
+        "meetingtenativelyaccepted",  # Graph spelling (single "t")
+        "meetingdeclined",
+    }
+)
+
 
 def _subject_looks_like_resume_noise(subject: str | None) -> bool:
     s = (subject or "").lower()
     return any(m in s for m in _RESUME_SUBJECT_MARKERS)
 
 
+def _subject_looks_like_meeting_response(subject: str | None) -> bool:
+    """Outlook-style prefixes on response messages when Graph type is missing or generic."""
+    s = (subject or "").strip().lower()
+    if not s:
+        return False
+    return (
+        s.startswith("accepted:")
+        or s.startswith("declined:")
+        or s.startswith("tentative:")
+        or s.startswith("tentatively accepted:")
+    )
+
+
 def _email_looks_like_meeting_invite(email: Email) -> bool:
     """Heuristic: Graph meetingMessageType and/or invite patterns in subject/body."""
     if _subject_looks_like_resume_noise(email.subject):
         return False
+    if _subject_looks_like_meeting_response(email.subject):
+        return False
     rp = email.raw_payload if isinstance(email.raw_payload, dict) else {}
-    odata_type = str(rp.get("@odata.type") or "").lower()
-    if "eventmessage" in odata_type:
-        return True
     mt = str(rp.get("meetingMessageType") or "").lower()
+    if mt in _MEETING_MESSAGE_RESPONSE_TYPES:
+        return False
+    # Original invite or cancellation notice — always show on calendar strip.
+    if mt in ("meetingrequest", "meetingcancelled"):
+        return True
+    # Do not treat every #microsoft.graph.eventMessage as an invite (includes accept/decline).
     if mt and mt not in ("none", "notamessage"):
         return True
     subj = (email.subject or "").lower()
@@ -665,7 +692,7 @@ def dashboard_calendar_events(
     Dashboard “calendar” rows.
 
     **Default `source=mail`:** meeting-related messages already ingested for this mailbox (Graph **Mail** sync).
-    Uses `meetingMessageType` and heuristics; excludes obvious resume/CV subjects. No Graph calendar API.
+    Uses `meetingMessageType` and heuristics; excludes accept/tentative/decline responses, resume/CV subjects. No Graph calendar API.
 
     **`source=graph`:** optional legacy path - Graph `calendarView` (needs Calendars.Read app or delegated Bearer).
     """

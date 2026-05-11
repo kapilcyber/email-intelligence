@@ -1493,6 +1493,11 @@ def admin_list_emails(
         alias="externalParticipants",
         description="If true, only messages with sender or any to/cc/bcc address outside company_internal_email_domain",
     ),
+    external_senders_only: bool = Query(
+        False,
+        alias="externalSendersOnly",
+        description="If true, only messages whose From address is outside company_internal_email_domain (e.g. not @cachedigitech.com).",
+    ),
     mail_direction: str | None = Query(
         None,
         alias="mailDirection",
@@ -1504,6 +1509,7 @@ def admin_list_emails(
     deletedOnly=false: active mail (not soft-deleted).
     deletedOnly=true: in-app removed History and/or messages found in Outlook Deleted Items (after sync).
     externalParticipants=true: cross-domain traffic vs settings.company_internal_email_domain (same rows as mailbox; filtered view).
+    externalSendersOnly=true: From address not on company internal domain (typical “inbox from outside”).
     mailDirection=sent|received: restrict to Sent Items vs other folders (uses folder_name from Graph sync).
     """
     try:
@@ -1512,6 +1518,14 @@ def admin_list_emails(
             q = q.filter(Email.deleted_at.isnot(None))
         else:
             q = q.filter(Email.deleted_at.is_(None))
+        if external_senders_only:
+            dom = (get_settings().company_internal_email_domain or "cachedigitech.com").strip().lower().lstrip("@")
+            if dom:
+                q = q.filter(
+                    Email.sender_email.isnot(None),
+                    func.trim(Email.sender_email) != "",
+                    not_(func.lower(Email.sender_email).like(f"%@{dom}")),
+                )
         if external_participants:
             dom = getattr(get_settings(), "company_internal_email_domain", None) or "cachedigitech.com"
             ext = _external_participant_sql_filter(dom)

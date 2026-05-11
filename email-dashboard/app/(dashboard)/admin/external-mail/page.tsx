@@ -47,8 +47,12 @@ function ExternalMailContent() {
       .getAdminEmails({
         page,
         pageSize: PAGE_SIZE,
-        externalParticipants: true,
         mailDirection: directionFilter || undefined,
+        // Received: only mail From outside internal domain (@cachedigitech.com via backend setting).
+        // Sent: internal From to external recipients. All: any cross-domain participant.
+        ...(directionFilter === "received"
+          ? { externalSendersOnly: true }
+          : { externalParticipants: true }),
       })
       .then((r) => {
         setEmails(r.emails);
@@ -130,6 +134,7 @@ function ExternalMailContent() {
         readOnly
         showRetag={false}
         showMailbox
+        hideDepartmentPriorityFolder
       />
 
       {totalPages > 1 && (

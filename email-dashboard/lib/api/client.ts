@@ -198,6 +198,8 @@ function createApi(userEmail: string | null, userDisplayName?: string | null) {
       deletedOnly?: boolean;
       /** Cross-domain: sender or any recipient not on company internal domain (backend setting). */
       externalParticipants?: boolean;
+      /** From address outside company internal domain (e.g. not @cachedigitech.com). */
+      externalSendersOnly?: boolean;
       /** sent | received - from synced folder (Sent vs non-Sent). */
       mailDirection?: "sent" | "received";
     }) => {
@@ -210,6 +212,7 @@ function createApi(userEmail: string | null, userDisplayName?: string | null) {
       if (params?.category) searchParams.set("category", params.category);
       if (params?.deletedOnly === true) searchParams.set("deletedOnly", "true");
       if (params?.externalParticipants === true) searchParams.set("externalParticipants", "true");
+      if (params?.externalSendersOnly === true) searchParams.set("externalSendersOnly", "true");
       if (params?.mailDirection === "sent" || params?.mailDirection === "received") {
         searchParams.set("mailDirection", params.mailDirection);
       }
