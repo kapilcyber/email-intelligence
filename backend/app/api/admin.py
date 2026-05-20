@@ -723,12 +723,33 @@ def update_user(
     manager_id: str | None = Query(None, alias="managerId"),
     is_team_lead: bool | None = Query(None, alias="isTeamLead"),
     db: Session = Depends(get_db),
-    _auth: str = Depends(get_admin_user),
+    _auth: str = Depends(get_admin_or_manager_user),
+    actor_email: str = Depends(get_current_user_email),
 ):
     """Update user role, team, manager, or is_team_lead."""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    is_admin_actor = _is_admin_actor(db, actor_email)
+    if not is_admin_actor:
+        manager_row = _manager_actor_row(db, actor_email)
+        if not manager_row:
+            raise HTTPException(status_code=403, detail="Manager access required")
+        scope_parts = [User.id == manager_row.id, User.manager_id == manager_row.id]
+        if manager_row.team_id:
+            scope_parts.append(User.team_id == manager_row.team_id)
+        in_scope = (
+            db.query(User.id)
+            .filter(User.id == user_id, or_(*scope_parts))
+            .first()
+        )
+        if not in_scope:
+            raise HTTPException(status_code=403, detail="User is outside your team scope")
+        if role is not None or team_id is not None or is_team_lead is not None:
+            raise HTTPException(
+                status_code=403,
+                detail="Managers may only update reporting manager (managerId)",
+            )
     old_role = user.role
     if role is not None and role.strip() in ("Admin", "Manager", "Member"):
         new_role = role.strip()
@@ -754,6 +775,27 @@ def update_user(
             manager = db.query(User).filter(User.id == manager_id.strip()).first()
             if not manager:
                 raise HTTPException(status_code=400, detail="Manager user not found")
+            mgr_role = getattr(manager, "role", None)
+            target_role = getattr(user, "role", None)
+            if not is_admin_actor:
+                if mgr_role != "Admin":
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Reporting manager must be a user with Admin role",
+                    )
+            elif mgr_role == "Admin":
+                pass
+            elif mgr_role == "Manager" and target_role == "Member":
+                if not user.team_id or manager.team_id != user.team_id:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Member can only report to a manager on the same team",
+                    )
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid reporting manager for this user's role",
+                )
             user.manager_id = manager.id
         else:
             user.manager_id = None

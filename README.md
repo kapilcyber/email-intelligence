@@ -6,6 +6,7 @@ For focused setup details, see also:
 
 - [`backend/README.md`](backend/README.md) — Python env, Alembic, Celery, Phase 1–2 API tables, troubleshooting
 - [`email-dashboard/README.md`](email-dashboard/README.md) — Next.js routes, mock vs real API, UI stack
+- [`outlook-addin/README.md`](outlook-addin/README.md) — internal Outlook add-in (launcher) for the dashboard; build, sideload, centralized deployment
 
 ---
 
@@ -177,7 +178,7 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). API: [http://localhost:8000](http://localhost:8000).
+Open the dashboard at [http://localhost:3001](http://localhost:3001). API: [http://localhost:8000](http://localhost:8000).
 
 **First data**: with worker running, call **`POST /api/emails/backfill`** with your mailbox `user_id` (see backend README). For ongoing new mail, configure **`WEBHOOK_BASE_URL`** and **`POST /api/webhook/subscribe`**.
 
@@ -188,6 +189,7 @@ Open [http://localhost:3000](http://localhost:3000). API: [http://localhost:8000
 ```
 email-intelligence/
   README.md                 ← this file
+  outlook-addin/            # Outlook launcher add-in (manifest + static task pane)
   backend/
     app/
       main.py               # FastAPI app, route includes, /api/me

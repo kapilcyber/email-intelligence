@@ -20,5 +20,8 @@ httpx==0.26.0
 # Phase 2 - Ollama (OpenAI-compatible client)
 openai>=1.0.0
 
+# Attachment text extraction for on-demand summary (PDF)
+pypdf>=4.0.0
+
 # Env
 python-dotenv==1.0.0

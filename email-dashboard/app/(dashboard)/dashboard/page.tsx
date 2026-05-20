@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { motion } from "framer-motion";
 import {
@@ -329,6 +329,7 @@ function DashboardAiCharts({
   onMetricsRefresh,
   classifyLoading,
   isAdmin = false,
+  showTeamMemberCharts = true,
 }: {
   api: ReturnType<typeof getApi>;
   metrics: DashboardMetrics | null;
@@ -337,6 +338,8 @@ function DashboardAiCharts({
   onMetricsRefresh?: () => void;
   classifyLoading: boolean;
   isAdmin?: boolean;
+  /** Escalations / leads per-mailbox charts (hidden for Member role). */
+  showTeamMemberCharts?: boolean;
 }) {
   const [escalationByUser, setEscalationByUser] = useState<UserEscalationCountOut[] | null>(null);
   const [leadCountsByUser, setLeadCountsByUser] = useState<UserLeadCountOut[] | null>(null);
@@ -358,6 +361,11 @@ function DashboardAiCharts({
     : { top: 8, right: 16, left: 52, bottom: 56 };
 
   useEffect(() => {
+    if (!showTeamMemberCharts) {
+      setEscalationByUser([]);
+      setLeadCountsByUser([]);
+      return;
+    }
     setEscalationByUser(null);
     setLeadCountsByUser(null);
     api
@@ -368,7 +376,7 @@ function DashboardAiCharts({
       .getLeadCountsByUser()
       .then((rows) => setLeadCountsByUser(rows ?? []))
       .catch(() => setLeadCountsByUser([]));
-  }, [isAdmin, api]);
+  }, [isAdmin, api, showTeamMemberCharts]);
 
   const memberEscalationChartData = useMemo(() => {
     if (!escalationByUser?.length) return [];
@@ -599,6 +607,8 @@ function DashboardAiCharts({
             </p>
           )}
         </div>
+        {showTeamMemberCharts && (
+        <>
         <div className="min-w-0 rounded-3xl border border-orange-100 bg-gradient-to-br from-white via-orange-50 to-amber-50 p-3 shadow-md shadow-orange-100/60 dark:border-neutral-800 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-950 dark:shadow-none sm:p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-xs font-medium uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
@@ -740,6 +750,8 @@ function DashboardAiCharts({
             </MeasuredChart>
           )}
         </div>
+        </>
+        )}
       </div>
     </section>
   );
@@ -804,6 +816,7 @@ function DashboardPageContent() {
     reportingManager?: { displayName: string | null; email: string } | null;
     department?: string | null;
     isAdmin?: boolean;
+    role?: string;
   } | null>(null);
   const [teamMembers, setTeamMembers] = useState<UserOut[] | null>(null);
   const [teams, setTeams] = useState<TeamOut[] | null>(null);
@@ -844,11 +857,16 @@ function DashboardPageContent() {
     return !!(me?.isAdmin || (adminEmailsList.length > 0 && adminEmailsList.includes(em)));
   }, [me?.isAdmin, adminEmailsList, session?.user?.email]);
 
+  const showTeamMemberCharts = useMemo(() => {
+    if (isEffectiveAdmin) return true;
+    return (me?.role ?? "").trim() === "Manager";
+  }, [isEffectiveAdmin, me?.role]);
+
   /** Admin only: enqueue Graph Deleted Items sync for all registered mailboxes (same job as former Admin → Deleted mail button). */
   const enqueueOutlookDeletedSyncForAdmins = useCallback(
     (days?: number) => {
       if (!isEffectiveAdmin) return;
-      void api.syncOutlookDeleted(days !== undefined ? { days } : {}).catch(() => {});
+      void api.syncOutlookDeleted(days !== undefined ? { days } : {}).catch(() => { });
     },
     [api, isEffectiveAdmin]
   );
@@ -998,6 +1016,7 @@ function DashboardPageContent() {
           reportingManager: r.reportingManager ?? null,
           department: r.department ?? null,
           isAdmin: r.isAdmin ?? false,
+          role: r.role ?? "",
         })
       )
       .catch(() => setMe(null));
@@ -1449,7 +1468,8 @@ function DashboardPageContent() {
               onClassifyAll={onClassifyAll}
               onMetricsRefresh={refreshMetricsSilent}
               classifyLoading={classifyLoading}
-              isAdmin={!!me?.isAdmin}
+              isAdmin={!!isEffectiveAdmin}
+              showTeamMemberCharts={showTeamMemberCharts}
             />
           </section>
         </motion.div>
@@ -1752,7 +1772,9 @@ function DashboardPageContent() {
                   <p className="text-[10px] font-semibold uppercase tracking-wide text-indigo-600 dark:text-neutral-400">You report to</p>
                   <p className="mt-1 break-words text-sm font-medium text-neutral-900 dark:text-neutral-100">
                     {me?.reportingManager
-                      ? `${me.reportingManager.displayName ?? me.reportingManager.email} (${me.reportingManager.email})`
+                      ? (me.reportingManager.displayName?.trim() ||
+                          me.reportingManager.email.split("@")[0] ||
+                          "-")
                       : "-"}
                   </p>
                 </div>

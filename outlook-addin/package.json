@@ -1,0 +1,13 @@
+{
+  "name": "email-intelligence-outlook-addin",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Internal Outlook launcher add-in for the Email Intelligence Next.js dashboard",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "manifest:info": "office-addin-manifest info dist/manifest.xml"
+  },
+  "devDependencies": {
+    "office-addin-manifest": "^1.12.0"
+  }
+}
