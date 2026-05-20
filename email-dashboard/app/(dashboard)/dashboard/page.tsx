@@ -1247,12 +1247,12 @@ function DashboardPageContent() {
   const pc = metrics?.priorityCounts;
   const urgentPriorityCount = (pc?.Critical ?? 0) + (pc?.High ?? 0);
   const kpiCards = [
-    { title: "Emails Today", value: loadingMetrics ? "-" : (metrics?.emailsIngestedToday ?? 0), subtitle: "Received today" },
+    { title: "Emails Today", value: loadingMetrics ? "—" : (metrics?.emailsIngestedToday ?? 0), subtitle: "Received today" },
     {
       title: "Queue Size",
       value:
         loadingMetrics || metrics == null
-          ? "-"
+          ? "—"
           : ((metrics.mailboxAiPending ?? metrics.queueSize) ?? 0),
       subtitle:
         loadingMetrics || metrics == null

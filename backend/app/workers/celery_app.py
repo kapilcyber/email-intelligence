@@ -36,26 +36,6 @@ celery_app.conf.update(
     broker_connection_retry_on_startup=True,
     result_expires=3600,
 )
-
-# Route tasks to dedicated queues so ingestion can't starve AI tasks.
-# - ingest: Graph fetch/backfill/sync + DB upserts
-# - ai: classify + on-demand summary generation + downstream lead notifications
-# - celery: default/legacy queue (beat uses it unless overridden)
-celery_app.conf.task_routes = {
-    # Ingest / sync / backfill
-    "app.workers.tasks.ingest_email_task": {"queue": "ingest"},
-    "app.workers.tasks.ingest_email_chunk_task": {"queue": "ingest"},
-    "app.workers.tasks.backfill_emails_task": {"queue": "ingest"},
-    "app.workers.tasks.backfill_mailbox_all_folders_task": {"queue": "ingest"},
-    "app.workers.tasks.sync_logged_in_users_mailboxes_task": {"queue": "ingest"},
-    "app.workers.tasks.sync_outlook_deleted_for_all_users_task": {"queue": "ingest"},
-    "app.workers.tasks.sync_mailbox_message_rules_task": {"queue": "ingest"},
-    "app.workers.tasks.sync_message_rules_for_all_users_task": {"queue": "ingest"},
-    # AI
-    "app.workers.tasks.classify_email_task": {"queue": "ai_classify"},
-    "app.workers.tasks.generate_email_summary_task": {"queue": "ai_summary"},
-    "app.workers.tasks.notify_sales_lead_task": {"queue": "ai_classify"},
-}
 # High-volume paths: do not store task return values in the result backend (Redis traffic)
 celery_app.conf.task_annotations = {
     "app.workers.tasks.ingest_email_task": {"ignore_result": True},
@@ -139,7 +119,7 @@ def reset_db_pool_after_fork(**kwargs):
 
 @worker_init.connect
 def ensure_tables_on_worker_start(sender, **kwargs):
-    """Windows solo pool only: no fork; safe to run init here. Linux prefork skips-parent must not open DB pre-fork."""
+    """Windows solo pool only: no fork; safe to run init here. Linux prefork skips—parent must not open DB pre-fork."""
     if sys.platform != "win32":
         return
     try:

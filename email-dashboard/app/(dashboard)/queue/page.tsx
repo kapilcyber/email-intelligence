@@ -104,7 +104,7 @@ export default function QueueMonitorPage() {
           </CardHeader>
           <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
             <p className="text-2xl font-semibold tabular-nums text-neutral-900 dark:text-neutral-50">
-              {data.mailboxAiPending ?? "-"}
+              {data.mailboxAiPending ?? "—"}
             </p>
             <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
               Emails awaiting classification (authoritative)
@@ -130,7 +130,7 @@ export default function QueueMonitorPage() {
           </CardHeader>
           <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
             <p className="text-2xl font-semibold tabular-nums text-neutral-900 dark:text-neutral-50">
-              {data.activeWorkers ?? "-"}
+              {data.activeWorkers ?? "—"}
             </p>
             <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">Shared pool</p>
           </CardContent>

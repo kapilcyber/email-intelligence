@@ -17,7 +17,7 @@ class Sender(Base):
     id = Column(String(36), primary_key=True, default=uuid_gen)
     email = Column(String(512), unique=True, nullable=False, index=True)
     display_name = Column(String(512), nullable=True)
-    trust_score = Column(Float, nullable=True)  # 0.0-1.0; lower = more likely spam/phishing from this sender
+    trust_score = Column(Float, nullable=True)  # 0.0–1.0; lower = more likely spam/phishing from this sender
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -61,11 +61,8 @@ class Email(Base):
     # Processing state: received -> ingested -> classified | failed
     processing_status = Column(String(32), default="ingested", index=True)  # received | ingested | classified | failed
 
-    # Phase 2 - AI classification
+    # Phase 2 — AI classification
     ai_summary = Column(Text, nullable=True)
-    ai_summary_status = Column(String(32), default="not_requested", index=True)  # not_requested | pending | completed | failed
-    ai_summary_processed_at = Column(DateTime(timezone=True), nullable=True)
-    ai_summary_error_message = Column(Text, nullable=True)
     ai_category = Column(String(64), nullable=True, index=True)
     ai_priority_score = Column(Float, nullable=True)
     ai_priority_label = Column(String(32), nullable=True, index=True)  # Critical | High | Medium | Low | Spam
@@ -75,7 +72,7 @@ class Email(Base):
     ai_error_message = Column(Text, nullable=True)
     ai_confidence_score = Column(Float, nullable=True)  # optional 0-1
 
-    # Phase 3 - escalation, leads, routing
+    # Phase 3 — escalation, leads, routing
     is_escalation = Column(Boolean, default=False, index=True)
     escalation_metadata = Column(JSONB, nullable=True)  # {"reasons": ["priority_high", "keywords", ...]} for audit
     assigned_team = Column(String(64), nullable=True, index=True)  # Tech, Networking, Cybersecurity, Sales, Accounts, Data & AI, General

@@ -1,6 +1,6 @@
 # Email Intelligence — Backend
 
-FastAPI backend for email ingestion (Phase 1) and AI classification (Phase 2): Microsoft Graph, Redis/Celery, PostgreSQL, Ollama (primary) and OpenAI (fallback).
+FastAPI backend for email ingestion (Phase 1) and AI classification (Phase 2): Microsoft Graph, Redis/Celery, PostgreSQL, Ollama.
 
 ## Phase 1 deliverables
 
@@ -55,7 +55,7 @@ FastAPI backend for email ingestion (Phase 1) and AI classification (Phase 2): M
 4. **Environment**
    ```bash
    cp .env.example .env
-   # Edit .env: AZURE_*, MAILBOX_EMAIL, DB/Redis URLs. For Phase 2 AI classification set OLLAMA_BASE_URL (and optionally OLLAMA_MODEL) for local Ollama, and/or OPENAI_API_KEY (and OPENAI_MODEL) as fallback when Ollama is unavailable.
+   # Edit .env: AZURE_*, MAILBOX_EMAIL, DB/Redis URLs. For Phase 2 AI classification set OLLAMA_BASE_URL (and optionally OLLAMA_MODEL) for Ollama.
    # If you already have the DB from Phase 1, run: python scripts/add_phase2_columns.py to add AI columns.
    ```
 
@@ -113,7 +113,7 @@ So: **run backfill once** to see existing mail (Phase 1). Keep Celery running fo
 
 - After each email is ingested, a **classify_email_task** runs when an AI provider is configured and stores: **summary**, **category** (Sales, HR, Accounts, Tech, General, Spam), **priority** (score + label: Critical/High/Medium/Low/Spam), and **suggested replies** (1–3 options).
 - **Ollama (primary):** If `OLLAMA_BASE_URL` is set (e.g. `http://localhost:11434/v1`), the classifier tries Ollama first (e.g. `llama3`, `gemma3:4b` via `OLLAMA_MODEL`). Install models with `ollama pull llama3` etc.
-- **OpenAI (fallback):** If Ollama fails (not running, timeout, empty response, or JSON parse error) and `OPENAI_API_KEY` is set, the classifier retries with OpenAI (`OPENAI_MODEL`, default `gpt-4o-mini`). Set `OPENAI_FALLBACK_ENABLED=false` to never call OpenAI after Ollama (OpenAI-only mode still works if `OLLAMA_BASE_URL` is unset). You can use only OpenAI by leaving `OLLAMA_BASE_URL` empty and setting `OPENAI_API_KEY`.
+- The system is configured to use **only Ollama** for AI tasks.
 - **Existing DB:** run `python scripts/add_phase2_columns.py` once to add the new columns to the `emails` table.
 - **Observability columns:** run `python scripts/add_phase2_observability_columns.py` once to add `processing_status`, `ai_status`, `ai_error_message`, `ai_confidence_score` and backfill existing rows.
 - List and detail APIs return these fields; the dashboard shows them in the emails list and on the email detail page.
@@ -123,7 +123,7 @@ So: **run backfill once** to see existing mail (Phase 1). Keep Celery running fo
 Summaries can be missing in the UI for one or more of these reasons:
 
 1. **API returned empty or invalid JSON** — The model sometimes wrapped JSON in markdown or returned extra text. The classifier now strips markdown, tries to find a `{ ... }` block, and accepts both `"summary"` and `"Summary"` keys. Debug logs (`AI_RESPONSE`, `PARSED_SUMMARY`, `DB_SAVE_STATUS`) help trace failures.
-2. **No AI provider (Ollama or OpenAI) configured or both failed** — Classification was skipped or failed; the task now sets `ai_status = "failed"` and stores `ai_error_message`, and the UI shows a fallback and a "Retry" button.
+2. **No AI provider (Ollama) configured or it failed** — Classification was skipped or failed; the task now sets `ai_status = "failed"` and stores `ai_error_message`, and the UI shows a fallback and a "Retry" button.
 3. **Parse/network errors** — The classifier now retries up to 3 times with exponential backoff and logs parse/API errors. On final failure the email is marked `ai_status = "failed"`.
 4. **Frontend hid the block when summary was null** — The detail page only showed "AI insights" when at least one of summary/category/priority was present. It now always shows the AI section and displays *"Summary not available (AI pending or failed)."* when summary is missing.
 
@@ -169,7 +169,7 @@ app/
   db/               # session, models (Email, Attachment, Sender)
   graph/            # auth (token), client (messages), webhook (subscribe/renew)
   workers/          # celery_app, tasks (ingest_email_task, classify_email_task, backfill_emails_task)
-  ai/               # classifier (Ollama primary, OpenAI fallback: summary, category, priority, reply suggestions)
+  ai/               # classifier (Ollama: summary, category, priority, reply suggestions)
 ```
 
 ## Connect frontend

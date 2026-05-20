@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     # Optional: only needed for Graph webhook subscriptions
     webhook_base_url: str | None = None
 
-    # Phase 2 - Ollama (only)
+    # Phase 2 — Ollama (only)
     ollama_base_url: str = "http://localhost:11434"
     # Optional load-balancing: comma-separated list of Ollama base URLs.
     # When set, the AI client randomly selects one per request (e.g. http://vm1:11434/v1,http://vm2:11434/v1).
@@ -53,7 +53,7 @@ class Settings(BaseSettings):
     ollama_max_retries: int = 2
     ollama_retry_delay_seconds: float = 0.25
 
-    # Phase 4 - Admin: comma-separated emails allowed to access admin APIs (empty = allow all authenticated)
+    # Phase 4 — Admin: comma-separated emails allowed to access admin APIs (empty = allow all authenticated)
     admin_emails: str = ""
 
     # Escalation detection (enterprise)
@@ -101,7 +101,7 @@ class Settings(BaseSettings):
     # Celery Beat: full-mailbox Graph sync for users with an open dashboard session (see user_login_events)
     mailbox_auto_sync_logged_in_enabled: bool = True
     mailbox_auto_sync_logged_in_interval_minutes: int = 5
-    # 0 = all mail since 2000-01-01 per folder (same as manual backfill “all”); use 1-7 for lighter periodic sync
+    # 0 = all mail since 2000-01-01 per folder (same as manual backfill “all”); use 1–7 for lighter periodic sync
     mailbox_auto_sync_logged_in_days: int = 0
     # After Microsoft OAuth sign-in (POST /api/me with X-Login-Source: oauth), enqueue one full-mailbox backfill
     mailbox_sync_on_oauth_login_enabled: bool = True
