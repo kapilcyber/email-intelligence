@@ -24,6 +24,16 @@ function formatActivity(iso: string | null | undefined): string {
   return d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
+function userDisplayLabel(u: UserOut): string {
+  return u.displayName?.trim() || u.email.split("@")[0] || u.email;
+}
+
+function sortUsersByName(a: UserOut, b: UserOut): number {
+  return (a.displayName ?? a.email).localeCompare(b.displayName ?? b.email, undefined, {
+    sensitivity: "base",
+  });
+}
+
 export default function AdminTeamLeadersPage() {
   const { data: session, status } = useSession();
   const api = useMemo(
@@ -37,8 +47,15 @@ export default function AdminTeamLeadersPage() {
   const [error, setError] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [loginEvents, setLoginEvents] = useState<LoginEventOut[]>([]);
-  const [me, setMe] = useState<{ userId?: string; isAdmin?: boolean; department?: string | null } | null>(null);
+  const [me, setMe] = useState<{
+    userId?: string;
+    isAdmin?: boolean;
+    role?: string;
+    department?: string | null;
+  } | null>(null);
   const canEdit = !!me?.isAdmin;
+  const isManagerRole = (me?.role ?? "").trim() === "Manager";
+  const canAssignReportingTo = canEdit || isManagerRole;
   const loginRows = useMemo(() => {
     return [...loginEvents]
       .sort((a, b) => activityTimestampMs(b.loginAt) - activityTimestampMs(a.loginAt))
@@ -65,6 +82,41 @@ export default function AdminTeamLeadersPage() {
     return sortedAllUsers.filter((u) => u.managerId === managerId);
   }, [canEdit, sortedAllUsers, me?.userId]);
 
+  /**
+   * Reporting-to choices for a user row:
+   * - Manager (actor): Admins only.
+   * - Admin assigning for Member on a team: that team's Managers + all Admins.
+   * - Admin assigning for Manager / Member without team: Admins only.
+   */
+  const reportingToOptionsForTarget = useCallback(
+    (target: UserOut): UserOut[] => {
+      const admins = allUsers.filter((x) => x.role === "Admin");
+      if (isManagerRole && !canEdit) {
+        return [...admins].sort(sortUsersByName);
+      }
+      if (target.role === "Member" && target.teamId) {
+        const teamManagers = allUsers.filter(
+          (x) => x.role === "Manager" && x.teamId === target.teamId && x.id !== target.id
+        );
+        const byId = new Map<string, UserOut>();
+        for (const x of [...admins, ...teamManagers]) byId.set(x.id, x);
+        return [...byId.values()].sort(sortUsersByName);
+      }
+      return [...admins].sort(sortUsersByName);
+    },
+    [allUsers, isManagerRole, canEdit]
+  );
+
+  const reportingToLabelById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const u of allUsers) {
+      if (u.role === "Admin" || u.role === "Manager") {
+        map.set(u.id, userDisplayLabel(u));
+      }
+    }
+    return map;
+  }, [allUsers]);
+
   const load = () => {
     if (status !== "authenticated") return;
     setLoading(true);
@@ -73,7 +125,16 @@ export default function AdminTeamLeadersPage() {
       .getMe()
       .catch(() => null)
       .then((meResp) => {
-        setMe(meResp ? { userId: meResp.userId, isAdmin: meResp.isAdmin, department: meResp.department ?? null } : null);
+        setMe(
+          meResp
+            ? {
+                userId: meResp.userId,
+                isAdmin: meResp.isAdmin,
+                role: meResp.role ?? "",
+                department: meResp.department ?? null,
+              }
+            : null
+        );
         const isAdminUser = !!meResp?.isAdmin;
         return Promise.all([
           api.getUsers({ role: "Manager" }),
@@ -135,6 +196,16 @@ export default function AdminTeamLeadersPage() {
     if (!canEdit) return;
     setUpdatingId(userId);
     api.updateUser(userId, { teamId: teamId || undefined }).then(() => load()).catch(() => setError("Failed to update")).finally(() => setUpdatingId(null));
+  };
+
+  const assignReportingTo = (userId: string, managerId: string) => {
+    if (!canAssignReportingTo) return;
+    setUpdatingId(userId);
+    api
+      .updateUser(userId, { managerId })
+      .then(() => load())
+      .catch(() => setError("Failed to update reporting manager"))
+      .finally(() => setUpdatingId(null));
   };
 
   return (
@@ -275,6 +346,29 @@ export default function AdminTeamLeadersPage() {
                         ))}
                       </SelectContent>
                     </Select>
+                    <Select
+                      value={u.managerId ?? ""}
+                      onValueChange={(mid) => assignReportingTo(u.id, mid)}
+                      disabled={!!updatingId || !canAssignReportingTo}
+                    >
+                      <SelectTrigger className="h-10 w-full min-w-0 sm:w-[180px]" aria-label="Reporting to">
+                        <SelectValue placeholder="Reporting to" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="">No manager</SelectItem>
+                        {reportingToOptionsForTarget(u).map((m) => (
+                            <SelectItem key={m.id} value={m.id}>
+                              {userDisplayLabel(m)}
+                              {m.role === "Manager" ? " (Manager)" : ""}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                    {!canAssignReportingTo && u.managerId && (
+                      <p className="text-xs text-neutral-500 dark:text-neutral-400 sm:hidden">
+                        Reporting to: {reportingToLabelById.get(u.managerId) ?? "-"}
+                      </p>
+                    )}
                   </div>
                 </li>
               ))}

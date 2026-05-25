@@ -280,26 +280,40 @@ def _build_summary_only_prompt(
     body_preview: str | None,
     body_content: str | None,
     sender: str,
+    attachment_document_excerpt: str | None = None,
 ) -> str:
     """Prompt to generate summary + suggested replies only (no category/priority)."""
     subject_display = subject or "(No subject)"
     preview_raw = (body_preview or "")[:500]
     plain_body = _html_to_plain_excerpt(body_content, max_html_chars=20000, max_plain_chars=3000)
     plain_preview = _html_to_plain_excerpt(preview_raw, max_html_chars=2000, max_plain_chars=500)
-    content = plain_body or plain_preview
+    mail_text = (plain_body or plain_preview or "").strip()
+    docs = (attachment_document_excerpt or "").strip()
+    if docs:
+        merged = (
+            f"{mail_text}\n\n--- Attached documents (plain-text excerpts from the same email) ---\n{docs}".strip()
+        )
+    else:
+        merged = mail_text
+    # Hard cap so Ollama prompt stays bounded when many/large excerpts are included.
+    if len(merged) > 20000:
+        merged = merged[:20000] + "\n…"
+    content = merged
     sender = sender or "unknown"
     example_json = '{"summary": "Meeting follow-up with action items.", "suggested_replies": ["Thanks, will review by EOD.", "Can we move to 3pm?"]}'
     template = """Summarize this email and suggest replies. Respond with a single JSON object only. No markdown, no code block, no explanation. Output only valid JSON.
+
+The message may include plain-text excerpts from file attachments (below the email body). Treat the body and those excerpts as one message.
 
 Email:
 From: {sender}
 Subject: {subject}
 
-Body (plain-text excerpt; HTML was removed for analysis):
+Body and attachment excerpts (plain text; HTML was removed from the mail body for analysis):
 {content}
 
 Respond with exactly this structure (only these keys):
-- "summary": one or two short sentences summarizing the email.
+- "summary": one or two short sentences giving **one** unified summary of the email and any attachment excerpts (not a separate summary per file).
 - "suggested_replies": array of 1 to 3 very short reply phrases. Use simple words; avoid quotes or apostrophes inside the strings so the JSON stays valid.
 
 Example: """
@@ -724,11 +738,18 @@ def generate_email_summary(
     body_content: str | None,
     sender_email: str,
     correlation_id: str | None = None,
+    attachment_document_excerpt: str | None = None,
 ) -> dict[str, Any]:
     """On-demand summary generation: summary + suggested replies."""
     correlation_id = correlation_id or "none"
     settings = get_settings()
-    prompt = _build_summary_only_prompt(subject, body_preview, body_content, sender_email)
+    prompt = _build_summary_only_prompt(
+        subject,
+        body_preview,
+        body_content,
+        sender_email,
+        attachment_document_excerpt=attachment_document_excerpt,
+    )
     if not _parse_ollama_urls_for_summary(settings):
         logger.info("AI_SUMMARY: skipped_no_provider correlation_id=%s", correlation_id)
         return {"summary": None, "suggested_replies": []}
@@ -736,12 +757,20 @@ def generate_email_summary(
     ollama_retries = max(1, int(settings.ollama_max_retries))
     ollama_retry_delay = max(0.0, float(settings.ollama_retry_delay_seconds))
     last_err: Exception | None = None
+    has_docs = bool((attachment_document_excerpt or "").strip())
+    summary_max_tokens = 1024 if has_docs else 640
     for attempt in range(ollama_retries):
         try:
             base_url = _pick_ollama_base_url_for_summary(settings)
             client = _get_ollama_client(base_url)
             start = time.perf_counter()
-            content = _call_llm(client, settings.ollama_model, prompt, timeout=ollama_timeout, max_tokens=640)
+            content = _call_llm(
+                client,
+                settings.ollama_model,
+                prompt,
+                timeout=ollama_timeout,
+                max_tokens=summary_max_tokens,
+            )
             latency_ms = (time.perf_counter() - start) * 1000
             out = _content_to_summary_only_result(
                 content,

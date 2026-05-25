@@ -23,8 +23,8 @@ services:
       - ./backend/.env.docker
       - ./backend/.env
     environment:
-      OLLAMA_CLASSIFY_BASE_URL: http://172.16.200.30:11434
-      OLLAMA_SUMMARY_BASE_URL: http://172.16.200.6:11434
+      OLLAMA_CLASSIFY_BASE_URL: http://172.16.200.30:11434/v1/
+      OLLAMA_SUMMARY_BASE_URL: http://172.16.200.26:11434/v1/
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -69,7 +69,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
-      OLLAMA_CLASSIFY_BASE_URL: http://172.16.200.30:11434
+      OLLAMA_CLASSIFY_BASE_URL: http://172.16.200.30:11434/v1/
       # Faster CPU-only classification model
       OLLAMA_MODEL: "llama3.2:latest"
     depends_on:
@@ -88,9 +88,9 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
-      OLLAMA_SUMMARY_BASE_URL: http://172.16.200.6:11434
+      OLLAMA_SUMMARY_BASE_URL: http://172.16.200.26:11434/v1/
       # Higher quality summaries (on-demand)
-      OLLAMA_MODEL: "llama3.1:8b"
+      OLLAMA_MODEL: "llama3.1:latest"
     depends_on:
       - backend
       - postgres

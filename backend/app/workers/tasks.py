@@ -20,6 +20,7 @@ from app.db.models import (
 )
 from app.graph.auth import get_auth_headers
 from app.ai.classifier import classify_email_fields, generate_email_summary
+from app.ai.summary_attachments import build_document_excerpt_for_email_summary
 from app.ai.escalation import compute_escalation
 from app.ai.trust import evaluate_suspicious, update_sender_trust, should_override_to_spam
 import redis
@@ -773,12 +774,14 @@ def generate_email_summary_task(self, email_id: str, mailbox_owner_email: str | 
             email.ai_summary_error_message = None
             db.commit()
         start = time.perf_counter()
+        doc_excerpt = build_document_excerpt_for_email_summary(db, email, correlation_id)
         result = generate_email_summary(
             subject=email.subject,
             body_preview=email.body_preview,
             body_content=email.body_content,
             sender_email=email.sender_email or "",
             correlation_id=correlation_id,
+            attachment_document_excerpt=doc_excerpt or None,
         )
         latency = time.perf_counter() - start
         _record_ai_latency(latency)
