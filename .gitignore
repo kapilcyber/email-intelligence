@@ -49,3 +49,10 @@ env/
 
 # Misc
 *.local
+
+# Local database dumps
+backup.sql
+*_backup.sql
+
+# Local VM HTTPS certs
+email-dashboard/certificates/vm-ip-*.pem

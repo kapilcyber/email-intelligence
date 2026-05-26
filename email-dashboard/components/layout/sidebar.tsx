@@ -37,6 +37,15 @@ import type { TeamOut } from "@/lib/types";
 const SIDEBAR_LAYOUT_ANIM = "duration-200 ease-out motion-reduce:transition-none";
 /** Compositor-only fades for text (no max-width transition). */
 const SIDEBAR_LABEL_FADE = "duration-200 ease-out motion-reduce:transition-none";
+const ADMIN_TEAMS_ICON_CLASS = "text-amber-500";
+const ADMIN_PIPELINE_ICON_CLASS = "text-cyan-500";
+
+type SidebarNavItem = {
+  href: string;
+  label: string;
+  icon: LucideIcon;
+  iconClassName: string;
+};
 
 function userInitials(displayName: string): string {
   const s = displayName.trim();
@@ -54,42 +63,44 @@ function userInitials(displayName: string): string {
   return s.slice(0, 2).toUpperCase() || "?";
 }
 
-const navItemsTop = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/emails", label: "Mailbox", icon: Mail },
-  { href: "/threads", label: "Threads", icon: MessageSquare },
+const navItemsTop: SidebarNavItem[] = [
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, iconClassName: "text-violet-500" },
+  { href: "/emails", label: "Mailbox", icon: Mail, iconClassName: "text-sky-500" },
+  { href: "/threads", label: "Threads", icon: MessageSquare, iconClassName: "text-emerald-500" },
 ];
 
-const navItemsAfterDepartments = [
-  { href: "/escalations", label: "Escalations", icon: AlertCircle },
-  { href: "/leads", label: "Leads", icon: List },
-  { href: "/how-to-use", label: "How to use", icon: BookOpen },
+const navItemsAfterDepartments: SidebarNavItem[] = [
+  { href: "/escalations", label: "Escalations", icon: AlertCircle, iconClassName: "text-rose-500" },
+  { href: "/leads", label: "Leads", icon: List, iconClassName: "text-orange-500" },
+  { href: "/how-to-use", label: "How to use", icon: BookOpen, iconClassName: "text-indigo-500" },
 ];
 
 /** Shown to org Managers only (admins use admin nav blocks below). Excludes admin-only routes. */
-const managerAdminNavItems = [{ href: "/admin/my-projects", label: "Projects", icon: FolderKanban }];
+const managerAdminNavItems: SidebarNavItem[] = [
+  { href: "/admin/my-projects", label: "Projects", icon: FolderKanban, iconClassName: "text-fuchsia-500" },
+];
 
 /** Tracker, Review, Escalations, Leads - rendered inside {@link AdminPipelineNavSection}. */
-const adminPipelineDropdownItems: Array<{ href: string; label: string; icon: LucideIcon }> = [
-  { href: "/admin/tracker", label: "Tracker", icon: CalendarRange },
-  { href: "/admin/review", label: "Review", icon: ClipboardCheck },
-  { href: "/admin/escalations", label: "Escalations", icon: AlertCircle },
-  { href: "/admin/leads", label: "Leads", icon: List },
+const adminPipelineDropdownItems: SidebarNavItem[] = [
+  { href: "/admin/tracker", label: "Tracker", icon: CalendarRange, iconClassName: "text-cyan-500" },
+  { href: "/admin/review", label: "Review", icon: ClipboardCheck, iconClassName: "text-lime-500" },
+  { href: "/admin/escalations", label: "Escalations", icon: AlertCircle, iconClassName: "text-rose-500" },
+  { href: "/admin/leads", label: "Leads", icon: List, iconClassName: "text-orange-500" },
 ];
 
 /** Full admin: links before the pipeline dropdown. */
-const adminNavBeforePipeline = [
-  { href: "/admin/team-leaders", label: "Team leaders", icon: UserCircle },
-  { href: "/admin/team-projects", label: "Projects", icon: FolderKanban },
+const adminNavBeforePipeline: SidebarNavItem[] = [
+  { href: "/admin/team-leaders", label: "Team leaders", icon: UserCircle, iconClassName: "text-pink-500" },
+  { href: "/admin/team-projects", label: "Projects", icon: FolderKanban, iconClassName: "text-fuchsia-500" },
 ];
 
 /** Full admin: links after the pipeline dropdown. */
-const adminNavAfterPipeline = [
-  { href: "/admin/workflow", label: "Hierarchy", icon: Network },
-  { href: "/admin/deleted-mail", label: "Deleted mail", icon: Trash2 },
-  { href: "/admin/external-mail", label: "External mail", icon: Globe2 },
-  { href: "/admin/approvals", label: "Approvals", icon: ShieldCheck },
-  { href: "/admin/archive-projects", label: "Archive Projects", icon: FolderOpen },
+const adminNavAfterPipeline: SidebarNavItem[] = [
+  { href: "/admin/workflow", label: "Hierarchy", icon: Network, iconClassName: "text-teal-500" },
+  { href: "/admin/deleted-mail", label: "Deleted mail", icon: Trash2, iconClassName: "text-red-500" },
+  { href: "/admin/external-mail", label: "External mail", icon: Globe2, iconClassName: "text-blue-500" },
+  { href: "/admin/approvals", label: "Approvals", icon: ShieldCheck, iconClassName: "text-green-500" },
+  { href: "/admin/archive-projects", label: "Archive Projects", icon: FolderOpen, iconClassName: "text-yellow-500" },
 ];
 
 const ADMIN_ONLY_HREFS = new Set([
@@ -270,7 +281,7 @@ function AdminTeamsNavSection({
           aria-haspopup="true"
           title="Teams (admin)"
         >
-          <Users className="h-5 w-5 shrink-0" />
+          <Users className={cn("h-5 w-5 shrink-0", ADMIN_TEAMS_ICON_CLASS)} />
         </button>
         <CollapsedSidebarFlyout
           open={flyoutOpen}
@@ -350,7 +361,7 @@ function AdminTeamsNavSection({
         )}
         aria-expanded={accordionOpen}
       >
-        <Users className="h-5 w-5 shrink-0" />
+        <Users className={cn("h-5 w-5 shrink-0", ADMIN_TEAMS_ICON_CLASS)} />
         <span className="min-w-0 flex-1">Teams</span>
         <ChevronRight
           className={cn("h-4 w-4 shrink-0 transition-transform duration-200", accordionOpen && "rotate-90")}
@@ -450,7 +461,7 @@ function AdminPipelineNavSection({
           aria-haspopup="true"
           title="Tracking"
         >
-          <ListTree className="h-5 w-5 shrink-0" aria-hidden />
+          <ListTree className={cn("h-5 w-5 shrink-0", ADMIN_PIPELINE_ICON_CLASS)} aria-hidden />
         </button>
         <CollapsedSidebarFlyout
           open={flyoutOpen}
@@ -463,7 +474,7 @@ function AdminPipelineNavSection({
             Tracking
           </p>
           <ul className="max-h-[70vh] overflow-auto py-1" role="menu">
-            {adminPipelineDropdownItems.map(({ href, label, icon: Icon }) => {
+            {adminPipelineDropdownItems.map(({ href, label, icon: Icon, iconClassName }) => {
               const active = pathname === href || pathname.startsWith(`${href}/`);
               return (
                 <li key={href}>
@@ -481,7 +492,7 @@ function AdminPipelineNavSection({
                         : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
                     )}
                   >
-                    <Icon className="h-4 w-4 shrink-0 opacity-90" aria-hidden />
+                    <Icon className={cn("h-4 w-4 shrink-0", iconClassName)} aria-hidden />
                     <span className="truncate">{label}</span>
                   </Link>
                 </li>
@@ -506,7 +517,7 @@ function AdminPipelineNavSection({
         )}
         aria-expanded={accordionOpen}
       >
-        <ListTree className="h-5 w-5 shrink-0" aria-hidden />
+        <ListTree className={cn("h-5 w-5 shrink-0", ADMIN_PIPELINE_ICON_CLASS)} aria-hidden />
         <span className="min-w-0 flex-1">Tracking</span>
         <ChevronRight
           className={cn("h-4 w-4 shrink-0 transition-transform duration-200", accordionOpen && "rotate-90")}
@@ -515,7 +526,7 @@ function AdminPipelineNavSection({
       </button>
       {accordionOpen && (
         <ul className="ml-2 space-y-0.5 border-l border-border py-0.5 pl-2" role="list">
-          {adminPipelineDropdownItems.map(({ href, label, icon: Icon }) => {
+          {adminPipelineDropdownItems.map(({ href, label, icon: Icon, iconClassName }) => {
             const active = pathname === href || pathname.startsWith(`${href}/`);
             return (
               <li key={href}>
@@ -527,7 +538,7 @@ function AdminPipelineNavSection({
                     active ? "bg-accent font-medium text-accent-foreground" : "text-muted-foreground hover:bg-muted"
                   )}
                 >
-                  <Icon className="h-4 w-4 shrink-0 opacity-80" aria-hidden />
+                  <Icon className={cn("h-4 w-4 shrink-0", iconClassName)} aria-hidden />
                   <span className="truncate">{label}</span>
                 </Link>
               </li>
@@ -615,8 +626,8 @@ export function Sidebar({
     setAvatarImgFailed(false);
   }, [profileImage]);
 
-  const renderElevatedAdminLink = (item: { href: string; label: string; icon: LucideIcon }) => {
-    const { href, label, icon: Icon } = item;
+  const renderElevatedAdminLink = (item: SidebarNavItem) => {
+    const { href, label, icon: Icon, iconClassName } = item;
     const isActive = pathname === href || pathname.startsWith(`${href}/`);
     return (
       <Link
@@ -633,7 +644,7 @@ export function Sidebar({
         )}
         title={navCollapsed ? label : undefined}
       >
-        <Icon className="h-5 w-5 shrink-0" />
+        <Icon className={cn("h-5 w-5 shrink-0", iconClassName)} />
         <span
           className={cn(
             "truncate transition-opacity " + SIDEBAR_LABEL_FADE,
@@ -647,7 +658,7 @@ export function Sidebar({
     );
   };
 
-  const renderNavLink = (href: string, label: string, Icon: typeof LayoutDashboard) => {
+  const renderNavLink = ({ href, label, icon: Icon, iconClassName }: SidebarNavItem) => {
     let active = false;
     if (href === "/dashboard") active = pathname === "/dashboard";
     else if (href === "/emails")
@@ -668,7 +679,7 @@ export function Sidebar({
         )}
         title={navCollapsed ? label : undefined}
       >
-        <Icon className="h-5 w-5 shrink-0" />
+        <Icon className={cn("h-5 w-5 shrink-0", iconClassName)} />
         <span
           className={cn(
             "truncate transition-opacity " + SIDEBAR_LABEL_FADE,
@@ -763,8 +774,8 @@ export function Sidebar({
         )}
       >
         <div ref={navScrollContentRef} className="w-full space-y-0.5">
-          {navItemsTop.map(({ href, label, icon }) => renderNavLink(href, label, icon))}
-          {navItemsAfterDepartments.map(({ href, label, icon }) => renderNavLink(href, label, icon))}
+          {navItemsTop.map(renderNavLink)}
+          {navItemsAfterDepartments.map(renderNavLink)}
           {showElevatedAdminNav && (
             <>
               <p
