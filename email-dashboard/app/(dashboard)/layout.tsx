@@ -11,12 +11,16 @@ import { RoleChangeSessionGuard } from "@/components/layout/role-change-toast";
 import { MomPromptHost } from "@/components/meetings/mom-prompt-host";
 import { FollowUpReminderHost } from "@/components/follow-up/follow-up-reminder-host";
 import { ToggleWalkthrough } from "@/components/tour/toggle-walkthrough";
+import { cn } from "@/lib/utils";
+
+const OUTLOOK_EMBED_STORAGE_KEY = "email-intelligence-embedded-host";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [embeddedMode, setEmbeddedMode] = useState(false);
   const mainRef = useRef<HTMLElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const sidebarNavRef = useRef<HTMLElement | null>(null);
@@ -40,6 +44,26 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   useEffect(() => {
     setMobileNavOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const fromQuery = params.get("host") === "outlook" || params.get("source") === "outlook-addin";
+    let stored = false;
+    try {
+      stored = window.sessionStorage.getItem(OUTLOOK_EMBED_STORAGE_KEY) === "outlook";
+      if (fromQuery) {
+        window.sessionStorage.setItem(OUTLOOK_EMBED_STORAGE_KEY, "outlook");
+      }
+    } catch {
+      stored = false;
+    }
+    const nextEmbeddedMode = fromQuery || stored;
+    setEmbeddedMode(nextEmbeddedMode);
+    if (nextEmbeddedMode) {
+      setSidebarCollapsed(true);
+      setMobileNavOpen(false);
+    }
   }, [pathname]);
 
   useEffect(() => {
@@ -118,7 +142,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <DashboardExtraLenisContext.Provider value={registerExtraLenis}>
-      <div className="flex h-screen overflow-hidden bg-app-gradient">
+      <div className={cn("flex h-screen overflow-hidden bg-app-gradient", embeddedMode && "min-w-0")}>
         {isMobile && mobileNavOpen ? (
           <button
             type="button"
@@ -146,24 +170,33 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           }
         >
           <Topbar
-            environment={env}
+            environment={embeddedMode ? `${env} / Outlook` : env}
             onOpenMobileNav={isMobile ? () => setMobileNavOpen(true) : undefined}
           />
         </Suspense>
         <RoleChangeSessionGuard />
         <main
           ref={mainRef}
-          className="flex-1 overflow-auto bg-app-gradient pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))] pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] sm:pl-4 sm:pr-4 sm:pt-4 sm:pb-[max(1rem,env(safe-area-inset-bottom,0px))] md:pl-[max(1.5rem,env(safe-area-inset-left,0px))] md:pr-[max(1.5rem,env(safe-area-inset-right,0px))] md:pt-6 md:pb-[max(1.5rem,env(safe-area-inset-bottom,0px))]"
+          className={cn(
+            "flex-1 overflow-auto bg-app-gradient",
+            embeddedMode
+              ? "px-[max(0.5rem,env(safe-area-inset-left,0px))] pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))]"
+              : "pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))] pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] sm:pl-4 sm:pr-4 sm:pt-4 sm:pb-[max(1rem,env(safe-area-inset-bottom,0px))] md:pl-[max(1.5rem,env(safe-area-inset-left,0px))] md:pr-[max(1.5rem,env(safe-area-inset-right,0px))] md:pt-6 md:pb-[max(1.5rem,env(safe-area-inset-bottom,0px))]"
+          )}
         >
           <div ref={contentRef} className="min-h-full min-w-0">
             {children}
           </div>
         </main>
-        <Suspense fallback={null}>
-          <ToggleWalkthrough />
-        </Suspense>
-        <MomPromptHost />
-        <FollowUpReminderHost />
+        {!embeddedMode ? (
+          <>
+            <Suspense fallback={null}>
+              <ToggleWalkthrough />
+            </Suspense>
+            <MomPromptHost />
+            <FollowUpReminderHost />
+          </>
+        ) : null}
       </div>
     </div>
     </DashboardExtraLenisContext.Provider>

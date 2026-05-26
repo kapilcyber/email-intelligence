@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
+           xsi:type="MailApp">
+  <Id>8f3c1b2a-6d4e-4f1a-9c7b-2e8d0a1f4b5c</Id>
+  <Version>1.0.0.0</Version>
+  <ProviderName>Email Intelligence</ProviderName>
+  <DefaultLocale>en-US</DefaultLocale>
+  <DisplayName DefaultValue="Email Intelligence"/>
+  <Description DefaultValue="Open the Email Intelligence dashboard inside Outlook."/>
+  <IconUrl DefaultValue="https://172.16.200.30/outlook-addin/assets/icon-64.png"/>
+  <HighResolutionIconUrl DefaultValue="https://172.16.200.30/outlook-addin/assets/icon-128.png"/>
+  <SupportUrl DefaultValue="https://172.16.200.30"/>
+  <AppDomains>
+    <AppDomain>https://172.16.200.30</AppDomain>
+    <AppDomain>https://172.16.200.30</AppDomain>
+  </AppDomains>
+  <Hosts>
+    <Host Name="Mailbox"/>
+  </Hosts>
+  <Requirements>
+    <Sets DefaultMinVersion="1.8">
+      <Set Name="Mailbox"/>
+    </Sets>
+  </Requirements>
+  <FormSettings>
+    <Form xsi:type="ItemRead">
+      <DesktopSettings>
+        <SourceLocation DefaultValue="https://172.16.200.30/outlook"/>
+      </DesktopSettings>
+    </Form>
+    <Form xsi:type="ItemCompose">
+      <DesktopSettings>
+        <SourceLocation DefaultValue="https://172.16.200.30/outlook"/>
+      </DesktopSettings>
+    </Form>
+  </FormSettings>
+  <Permissions>ReadWriteItem</Permissions>
+  <Rule xsi:type="RuleCollection" Mode="Or">
+    <Rule xsi:type="ItemIs" ItemType="Message" FormType="Read"/>
+    <Rule xsi:type="ItemIs" ItemType="Message" FormType="Edit"/>
+  </Rule>
+  <DisableEntityHighlighting>false</DisableEntityHighlighting>
+  <VersionOverrides xmlns="http://schemas.microsoft.com/office/mailappversionoverrides" xsi:type="VersionOverridesV1_0">
+    <Requirements>
+      <bt:Sets DefaultMinVersion="1.8">
+        <bt:Set Name="Mailbox"/>
+      </bt:Sets>
+    </Requirements>
+    <Hosts>
+      <Host xsi:type="MailHost">
+        <DesktopFormFactor>
+          <FunctionFile resid="Commands.Url"/>
+          <ExtensionPoint xsi:type="MessageReadCommandSurface">
+            <OfficeTab id="TabDefault">
+              <Group id="msgReadEI">
+                <Label resid="GroupLabel"/>
+                <Control xsi:type="Button" id="msgReadOpenEI">
+                  <Label resid="TaskpaneButton.Label"/>
+                  <Supertip>
+                    <Title resid="TaskpaneButton.Label"/>
+                    <Description resid="TaskpaneButton.Tooltip"/>
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="Icon.16x16"/>
+                    <bt:Image size="32" resid="Icon.32x32"/>
+                    <bt:Image size="80" resid="Icon.80x80"/>
+                  </Icon>
+                  <Action xsi:type="ShowTaskpane">
+                    <SourceLocation resid="Taskpane.Url"/>
+                    <SupportsPinning>true</SupportsPinning>
+                  </Action>
+                </Control>
+              </Group>
+            </OfficeTab>
+          </ExtensionPoint>
+          <ExtensionPoint xsi:type="MessageComposeCommandSurface">
+            <OfficeTab id="TabDefault">
+              <Group id="msgComposeEI">
+                <Label resid="GroupLabel"/>
+                <Control xsi:type="Button" id="msgComposeOpenEI">
+                  <Label resid="TaskpaneButton.Label"/>
+                  <Supertip>
+                    <Title resid="TaskpaneButton.Label"/>
+                    <Description resid="TaskpaneButton.Tooltip"/>
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="Icon.16x16"/>
+                    <bt:Image size="32" resid="Icon.32x32"/>
+                    <bt:Image size="80" resid="Icon.80x80"/>
+                  </Icon>
+                  <Action xsi:type="ShowTaskpane">
+                    <SourceLocation resid="Taskpane.Url"/>
+                    <SupportsPinning>true</SupportsPinning>
+                  </Action>
+                </Control>
+              </Group>
+            </OfficeTab>
+          </ExtensionPoint>
+        </DesktopFormFactor>
+      </Host>
+    </Hosts>
+    <Resources>
+      <bt:Images>
+        <bt:Image id="Icon.16x16" DefaultValue="https://172.16.200.30/outlook-addin/assets/icon-16.png"/>
+        <bt:Image id="Icon.32x32" DefaultValue="https://172.16.200.30/outlook-addin/assets/icon-32.png"/>
+        <bt:Image id="Icon.80x80" DefaultValue="https://172.16.200.30/outlook-addin/assets/icon-80.png"/>
+      </bt:Images>
+      <bt:Urls>
+        <bt:Url id="Taskpane.Url" DefaultValue="https://172.16.200.30/outlook"/>
+        <bt:Url id="Commands.Url" DefaultValue="https://172.16.200.30/outlook-addin/commands.html"/>
+      </bt:Urls>
+      <bt:ShortStrings>
+        <bt:String id="GroupLabel" DefaultValue="Email Intelligence"/>
+        <bt:String id="TaskpaneButton.Label" DefaultValue="Dashboard"/>
+      </bt:ShortStrings>
+      <bt:LongStrings>
+        <bt:String id="TaskpaneButton.Tooltip" DefaultValue="Open Email Intelligence directly inside the Outlook task pane."/>
+      </bt:LongStrings>
+    </Resources>
+  </VersionOverrides>
+</OfficeApp>

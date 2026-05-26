@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Email Intelligence</title>
+  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+  <link rel="stylesheet" href="taskpane.css" />
+</head>
+<body>
+  <main class="wrap">
+    <h1 class="title">Email Intelligence</h1>
+    <p class="muted">
+      Review the current Outlook item, then open the dashboard with or without the captured message context.
+    </p>
+
+    <section class="card">
+      <p class="eyebrow">Current Outlook item</p>
+      <dl class="meta">
+        <div class="meta-row">
+          <dt>Mailbox</dt>
+          <dd id="context-mailbox">Loading...</dd>
+        </div>
+        <div class="meta-row">
+          <dt>Subject</dt>
+          <dd id="context-subject">Loading...</dd>
+        </div>
+        <div class="meta-row">
+          <dt>From</dt>
+          <dd id="context-from">Loading...</dd>
+        </div>
+        <div class="meta-row">
+          <dt>To</dt>
+          <dd id="context-to">Loading...</dd>
+        </div>
+        <div class="meta-row">
+          <dt>Item ID</dt>
+          <dd id="context-item-id">Loading...</dd>
+        </div>
+        <div class="meta-row">
+          <dt>REST ID</dt>
+          <dd id="context-rest-id">Loading...</dd>
+        </div>
+      </dl>
+    </section>
+
+    <div class="actions">
+      <button type="button" id="open-dashboard" class="btn">Open dashboard</button>
+      <button type="button" id="open-dashboard-context" class="btn btn-secondary">
+        Open with current email
+      </button>
+    </div>
+
+    <p class="hint">
+      The second button appends the current Outlook context as query parameters so the web app can deep-link or resolve the message later.
+    </p>
+    <p id="status" class="status" role="status"></p>
+  </main>
+  <script src="taskpane.js"></script>
+</body>
+</html>

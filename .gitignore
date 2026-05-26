@@ -56,3 +56,6 @@ backup.sql
 
 # Local VM HTTPS certs
 email-dashboard/certificates/vm-ip-*.pem
+
+# Outlook add-in package
+outlook-addin/*.zip

@@ -139,6 +139,16 @@ services:
       - ./email-dashboard/certificates/vm-ip-172.16.200.30.pem:/etc/nginx/certs/dashboard.pem:ro
       - ./email-dashboard/certificates/vm-ip-172.16.200.30-key.pem:/etc/nginx/certs/dashboard-key.pem:ro
 
+  outlook_addin:
+    image: nginx:1.27-alpine
+    profiles:
+      - outlook-addin
+    ports:
+      - "3010:80"
+    volumes:
+      - ./outlook-addin/dist:/usr/share/nginx/html:ro
+      - ./outlook-addin/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+
 volumes:
   pgdata:
   celerybeat:
