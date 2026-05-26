@@ -118,7 +118,7 @@ services:
       args:
         NEXT_PUBLIC_API_URL: /backend
         BACKEND_API_URL: http://backend:8000
-        NEXTAUTH_URL: https://unarchly-dextrous-aide.ngrok-free.dev
+        NEXTAUTH_URL: https://172.16.200.30
     env_file:
       - ./email-dashboard/.env.local
     depends_on:
