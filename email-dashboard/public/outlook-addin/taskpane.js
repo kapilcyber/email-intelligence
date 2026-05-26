@@ -1,5 +1,5 @@
 /* Injected at build time into dist/taskpane.js */
-var DASHBOARD_URL = "https://172.16.200.30";
+var DASHBOARD_URL = "https://unarchly-dextrous-aide.ngrok-free.dev";
 
 (function () {
   var currentContext = null;

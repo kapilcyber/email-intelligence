@@ -118,7 +118,7 @@ services:
       args:
         NEXT_PUBLIC_API_URL: /backend
         BACKEND_API_URL: http://backend:8000
-        NEXTAUTH_URL: https://172.16.200.30
+        NEXTAUTH_URL: https://unarchly-dextrous-aide.ngrok-free.dev
     env_file:
       - ./email-dashboard/.env.local
     depends_on:
@@ -148,6 +148,21 @@ services:
     volumes:
       - ./outlook-addin/dist:/usr/share/nginx/html:ro
       - ./outlook-addin/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+
+  ngrok:
+    image: ngrok/ngrok:latest
+    profiles:
+      - ngrok
+    depends_on:
+      - dashboard_https
+    env_file:
+      - ./infra/ngrok/.env
+    command:
+      - "http"
+      - "https://dashboard_https:443"
+      - "--upstream-tls-verify=false"
+    ports:
+      - "4040:4040"
 
 volumes:
   pgdata:
