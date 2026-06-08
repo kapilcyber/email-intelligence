@@ -78,7 +78,7 @@ class Email(Base):
     # Phase 3 - escalation, leads, routing
     is_escalation = Column(Boolean, default=False, index=True)
     escalation_metadata = Column(JSONB, nullable=True)  # {"reasons": ["priority_high", "keywords", ...]} for audit
-    assigned_team = Column(String(64), nullable=True, index=True)  # Tech, Networking, Cybersecurity, Sales, Accounts, Data & AI, General
+    assigned_team = Column(String(64), nullable=True, index=True)  # Tech, Networking, Cybersecurity, Sales, Accounts, Data & AI, HR, General
     lead_label = Column(String(32), nullable=True, index=True)  # Hot, Warm, Cold
     lead_metadata = Column(JSONB, nullable=True)  # {"buying_signals": ["demo_request", "budget_discussion", ...]}
 
@@ -114,7 +114,7 @@ class Attachment(Base):
 
 
 class Team(Base):
-    """Phase 4: Teams (Tech, Networking, Cybersecurity, Sales, Accounts, Data & AI)."""
+    """Phase 4: Teams (Tech, Networking, Cybersecurity, Sales, Accounts, Data & AI, HR)."""
     __tablename__ = "teams"
 
     id = Column(String(36), primary_key=True, default=uuid_gen)

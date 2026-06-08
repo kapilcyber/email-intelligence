@@ -607,29 +607,3 @@ export interface RecentSignInOut {
   lastLoginAt: string | null;
   createdAt: string | null;
 }
-
-/** One persisted session: created at login, closed at logout. */
-export interface LoginEventOut {
-  id: string;
-  userId: string;
-  email: string;
-  displayName: string | null;
-  loginAt: string;
-  logoutAt: string | null;
-  isLoggedIn: boolean;
-  /** oauth = Microsoft sign-in; session = opened from /api/me without oauth. */
-  loginSource: string;
-}
-
-export interface LoginSyncStatusOut {
-  totalUsers: number;
-  usersWithLastLoginAt: number;
-  usersMissingLastLoginAt: number;
-  totalLoginEvents: number;
-  activeSessions: number;
-  oauthEvents24h: number;
-  sessionEvents24h: number;
-  lastOauthEventAt: string | null;
-  lastAnyEventAt: string | null;
-  syncHealth: "healthy" | "warning" | "error" | string;
-}

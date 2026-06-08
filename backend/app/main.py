@@ -15,7 +15,7 @@ from app.api import health, webhook, emails, dashboard, queue, settings as setti
 from app.api.deps import get_current_user_email
 from app.config import get_settings
 from app.db.session import get_db
-from app.db.models import User, Team, UserLoginEvent, uuid_gen
+from app.db.models import User, Team
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -58,55 +58,6 @@ def root():
 def api_root():
     """Avoid 404 when requesting GET /api or GET /api/."""
     return {"name": "Email Intelligence API", "docs": "/docs", "health": "/api/health"}
-
-
-def _close_open_sessions(db, user: User, *, close_at: datetime | None = None) -> None:
-    ts = close_at or datetime.now(timezone.utc)
-    db.query(UserLoginEvent).filter(
-        UserLoginEvent.user_id == user.id,
-        UserLoginEvent.is_logged_in.is_(True),
-    ).update(
-        {UserLoginEvent.logout_at: ts, UserLoginEvent.is_logged_in: False},
-        synchronize_session=False,
-    )
-    db.commit()
-
-
-def _start_session(db, user: User, *, login_source: str, now: datetime | None = None) -> None:
-    ts = now or datetime.now(timezone.utc)
-    src = (login_source or "session").strip().lower()
-    if src not in ("oauth", "session"):
-        src = "session"
-    db.add(
-        UserLoginEvent(
-            id=uuid_gen(),
-            user_id=user.id,
-            email=user.email,
-            login_at=ts,
-            logout_at=None,
-            is_logged_in=True,
-            login_source=src,
-        )
-    )
-    db.commit()
-
-
-def _record_session_for_me(db, user: User, login_source: str | None, _: bool) -> None:
-    """OAuth sign-in starts a fresh session; otherwise ensure one open session (real-time /api/me)."""
-    now = datetime.now(timezone.utc)
-    oauth = (login_source or "").strip().lower() == "oauth"
-    if oauth:
-        _close_open_sessions(db, user, close_at=now)
-        _start_session(db, user, login_source="oauth", now=now)
-        return
-    open_session = (
-        db.query(UserLoginEvent)
-        .filter(UserLoginEvent.user_id == user.id, UserLoginEvent.is_logged_in.is_(True))
-        .first()
-    )
-    if open_session is not None:
-        return
-    _start_session(db, user, login_source="session", now=now)
 
 
 def _role_promotion_payload(user: User, role: str) -> dict | None:
@@ -157,7 +108,6 @@ def _api_me_sync(
         user.last_login_at = now
         db.commit()
         db.refresh(user)
-    _record_session_for_me(db, user, x_login_source, user_created)
     login_src = (x_login_source or "").strip().lower()
     if login_src == "oauth" and getattr(settings, "mailbox_sync_on_oauth_login_enabled", True):
         try:
@@ -236,21 +186,10 @@ def api_me_logout(
     email: str = Depends(get_current_user_email),
     db=Depends(get_db),
 ):
-    """Close the active session row (real-time logout)."""
+    """Acknowledge logout. Login/session audit rows are no longer persisted."""
     user = db.query(User).filter(User.email == email).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    now = datetime.now(timezone.utc)
-    row = (
-        db.query(UserLoginEvent)
-        .filter(UserLoginEvent.user_id == user.id, UserLoginEvent.is_logged_in.is_(True))
-        .order_by(UserLoginEvent.login_at.desc())
-        .first()
-    )
-    if row:
-        row.logout_at = now
-        row.is_logged_in = False
-        db.commit()
     return {"ok": True}
 
 

@@ -25,6 +25,7 @@ import {
   Trash2,
   ListTree,
   Globe2,
+  GraduationCap,
   type LucideIcon,
 } from "lucide-react";
 import { LenisScrollArea } from "@/components/lenis/lenis-scroll-area";
@@ -39,6 +40,7 @@ const SIDEBAR_LAYOUT_ANIM = "duration-200 ease-out motion-reduce:transition-none
 const SIDEBAR_LABEL_FADE = "duration-200 ease-out motion-reduce:transition-none";
 const ADMIN_TEAMS_ICON_CLASS = "text-amber-500";
 const ADMIN_PIPELINE_ICON_CLASS = "text-cyan-500";
+const SKILLVAULT_URL = "http://172.16.200.30:3005/skillvault";
 
 type SidebarNavItem = {
   href: string;
@@ -46,6 +48,13 @@ type SidebarNavItem = {
   icon: LucideIcon;
   iconClassName: string;
 };
+
+function formatSidebarRoleLabel(role: string, department: string | null, isAdmin: boolean): string {
+  if (isAdmin) return "Admin";
+  const roleLabel = (role ?? "Member").trim() || "Member";
+  const team = (department ?? "").trim();
+  return team ? `${roleLabel} · ${team}` : roleLabel;
+}
 
 function userInitials(displayName: string): string {
   const s = displayName.trim();
@@ -598,9 +607,9 @@ export function Sidebar({
           const effectiveAdmin = r.isAdmin || isInEnvList;
           setIsAdmin(effectiveAdmin);
           setIsManagerRole((r.role ?? "").trim() === "Manager");
-          setManagerDepartment((r.department ?? "").trim() || null);
-          if (effectiveAdmin) setRoleDisplay("Admin");
-          else setRoleDisplay((r.role ?? "Member").trim() || "Member");
+          const department = (r.department ?? "").trim() || null;
+          setManagerDepartment(department);
+          setRoleDisplay(formatSidebarRoleLabel(r.role ?? "Member", department, effectiveAdmin));
         })
         .catch(() => {
           setIsAdmin(isInEnvList);
@@ -657,6 +666,36 @@ export function Sidebar({
       </Link>
     );
   };
+
+  const isHrTeamMember = (managerDepartment ?? "").trim().toLowerCase() === "hr";
+
+  const renderExternalNavLink = ({ href, label, icon: Icon, iconClassName }: SidebarNavItem) => (
+    <a
+      key={href}
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={() => isMobile && onMobileClose?.()}
+      className={cn(
+        "flex min-w-0 items-center overflow-hidden rounded-lg py-2.5 text-sm font-medium transition-[padding,gap,color,background-color] " +
+          SIDEBAR_LAYOUT_ANIM,
+        "text-muted-foreground hover:bg-muted hover:text-foreground",
+        navCollapsed ? "justify-center gap-0 px-2" : "gap-3 px-3"
+      )}
+      title={navCollapsed ? label : undefined}
+    >
+      <Icon className={cn("h-5 w-5 shrink-0", iconClassName)} />
+      <span
+        className={cn(
+          "truncate transition-opacity " + SIDEBAR_LABEL_FADE,
+          navCollapsed ? "w-0 shrink-0 overflow-hidden opacity-0" : "min-w-0 flex-1 opacity-100"
+        )}
+        aria-hidden={navCollapsed}
+      >
+        {label}
+      </span>
+    </a>
+  );
 
   const renderNavLink = ({ href, label, icon: Icon, iconClassName }: SidebarNavItem) => {
     let active = false;
@@ -776,6 +815,14 @@ export function Sidebar({
         <div ref={navScrollContentRef} className="w-full space-y-0.5">
           {navItemsTop.map(renderNavLink)}
           {navItemsAfterDepartments.map(renderNavLink)}
+          {isHrTeamMember
+            ? renderExternalNavLink({
+                href: SKILLVAULT_URL,
+                label: "SkillVault",
+                icon: GraduationCap,
+                iconClassName: "text-purple-500",
+              })
+            : null}
           {showElevatedAdminNav && (
             <>
               <p

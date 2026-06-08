@@ -32,6 +32,10 @@ services:
       - redis
     ports:
       - "8000:8000"
+    networks:
+      default:
+        aliases:
+          - email-intelligence-api
 
   migrate:
     build:
@@ -117,7 +121,7 @@ services:
       context: ./email-dashboard
       args:
         NEXT_PUBLIC_API_URL: /backend
-        BACKEND_API_URL: http://backend:8000
+        BACKEND_API_URL: http://email-intelligence-api:8000
         NEXTAUTH_URL: https://172.16.200.30
     env_file:
       - ./email-dashboard/.env.local

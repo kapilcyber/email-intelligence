@@ -1,7 +1,7 @@
 import logging
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from app.workers.celery_app import celery_app
 from sqlalchemy import or_
 from app.config import get_settings
@@ -13,7 +13,6 @@ from app.db.models import (
     Sender,
     Team,
     User,
-    UserLoginEvent,
     DailySummary,
     EscalationThread,
     MailboxMessageRule,
@@ -525,7 +524,7 @@ def sync_message_rules_for_all_users_task(ignore_sync_disabled: bool = False):
 @celery_app.task(name="app.workers.tasks.sync_logged_in_users_mailboxes_task")
 def sync_logged_in_users_mailboxes_task(days: int | None = None):
     """
-    Enqueue full-mailbox backfill for each user that currently has an open session (dashboard / OAuth).
+    Enqueue full-mailbox backfill for users recently active in the dashboard.
     Intended for Celery Beat (default every 5 minutes). Uses same Graph path as POST /api/emails/backfill.
     """
     cfg = get_settings()
@@ -533,24 +532,24 @@ def sync_logged_in_users_mailboxes_task(days: int | None = None):
         logger.info("sync_logged_in_users_mailboxes_task: skipped (mailbox_auto_sync_logged_in_enabled is false)")
         return {"ok": True, "skipped": True, "message": "mailbox_auto_sync_logged_in_enabled is false"}
     d = days if days is not None else int(getattr(cfg, "mailbox_auto_sync_logged_in_days", 0) or 0)
+    interval_mins = max(1, int(getattr(cfg, "mailbox_auto_sync_logged_in_interval_minutes", 5) or 5))
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=interval_mins + 10)
     db = SessionLocal()
     try:
-        open_user_ids = (
-            db.query(UserLoginEvent.user_id)
-            .filter(UserLoginEvent.is_logged_in.is_(True))
-            .distinct()
-            .all()
-        )
-        ids = [row[0] for row in open_user_ids if row and row[0]]
-        if not ids:
-            logger.info("sync_logged_in_users_mailboxes_task: no active login sessions (user_login_events)")
-            return {"ok": True, "mailboxesEnqueued": 0, "message": "no active login sessions"}
         rows = (
             db.query(User.email)
-            .filter(User.id.in_(ids), User.email.isnot(None), User.email != "")
+            .filter(
+                User.last_login_at.isnot(None),
+                User.last_login_at >= cutoff,
+                User.email.isnot(None),
+                User.email != "",
+            )
             .distinct()
             .all()
         )
+        if not rows:
+            logger.info("sync_logged_in_users_mailboxes_task: no recently active users")
+            return {"ok": True, "mailboxesEnqueued": 0, "message": "no recently active users"}
         enq = 0
         for (addr,) in rows:
             e = (addr or "").strip()
@@ -678,7 +677,7 @@ def classify_email_task(self, email_id: str, mailbox_owner_email: str | None = N
                 email.lead_metadata = {"buying_signals": result.get("buying_signals") or []}
         if not skip_after_retag and getattr(Email, "assigned_team", None) is not None:
             category = (result.get("category") or "").strip()
-            category_to_team = {"Sales": "Sales", "Accounts": "Accounts", "Tech": "Tech", "HR": "General", "General": "General", "Spam": "General"}
+            category_to_team = {"Sales": "Sales", "Accounts": "Accounts", "Tech": "Tech", "HR": "HR", "General": "General", "Spam": "General"}
             email.assigned_team = category_to_team.get(category) if category else None
         if getattr(Email, "ai_status", None) is not None:
             email.ai_status = "completed"

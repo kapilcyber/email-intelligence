@@ -25,8 +25,6 @@ import type {
   TeamStatusOut,
   MeResponse,
   RecentSignInOut,
-  LoginEventOut,
-  LoginSyncStatusOut,
   TeamProjectOut,
   ProjectAssignmentUpsert,
   RetaggedResponse,
@@ -460,13 +458,6 @@ function createApi(userEmail: string | null, userDisplayName?: string | null) {
       const q = searchParams.toString();
       return withUser<RecentSignInOut[]>(`/api/admin/recent-sign-ins${q ? `?${q}` : ""}`);
     },
-    getLoginEvents: (params?: { limit?: number }) => {
-      const searchParams = new URLSearchParams();
-      if (params?.limit != null) searchParams.set("limit", String(params.limit));
-      const q = searchParams.toString();
-      return withUser<LoginEventOut[]>(`/api/admin/login-events${q ? `?${q}` : ""}`);
-    },
-    getLoginSyncStatus: () => withUser<LoginSyncStatusOut>("/api/admin/login-sync-status"),
     getWorkflow: () => withUser<WorkflowNode[]>("/api/admin/workflow"),
     updateUser: (userId: string, data: { role?: string; teamId?: string; managerId?: string; isTeamLead?: boolean }) => {
       const searchParams = new URLSearchParams();

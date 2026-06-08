@@ -3,13 +3,11 @@
 import { useCallback, useEffect, useState, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { getApi } from "@/lib/api/client";
-import type { UserOut, TeamOut, LoginEventOut } from "@/lib/types";
+import type { UserOut, TeamOut } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { LenisScrollArea } from "@/components/lenis/lenis-scroll-area";
-import { cn } from "@/lib/utils";
-import { UserCircle, Users, LogIn } from "lucide-react";
+import { UserCircle, Users } from "lucide-react";
 
 function activityTimestampMs(iso: string | null | undefined): number {
   if (!iso?.trim()) return 0;
@@ -46,7 +44,6 @@ export default function AdminTeamLeadersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
-  const [loginEvents, setLoginEvents] = useState<LoginEventOut[]>([]);
   const [me, setMe] = useState<{
     userId?: string;
     isAdmin?: boolean;
@@ -56,19 +53,6 @@ export default function AdminTeamLeadersPage() {
   const canEdit = !!me?.isAdmin;
   const isManagerRole = (me?.role ?? "").trim() === "Manager";
   const canAssignReportingTo = canEdit || isManagerRole;
-  const loginRows = useMemo(() => {
-    return [...loginEvents]
-      .sort((a, b) => activityTimestampMs(b.loginAt) - activityTimestampMs(a.loginAt))
-      .map((ev) => ({
-        key: ev.id ?? `${ev.email}-${ev.loginAt}`,
-        email: ev.email ?? "-",
-        displayName: ev.displayName ?? ev.email ?? "-",
-        loginAt: ev.loginAt ?? null,
-        logoutAt: ev.logoutAt ?? null,
-        isOnline: ev.isLoggedIn === true,
-        loginSource: ev.loginSource ?? "-",
-      }));
-  }, [loginEvents]);
 
   const sortedAllUsers = useMemo(() => {
     const score = (u: UserOut) => activityTimestampMs(u.lastLoginAt) || activityTimestampMs(u.createdAt);
@@ -135,56 +119,19 @@ export default function AdminTeamLeadersPage() {
               }
             : null
         );
-        const isAdminUser = !!meResp?.isAdmin;
-        return Promise.all([
-          api.getUsers({ role: "Manager" }),
-          api.getTeams(),
-          api.getUsers(),
-          isAdminUser
-            ? api.getLoginEvents({ limit: 1000 }).catch(() => [] as LoginEventOut[])
-            : Promise.resolve([] as LoginEventOut[]),
-        ]).then(([m, t, u, events]) => {
+        return Promise.all([api.getUsers({ role: "Manager" }), api.getTeams(), api.getUsers()]).then(([m, t, u]) => {
           setManagers(m);
           setTeams(t);
           setAllUsers(u);
-          setLoginEvents(events);
         });
       })
       .catch(() => setError("Failed to load data"))
       .finally(() => setLoading(false));
   };
 
-  const refreshLoginAudit = useCallback(() => {
-    if (!me?.isAdmin) return;
-    api
-      .getLoginEvents({ limit: 1000 })
-      .catch(() => [] as LoginEventOut[])
-      .then(setLoginEvents);
-  }, [api, me?.isAdmin]);
-
   useEffect(() => {
     load();
   }, [status, api]);
-
-  /** Admins only: keep login table fresh while this page is open. */
-  useEffect(() => {
-    if (status !== "authenticated" || !me?.isAdmin) return;
-    const tick = () => {
-      if (document.visibilityState !== "visible") return;
-      refreshLoginAudit();
-    };
-    const id = window.setInterval(tick, 4000);
-    return () => window.clearInterval(id);
-  }, [status, me?.isAdmin, refreshLoginAudit]);
-
-  useEffect(() => {
-    if (!me?.isAdmin) return;
-    const onVis = () => {
-      if (document.visibilityState === "visible") refreshLoginAudit();
-    };
-    document.addEventListener("visibilitychange", onVis);
-    return () => document.removeEventListener("visibilitychange", onVis);
-  }, [me?.isAdmin, refreshLoginAudit]);
 
   const assignRole = (userId: string, role: string) => {
     if (!canEdit) return;
@@ -376,155 +323,6 @@ export default function AdminTeamLeadersPage() {
           )}
         </CardContent>
       </Card>
-
-      {me?.isAdmin && (
-        <Card className="min-w-0 rounded-2xl border-border">
-          <CardHeader className="space-y-2 p-4 sm:p-6">
-            <CardTitle className="flex min-w-0 flex-wrap items-center gap-2 text-base leading-snug">
-              <LogIn className="h-5 w-5 shrink-0 text-violet-600 dark:text-violet-400" />
-              <span className="min-w-0 break-words">Login history (all users)</span>
-            </CardTitle>
-            <p className="text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
-              Live updates every 4s when this tab is visible. New sign-ins and logouts appear automatically.
-            </p>
-          </CardHeader>
-          <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
-            {loading ? (
-              <Skeleton className="h-28 w-full rounded-lg sm:h-32" />
-            ) : loginRows.length === 0 ? (
-              <p className="py-4 text-center text-sm text-neutral-500 dark:text-neutral-400">
-                No login events yet. Users will appear here after sign-in.
-              </p>
-            ) : (
-              <>
-                <ul className="divide-y divide-neutral-200 rounded-lg border border-border dark:divide-neutral-700 md:hidden">
-                  {loginRows.map((row) => (
-                    <li
-                      key={row.key}
-                      className={cn(
-                        "space-y-2 p-3",
-                        row.isOnline ? "bg-emerald-50/70 dark:bg-emerald-950/20" : "bg-panel/30"
-                      )}
-                    >
-                      <div className="min-w-0">
-                        <p className="break-words font-medium text-neutral-900 dark:text-neutral-50">
-                          {row.displayName}
-                        </p>
-                        <p className="break-words text-xs text-neutral-500 dark:text-neutral-400">{row.email}</p>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span
-                          className={
-                            row.loginSource === "oauth"
-                              ? "rounded-md bg-emerald-100 px-1.5 py-0.5 text-xs text-emerald-900 dark:bg-emerald-900/40 dark:text-emerald-200"
-                              : "rounded-md bg-slate-200 px-1.5 py-0.5 text-xs text-slate-800 dark:bg-slate-700 dark:text-slate-200"
-                          }
-                        >
-                          {row.loginSource}
-                        </span>
-                        {row.isOnline ? (
-                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">
-                            Logged in
-                          </span>
-                        ) : (
-                          <span className="rounded-full bg-neutral-200 px-2 py-0.5 text-xs font-medium text-neutral-700 dark:bg-neutral-700 dark:text-neutral-200">
-                            Logged out
-                          </span>
-                        )}
-                      </div>
-                      <dl className="grid gap-1.5 text-xs text-neutral-800 dark:text-neutral-200">
-                        <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-2">
-                          <dt className="shrink-0 font-medium text-neutral-500 dark:text-neutral-400">Login</dt>
-                          <dd className="min-w-0 break-words tabular-nums">{formatActivity(row.loginAt)}</dd>
-                        </div>
-                        <div className="flex flex-col gap-0.5 sm:flex-row sm:gap-2">
-                          <dt className="shrink-0 font-medium text-neutral-500 dark:text-neutral-400">Logout</dt>
-                          <dd className="min-w-0 break-words tabular-nums">
-                            {row.logoutAt ? formatActivity(row.logoutAt) : "-"}
-                          </dd>
-                        </div>
-                      </dl>
-                    </li>
-                  ))}
-                </ul>
-                <div className="hidden min-w-0 md:block">
-                  <LenisScrollArea
-                    axis="horizontal"
-                    className="rounded-lg border border-border [-webkit-overflow-scrolling:touch]"
-                  >
-                    <table className="min-w-[640px] w-full text-left text-sm">
-                      <thead className="border-b border-neutral-200 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800/50">
-                        <tr>
-                          <th className="whitespace-nowrap px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">
-                            User
-                          </th>
-                          <th className="whitespace-nowrap px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">
-                            Login source
-                          </th>
-                          <th className="whitespace-nowrap px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">
-                            Login time
-                          </th>
-                          <th className="whitespace-nowrap px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">
-                            Logout time
-                          </th>
-                          <th className="whitespace-nowrap px-4 py-3 font-semibold text-neutral-900 dark:text-neutral-50">
-                            Status
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-neutral-200 dark:divide-neutral-700">
-                        {loginRows.map((row) => (
-                          <tr
-                            key={row.key}
-                            className={
-                              row.isOnline
-                                ? "bg-emerald-50/70 dark:bg-emerald-950/20"
-                                : "bg-white dark:bg-transparent"
-                            }
-                          >
-                            <td className="px-4 py-3">
-                              <p className="font-medium text-neutral-900 dark:text-neutral-50">{row.displayName}</p>
-                              <p className="text-xs text-neutral-500 dark:text-neutral-400">{row.email}</p>
-                            </td>
-                            <td className="px-4 py-3">
-                              <span
-                                className={
-                                  row.loginSource === "oauth"
-                                    ? "rounded-md bg-emerald-100 px-1.5 py-0.5 text-xs text-emerald-900 dark:bg-emerald-900/40 dark:text-emerald-200"
-                                    : "rounded-md bg-slate-200 px-1.5 py-0.5 text-xs text-slate-800 dark:bg-slate-700 dark:text-slate-200"
-                                }
-                              >
-                                {row.loginSource}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 text-xs text-neutral-800 dark:text-neutral-200">
-                              {formatActivity(row.loginAt)}
-                            </td>
-                            <td className="px-4 py-3 text-xs text-neutral-800 dark:text-neutral-200">
-                              {row.logoutAt ? formatActivity(row.logoutAt) : "-"}
-                            </td>
-                            <td className="px-4 py-3">
-                              {row.isOnline ? (
-                                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">
-                                  Logged in
-                                </span>
-                              ) : (
-                                <span className="rounded-full bg-neutral-200 px-2 py-0.5 text-xs font-medium text-neutral-700 dark:bg-neutral-700 dark:text-neutral-200">
-                                  Logged out
-                                </span>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </LenisScrollArea>
-                </div>
-              </>
-            )}
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }

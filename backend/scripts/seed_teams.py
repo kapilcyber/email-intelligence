@@ -1,4 +1,4 @@
-"""Create teams and users tables (if missing) and seed the six teams. Run from backend: python scripts/seed_teams.py"""
+"""Create teams and users tables (if missing) and seed default teams. Run from backend: python scripts/seed_teams.py"""
 import sys
 from pathlib import Path
 
@@ -11,6 +11,7 @@ TEAM_NAMES = [
     "Sales",
     "Accounts",
     "Data & AI",
+    "HR",
 ]
 
 

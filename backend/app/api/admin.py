@@ -9,7 +9,7 @@ from sqlalchemy.exc import OperationalError, ProgrammingError
 from pydantic import BaseModel, Field
 
 from app.db.session import get_db
-from app.db.models import Team, User, UserLoginEvent, Email, Attachment, TeamProject, ProjectAssignment, RetagApprovalRequest
+from app.db.models import Team, User, Email, Attachment, TeamProject, ProjectAssignment, RetagApprovalRequest
 from app.api.admin_access import (
     actor_manager_scope_mailboxes,
     assert_mailbox_in_manager_scope,
@@ -203,35 +203,6 @@ class RecentSignInOut(BaseModel):
     role: str
     lastLoginAt: datetime | None = None
     createdAt: datetime | None = None
-
-    model_config = {"populate_by_name": True}
-
-
-class LoginEventOut(BaseModel):
-    id: str
-    userId: str
-    email: str
-    displayName: str | None = None
-    loginAt: datetime
-    logoutAt: datetime | None = None
-    isLoggedIn: bool
-    # oauth = Microsoft sign-in callback; session = opened via /api/me without oauth header.
-    loginSource: str
-
-    model_config = {"populate_by_name": True}
-
-
-class LoginSyncStatusOut(BaseModel):
-    totalUsers: int
-    usersWithLastLoginAt: int
-    usersMissingLastLoginAt: int
-    totalLoginEvents: int
-    activeSessions: int
-    oauthEvents24h: int
-    sessionEvents24h: int
-    lastOauthEventAt: datetime | None = None
-    lastAnyEventAt: datetime | None = None
-    syncHealth: str
 
     model_config = {"populate_by_name": True}
 
@@ -542,77 +513,6 @@ def list_users(
             )
         )
     return result
-
-
-@router.get("/login-events", response_model=list[LoginEventOut])
-def list_login_events(
-    db: Session = Depends(get_db),
-    limit: int = Query(500, ge=1, le=2000),
-    _auth: str = Depends(get_admin_user),
-):
-    """Session rows for all users (login → logout); newest first. Admin only."""
-    try:
-        q = db.query(UserLoginEvent, User).join(User, User.id == UserLoginEvent.user_id)
-        rows = q.order_by(desc(UserLoginEvent.login_at)).limit(limit).all()
-    except (OperationalError, ProgrammingError):
-        return []
-    return [
-        LoginEventOut(
-            id=e.id,
-            userId=e.user_id,
-            email=e.email,
-            displayName=u.display_name,
-            loginAt=e.login_at,
-            logoutAt=e.logout_at,
-            isLoggedIn=e.is_logged_in,
-            loginSource=e.login_source,
-        )
-        for e, u in rows
-    ]
-
-
-@router.get("/login-sync-status", response_model=LoginSyncStatusOut)
-def login_sync_status(
-    db: Session = Depends(get_db),
-    _auth: str = Depends(get_admin_user),
-):
-    """Org-wide diagnostics for auth→backend user sync. Admin only."""
-    now = datetime.now(timezone.utc)
-    cutoff = now.replace(microsecond=0) - timedelta(hours=24)
-    user_q = db.query(User)
-    event_q = db.query(UserLoginEvent)
-    total_users = user_q.count()
-    users_with_last_login = user_q.filter(User.last_login_at.isnot(None)).count()
-    users_missing_last_login = max(0, total_users - users_with_last_login)
-    total_events = event_q.count()
-    active_sessions = event_q.filter(UserLoginEvent.is_logged_in.is_(True)).count()
-    oauth_24h = event_q.filter(
-        UserLoginEvent.login_source == "oauth",
-        UserLoginEvent.login_at >= cutoff,
-    ).count()
-    session_24h = event_q.filter(
-        UserLoginEvent.login_source == "session",
-        UserLoginEvent.login_at >= cutoff,
-    ).count()
-    last_oauth = event_q.with_entities(func.max(UserLoginEvent.login_at)).filter(UserLoginEvent.login_source == "oauth").scalar()
-    last_any = event_q.with_entities(func.max(UserLoginEvent.login_at)).scalar()
-    health = "healthy"
-    if total_users > 0 and oauth_24h == 0:
-        health = "warning"
-    if total_users > 0 and users_with_last_login == 0:
-        health = "error"
-    return LoginSyncStatusOut(
-        totalUsers=total_users,
-        usersWithLastLoginAt=users_with_last_login,
-        usersMissingLastLoginAt=users_missing_last_login,
-        totalLoginEvents=total_events,
-        activeSessions=active_sessions,
-        oauthEvents24h=oauth_24h,
-        sessionEvents24h=session_24h,
-        lastOauthEventAt=last_oauth,
-        lastAnyEventAt=last_any,
-        syncHealth=health,
-    )
 
 
 @router.get("/retag-approvals", response_model=list[RetagApprovalOut])
